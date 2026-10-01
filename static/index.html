@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日食・太陽面通過 精密計算機</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23f6a821'/%3E%3Ccircle cx='20' cy='13' r='11' fill='%23222'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 40 40" class="logo" aria-hidden="true">
+      <defs><radialGradient id="lg" cx="50%" cy="50%" r="50%"><stop offset="60%" stop-color="#ffd166"/><stop offset="100%" stop-color="#f08c00"/></radialGradient></defs>
+      <circle cx="20" cy="20" r="15" fill="url(#lg)"/><circle cx="24.5" cy="16.5" r="13" fill="#1d2433"/>
+    </svg>
+    <div>
+      <h1>日食・太陽面通過 精密計算機</h1>
+      <p>JPL DE440 暦にもとづく高精度計算 ・ 地上の地点と人工衛星からの見え方</p>
+    </div>
+  </div>
+  <div class="top-controls">
+    <label class="tz">表示する時刻
+      <select id="tz"></select>
+    </label>
+    <button type="button" class="ghost" id="helpBtn">使い方・用語</button>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- ======================= 設定パネル ======================= -->
+  <aside class="settings" aria-label="計算設定">
+    <form id="form" autocomplete="off">
+      <section class="card">
+        <h2><span class="step">1</span>計算する現象</h2>
+        <div class="phen">
+          <label class="phen-chip"><input type="checkbox" name="ph" value="moon" checked>
+            <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f6a821"/><circle cx="15" cy="10" r="8" fill="#2b3245"/></svg>日食</span></label>
+          <label class="phen-chip"><input type="checkbox" name="ph" value="mercury" checked>
+            <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f6a821"/><circle cx="9" cy="13" r="1.6" fill="#111"/></svg>水星の太陽面通過</span></label>
+          <label class="phen-chip"><input type="checkbox" name="ph" value="venus" checked>
+            <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f6a821"/><circle cx="9" cy="13" r="2.6" fill="#111"/></svg>金星の太陽面通過</span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">2</span>どこから見るか（観測者）</h2>
+        <div class="seg" role="tablist" id="obsTabs">
+          <button type="button" data-obs="ground" class="active">地上の地点</button>
+          <button type="button" data-obs="space">人工衛星</button>
+          <button type="button" data-obs="global">地球全体</button>
+        </div>
+
+        <div class="obs-pane" data-pane="ground">
+          <label class="field">よく使う地点
+            <select id="cityPreset"><option value="">― 一覧から選ぶ ―</option></select>
+          </label>
+          <div class="grid3">
+            <label class="field">緯度 (°)<input id="lat" type="number" step="any" value="35.6812" required>
+              <small>北緯 +／南緯 −</small></label>
+            <label class="field">経度 (°)<input id="lon" type="number" step="any" value="139.7671" required>
+              <small>東経 +／西経 −</small></label>
+            <label class="field">標高 (m)<input id="elev" type="number" step="any" value="40"></label>
+          </div>
+          <label class="field">地点名（任意）<input id="placeName" type="text" value="東京"></label>
+          <button type="button" class="link" id="pickToggle">🗺 地図をクリックして地点を選ぶ</button>
+          <div id="pickMap" class="pickmap" hidden></div>
+        </div>
+
+        <div class="obs-pane" data-pane="space" hidden>
+          <label class="field">プリセット
+            <select id="satPreset"><option value="">― 衛星を選ぶ ―</option></select>
+          </label>
+          <div class="seg small" id="satModes">
+            <button type="button" data-mode="celestrak" class="active">NORAD番号</button>
+            <button type="button" data-mode="tle">TLE貼付</button>
+            <button type="button" data-mode="kepler">軌道要素</button>
+            <button type="button" data-mode="geo">静止衛星</button>
+            <button type="button" data-mode="horizons">JPL Horizons</button>
+          </div>
+          <div class="sat-pane" data-sat="celestrak">
+            <div class="row">
+              <label class="field grow">NORAD カタログ番号<input id="norad" type="number" value="25544"></label>
+              <button type="button" class="secondary" id="fetchTle">最新TLEを取得</button>
+            </div>
+            <p class="hint">CelesTrak から最新の軌道要素（TLE）を取得して SGP4 で軌道を計算します。</p>
+          </div>
+          <div class="sat-pane" data-sat="tle" hidden>
+            <label class="field">TLE（2行または名前付き3行）
+              <textarea id="tleText" rows="3" spellcheck="false" placeholder="ISS (ZARYA)&#10;1 25544U 98067A   ...&#10;2 25544  51.64 ..."></textarea></label>
+          </div>
+          <div class="sat-pane" data-sat="kepler" hidden>
+            <label class="field">元期 (UTC)<input id="kEpoch" type="datetime-local" step="1"></label>
+            <div class="grid2">
+              <label class="field">近地点高度 (km)<input id="kPeri" type="number" step="any" value="700"></label>
+              <label class="field">遠地点高度 (km)<input id="kApo" type="number" step="any" value="700"></label>
+              <label class="field">軌道傾斜角 (°)<input id="kInc" type="number" step="any" value="98.19"></label>
+              <label class="field">昇交点赤経 (°)<input id="kRaan" type="number" step="any" value="0"></label>
+              <label class="field">近地点引数 (°)<input id="kArgp" type="number" step="any" value="0"></label>
+              <label class="field">平均近点角 (°)<input id="kM" type="number" step="any" value="0"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="kJ2" checked> 地球の扁平(J2)による軌道面の歳差を考慮</label>
+            <p class="hint">GCRS（J2000赤道）基準の平均要素。計画中・仮想の衛星の検討向けです。</p>
+          </div>
+          <div class="sat-pane" data-sat="geo" hidden>
+            <label class="field">静止位置の経度 (°)<input id="geoLon" type="number" step="any" value="140.7">
+              <small>東経 +／西経 −（高度 35,786 km の理想静止軌道）</small></label>
+          </div>
+          <div class="sat-pane" data-sat="horizons" hidden>
+            <div class="grid2">
+              <label class="field">Horizons ID<input id="hzId" type="text" value="-170"></label>
+              <label class="field">位置の刻み (分)<input id="hzStep" type="number" value="60" min="1"></label>
+            </div>
+            <p class="hint">JPL Horizons の探査機・衛星の精密軌道を使います（例: -170 JWST、-21 SOHO、-125544 ISS）。地球近傍の衛星は刻みを 1〜2 分に。</p>
+          </div>
+          <label class="field">衛星名（任意）<input id="satName" type="text" value="ISS"></label>
+          <div id="satInfo" class="satinfo" hidden></div>
+        </div>
+
+        <div class="obs-pane" data-pane="global" hidden>
+          <p class="explain">地球上のどこかで見られる日食をすべて探し、皆既帯・金環帯の経路や部分食が見える範囲を地図で表示します。
+            太陽面通過は地球中心から見た接触時刻（世界共通の標準値）を計算します。地図をクリックすると、その地点での見え方を計算できます。</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">3</span>期間 <small class="muted">（UTC の日付）</small></h2>
+        <div class="grid2">
+          <label class="field">開始日<input id="start" type="date" required></label>
+          <label class="field">終了日<input id="end" type="date" required></label>
+        </div>
+        <div class="quick" id="quickRange">
+          <button type="button" data-y="1">今後1年</button>
+          <button type="button" data-y="10">今後10年</button>
+          <button type="button" data-y="30">今後30年</button>
+          <button type="button" data-y="100">今後100年</button>
+          <button type="button" data-range="2001-2100">2001〜2100年</button>
+        </div>
+        <p class="hint" id="coverageHint"></p>
+      </section>
+
+      <details class="card advanced">
+        <summary><span class="step">4</span>詳細設定 <small class="muted">（精度・モデル）</small></summary>
+        <label class="field">暦（天体位置の元データ）<select id="ephem"></select></label>
+        <div class="grid2">
+          <label class="field">ΔT（TT−UT）
+            <select id="dtMode"><option value="auto">自動（IERS＋長期モデル）</option><option value="manual">手動で指定</option></select></label>
+          <label class="field">ΔT の値 (秒)<input id="dtValue" type="number" step="any" placeholder="例 69.2" disabled></label>
+        </div>
+        <label class="field">太陽の半径
+          <select id="sunR"><option value="iau2015">IAU 2015 公称値 (695,700 km)</option><option value="nasa">NASA 互換 (959.63″ = 695,992 km)</option><option value="custom">数値で指定</option></select></label>
+        <label class="field" id="sunRCustomWrap" hidden>太陽半径 (km)<input id="sunRCustom" type="number" step="any" value="695700"></label>
+        <label class="field">月の半径
+          <select id="moonR"><option value="nasa">NASA方式 (外接 k=0.2725076 / 内接 k=0.272281)</option><option value="mean">平均半径 1737.4 km</option><option value="custom">数値で指定</option></select></label>
+        <div class="grid2" id="moonRCustomWrap" hidden>
+          <label class="field">外接用 (km)<input id="moonRExt" type="number" step="any" value="1738.09"></label>
+          <label class="field">内接用 (km)<input id="moonRInt" type="number" step="any" value="1736.65"></label>
+        </div>
+        <label class="field">水星・金星の半径
+          <select id="planetR"><option value="iau">IAU 固体表面 (水星 2439.4 / 金星 6051.8 km)</option><option value="nasa">NASA 互換 (3.36″ / 8.41″ at 1 AU)</option></select></label>
+        <div class="grid2">
+          <label class="field">太陽高度の下限 (°)<input id="minAlt" type="number" step="any" value="0">
+            <small>太陽中心がこの高度以上で「見える」</small></label>
+          <label class="field">衛星: 地球大気の遮蔽高度 (km)<input id="atm" type="number" step="any" value="0">
+            <small>地球の縁＋この高さまでは太陽が隠れる</small></label>
+        </div>
+        <label class="check"><input type="checkbox" id="refraction" checked> 大気差（大気による浮き上がり）を太陽高度に反映</label>
+        <label class="check"><input type="checkbox" id="includeInvisible"> 観測地から見えない現象（夜間・地球の陰）も一覧に含める</label>
+      </details>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="runBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>計算する</button>
+        <div id="status" class="status" role="status"></div>
+      </div>
+    </form>
+  </aside>
+
+  <!-- ======================= 結果 ======================= -->
+  <section class="results" aria-live="polite">
+    <div id="welcome" class="card welcome">
+      <h2>ようこそ</h2>
+      <p>左の設定で <b>①現象</b>・<b>②観測者</b>・<b>③期間</b> を選んで「計算する」を押すと、見られる日食や太陽面通過の一覧が表示されます。
+        一覧の行をクリックすると、欠け方の動画・グラフ・地図などの詳しい結果を確認できます。</p>
+      <div class="examples">
+        <button type="button" data-example="tokyo">東京で今後30年に見られる日食</button>
+        <button type="button" data-example="global">2001〜2100年の世界の日食と太陽面通過</button>
+        <button type="button" data-example="iss">ISS（国際宇宙ステーション）から見える日食</button>
+        <button type="button" data-example="geo">静止衛星ひまわり9号から見える日食</button>
+      </div>
+      <ul class="features">
+        <li><b>高精度</b>: JPL DE440 暦、光行時間・ΔT・地球楕円体（WGS84）を厳密に扱い、接触時刻を 0.1 ms まで追い込みます。</li>
+        <li><b>人工衛星から</b>: TLE（SGP4）、軌道要素、静止衛星、JPL Horizons の探査機軌道に対応。地球に隠される時間も考慮します。</li>
+        <li><b>地図</b>: 皆既帯・金環帯の経路と限界線、部分食の食分分布、太陽面通過の可視地域を表示します。</li>
+      </ul>
+    </div>
+
+    <div id="resultArea" hidden>
+      <div class="card summary">
+        <div class="summary-top">
+          <div id="summaryText" class="summary-text"></div>
+          <div class="summary-actions">
+            <button type="button" class="secondary small" id="csvBtn">一覧をCSV保存</button>
+          </div>
+        </div>
+        <div id="warnings" class="warnings"></div>
+        <div class="filters" id="filters"></div>
+      </div>
+      <div class="card table-card">
+        <div class="table-wrap"><table id="eventTable" class="events"></table></div>
+      </div>
+    </div>
+
+    <div id="detail" class="card detail" hidden>
+      <div class="detail-head">
+        <div>
+          <button type="button" class="link" id="backBtn" hidden>← 元の現象に戻る</button>
+          <h2 id="detailTitle"></h2>
+          <p id="detailSub" class="muted"></p>
+        </div>
+        <button type="button" class="ghost close" id="closeDetail" aria-label="閉じる">✕</button>
+      </div>
+      <div class="tabs" role="tablist" id="detailTabs">
+        <button type="button" data-tab="overview" class="active">概要</button>
+        <button type="button" data-tab="view">見え方（動画）</button>
+        <button type="button" data-tab="chart">グラフ</button>
+        <button type="button" data-tab="map">地図</button>
+        <button type="button" data-tab="data">データ</button>
+      </div>
+      <div class="tabpane" data-tabpane="overview"><div id="overview"></div></div>
+      <div class="tabpane" data-tabpane="view" hidden>
+        <div class="view-wrap">
+          <div class="canvas-box">
+            <canvas id="diskCanvas" width="560" height="560"></canvas>
+          </div>
+          <div class="view-side">
+            <div class="readout" id="readout"></div>
+            <label class="field">向き
+              <select id="orient"></select></label>
+            <label class="check"><input type="checkbox" id="showGrid" checked> 方位の目印を表示</label>
+            <div class="jump" id="jumpBtns"></div>
+            <p class="hint" id="viewNote"></p>
+          </div>
+        </div>
+        <div class="player">
+          <button type="button" class="primary round" id="playBtn" aria-label="再生">▶</button>
+          <input type="range" id="timeSlider" min="0" max="1000" value="0" step="1">
+          <select id="speed" aria-label="再生速度"></select>
+        </div>
+      </div>
+      <div class="tabpane" data-tabpane="chart" hidden>
+        <div id="chart1" class="chart"></div>
+        <div id="chart2" class="chart"></div>
+        <p class="hint">グラフ上をクリックすると、その時刻の見え方に移動します。</p>
+      </div>
+      <div class="tabpane" data-tabpane="map" hidden>
+        <div id="mapStatus" class="status"></div>
+        <div id="map" class="map"></div>
+        <div id="mapLegend" class="legend"></div>
+      </div>
+      <div class="tabpane" data-tabpane="data" hidden>
+        <div class="row gap">
+          <button type="button" class="secondary small" id="dlJson">JSON をダウンロード</button>
+          <button type="button" class="secondary small" id="dlCsv">時系列 CSV をダウンロード</button>
+          <button type="button" class="secondary small" id="copyText">結果をテキストでコピー</button>
+        </div>
+        <pre id="dataText" class="datatext"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="helpDlg">
+  <form method="dialog" class="help">
+    <h2>使い方と用語</h2>
+    <h3>基本の流れ</h3>
+    <ol>
+      <li>計算したい現象（日食・水星・金星）にチェックを入れます。</li>
+      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID で指定します。「地球全体」は世界のどこかで見られる現象を探します。</li>
+      <li>期間を指定して「計算する」。一覧の行をクリックすると詳細が開きます。</li>
+    </ol>
+    <h3>用語</h3>
+    <dl>
+      <dt>食分</dt><dd>太陽の<b>直径</b>のうち月に隠された割合。皆既日食では 1 以上になります（地球全体の一覧では NASA と同じく中心食の場合は月と太陽の視直径比）。</dd>
+      <dt>食面積率</dt><dd>太陽の<b>面積</b>のうち隠された割合。体感的な暗さに近い指標です。</dd>
+      <dt>第1〜第4接触</dt><dd>月（惑星）の縁と太陽の縁が接する瞬間。第1接触＝欠け始め、第2接触＝皆既・金環（または内接）の始まり、第3接触＝その終わり、第4接触＝欠け終わり。</dd>
+      <dt>位置角 P / 天頂角 V</dt><dd>太陽の中心から見た接触点の方向。P は天の北極方向から東回り、V は天頂方向から測った角度です。</dd>
+      <dt>γ（ガンマ）</dt><dd>月の影の軸が地球中心から最も近づいたときの距離（地球赤道半径単位）。小さいほど地球の中央付近を影が通ります。</dd>
+      <dt>サロス番号</dt><dd>約18年周期で似た日食が繰り返す系列の番号。</dd>
+      <dt>ΔT</dt><dd>地球自転の不規則さを表す TT と UT の差。将来・過去ほど不確かで、主に食の見える場所（経度）に影響します。</dd>
+      <dt>TLE</dt><dd>人工衛星の軌道要素の標準形式。元期から離れるほど誤差が大きくなるため、衛星の予報は元期の前後数日が目安です。</dd>
+    </dl>
+    <h3>精度について</h3>
+    <ul>
+      <li>天体位置は JPL DE440（DE440s）暦、時刻系は IERS 観測値にもとづく ΔT を使用。接触時刻は光行時間を反復計算し、0.1 ms 以下まで収束させています。</li>
+      <li>月の縁の凹凸（山や谷）は考慮していません。NASA 方式の 2 種類の月半径でその平均的な効果を近似しています。実際の接触時刻は月縁地形により ±1〜2 秒ほど変わることがあります。</li>
+      <li>人工衛星の精度は軌道情報の精度で決まります。TLE は元期から日数が経つと数 km〜数百 km の誤差を生じます。</li>
+    </ul>
+    <div class="right"><button class="primary">閉じる</button></div>
+  </form>
+</dialog>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

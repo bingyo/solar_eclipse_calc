@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# JPL ephemerides are large public data files; run.py downloads them on first start
+data/*.bsp
+data/*.part
+data/cache/
+
+# Local tool settings
+.claude/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
