@@ -229,6 +229,46 @@ class _KeplerVF(VectorFunction):
         return pos / AU_KM, vel * AU_PER_DAY_PER_KM_S, None, None
 
 
+TROPICAL_YEAR_DAYS = 365.24219
+# General precession in right ascension for a point on the equator ("m"), deg/yr.
+PRECESSION_RA_DEG_PER_YEAR = 46.1 / 3600.0
+
+
+def mean_sun_ra_deg(ctx, jd_tt):
+    """Right ascension of the fictitious mean Sun (J2000 equator), degrees.
+    Local mean solar time is defined by it: GMST = alpha + UT1 + 12 h."""
+    t = ctx.ts.tt_jd(jd_tt)
+    ut_h = ((float(t.ut1) - 0.5) % 1.0) * 24.0
+    ra_of_date = ((float(t.gmst) - ut_h - 12.0) * 15.0) % 360.0
+    return (ra_of_date - PRECESSION_RA_DEG_PER_YEAR * (jd_tt - 2451545.0) / 365.25) % 360.0
+
+
+def raan_from_ltan(ctx, jd_tt, ltan_h):
+    """Right ascension of the ascending node for a local (mean) solar time
+    of the ascending node, e.g. 18.0 for a dusk-side ascending node."""
+    return (mean_sun_ra_deg(ctx, jd_tt) + (ltan_h - 12.0) * 15.0) % 360.0
+
+
+def ltan_from_raan(ctx, jd_tt, raan_deg):
+    return ((raan_deg - mean_sun_ra_deg(ctx, jd_tt)) / 15.0 + 12.0) % 24.0
+
+
+def sun_synchronous_inclination(a_km, e=0.0):
+    """Inclination (deg) whose secular J2 node drift follows the mean Sun
+    (360 deg per tropical year), with the same model as _KeplerVF."""
+    target = 2 * math.pi / (TROPICAL_YEAR_DAYS * DAY_S)
+    n0 = math.sqrt(GM_EARTH / a_km ** 3)
+    f = 1.5 * J2_EARTH * (WGS84_A / (a_km * (1 - e * e))) ** 2
+    i = math.radians(98.0)
+    for _ in range(30):
+        n = n0 * (1 + f * math.sqrt(1 - e * e) * (1 - 1.5 * math.sin(i) ** 2))
+        c = -target / (f * n)
+        if c < -1:
+            raise ObserverError('この軌道の大きさでは太陽同期軌道になりません（高度が高すぎます）')
+        i = math.acos(c)
+    return math.degrees(i)
+
+
 class KeplerObserver(Observer):
     def __init__(self, ctx, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg,
                  j2=True, name=''):
@@ -709,9 +749,23 @@ def build_observer(ctx, spec, parse_time=None):
             ha = float(spec.get('apogee_alt_km', hp))
             a = WGS84_A + 0.5 * (hp + ha)
             spec = dict(spec, e=(ha - hp) / (2 * a))
-        return KeplerObserver(ctx, epoch, a, float(spec.get('e', 0)), float(spec['i_deg']),
-                              float(spec.get('raan_deg', 0)), float(spec.get('argp_deg', 0)),
-                              float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name)
+        e = float(spec.get('e', 0))
+        sso = bool(spec.get('sso'))
+        if sso:
+            if not 0 <= e < 1:
+                raise ObserverError('離心率は 0 以上 1 未満で指定してください')
+            i_deg = sun_synchronous_inclination(a, e)
+        else:
+            i_deg = float(spec['i_deg'])
+        ltan = spec.get('ltan_h')
+        if ltan is not None and ltan != '':
+            raan = raan_from_ltan(ctx, epoch, float(ltan) % 24.0)
+        else:
+            raan = float(spec.get('raan_deg', 0))
+        obs = KeplerObserver(ctx, epoch, a, e, i_deg, raan, float(spec.get('argp_deg', 0)),
+                             float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name)
+        obs.params.update(sso=sso, ltan_h=ltan_from_raan(ctx, epoch, raan))
+        return obs
     if kind == 'horizons':
         return HorizonsObserver(ctx, spec['command'], int(spec.get('step_min', 5) or 5), name)
     if kind == 'sscweb':

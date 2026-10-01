@@ -23,6 +23,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const state = {
   info: null, obsTab: 'ground', satMode: 'celestrak', fetchedTle: null, sscSats: null,
+  sweep: null, sweepGroup: 0,
   result: null, filters: new Set(), selectedId: null,
   detail: null, local: null, stack: [], rootId: null,
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
@@ -175,7 +176,8 @@ async function init() {
   tz.addEventListener('change', () => {
     _fmtCache.clear();
     try { localStorage.setItem('tz', tz.value); } catch (_) { /* ignore */ }
-    if (state.result) renderResults();
+    if (state.sweep) renderSweep();
+    else if (state.result) renderResults();
     if (state.detail) renderDetailAll(false);
   });
 
@@ -213,6 +215,11 @@ async function init() {
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
   $('#fetchTle').addEventListener('click', fetchTle);
   $('#sscId').addEventListener('change', () => showSscInfo(true));
+  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo'].forEach((q) => {
+    $(q).addEventListener('change', updateKeplerForm);
+    $(q).addEventListener('input', updateKeplerForm);
+  });
+  updateKeplerForm();
   $('#pickToggle').addEventListener('click', togglePickMap);
   $$('#quickRange button').forEach((b) => b.addEventListener('click', () => quickRange(b)));
   $('#dtMode').addEventListener('change', () => { $('#dtValue').disabled = $('#dtMode').value !== 'manual'; });
@@ -289,8 +296,54 @@ function applySatSpec(spec) {
     let peri = spec.perigee_alt_km, apo = spec.apogee_alt_km;
     if (spec.a_km) { peri = spec.a_km * (1 - spec.e) - 6378.137; apo = spec.a_km * (1 + spec.e) - 6378.137; }
     $('#kPeri').value = peri.toFixed(1); $('#kApo').value = apo.toFixed(1);
-    $('#kInc').value = spec.i_deg; $('#kRaan').value = spec.raan_deg; $('#kArgp').value = spec.argp_deg; $('#kM').value = spec.m_deg;
+    $('#kSso').checked = !!spec.sso;
+    if (spec.i_deg != null) $('#kInc').value = spec.i_deg;
+    if (spec.ltan_h != null) { $('#kPlane').value = 'ltan'; $('#kLtan').value = fmtLtan(spec.ltan_h); }
+    else { $('#kPlane').value = 'raan'; $('#kRaan').value = spec.raan_deg ?? 0; }
+    $('#kArgp').value = spec.argp_deg ?? 0; $('#kM').value = spec.m_deg ?? 0;
+    updateKeplerForm();
   }
+}
+/* Sun-synchronous inclination for the secular J2 model used by the server. */
+function ssoInclination(periKm, apoKm) {
+  const R = 6378.137, MU = 398600.4418, J2 = 1.08262668e-3;
+  const a = R + 0.5 * (periKm + apoKm), e = (apoKm - periKm) / (2 * a);
+  if (!(a > R) || !(e >= 0 && e < 1)) return null;
+  const target = 2 * Math.PI / (365.24219 * 86400);
+  const n0 = Math.sqrt(MU / a ** 3), f = 1.5 * J2 * (R / (a * (1 - e * e))) ** 2;
+  let i = 98 * Math.PI / 180;
+  for (let k = 0; k < 30; k++) {
+    const n = n0 * (1 + f * Math.sqrt(1 - e * e) * (1 - 1.5 * Math.sin(i) ** 2));
+    const c = -target / (f * n);
+    if (c < -1) return null;
+    i = Math.acos(c);
+  }
+  return i * 180 / Math.PI;
+}
+function ltanHours() {
+  const [h, m] = ($('#kLtan').value || '').split(':').map(Number);
+  if (!isFinite(h)) throw new Error('昇交点の地方時を入力してください（例: 18:00）');
+  return h + (isFinite(m) ? m : 0) / 60;
+}
+function fmtLtan(h) {
+  const t = Math.round((((h % 24) + 24) % 24) * 60) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+function updateKeplerForm() {
+  const sso = $('#kSso').checked;
+  $('#kInc').disabled = sso;
+  const note = $('#kIncNote');
+  if (sso) {
+    const i = ssoInclination(num('#kPeri'), num('#kApo'));
+    if (i == null) { note.textContent = 'この高度では太陽同期軌道になりません'; }
+    else { $('#kInc').value = i.toFixed(3); note.textContent = '太陽同期になるよう自動で決めた値'; }
+  } else note.textContent = '';
+  const ltan = $('#kPlane').value === 'ltan';
+  $('#kLtanWrap').hidden = !ltan;
+  $('#kRaanWrap').hidden = ltan;
+  const sweep = $('#kSweep').checked;
+  $('#kM').disabled = sweep;
+  $('#kSweepWrap').hidden = !sweep;
 }
 async function fetchTle() {
   const box = $('#satInfo');
@@ -372,8 +425,10 @@ function buildRequest() {
       if (!ep) throw new Error('軌道要素の元期を入力してください');
       observer = {
         type: 'kepler', epoch: ep.length === 16 ? ep + ':00' : ep, perigee_alt_km: num('#kPeri'), apogee_alt_km: num('#kApo'),
-        i_deg: num('#kInc'), raan_deg: num('#kRaan'), argp_deg: num('#kArgp'), m_deg: num('#kM'), j2: $('#kJ2').checked, name,
+        argp_deg: num('#kArgp'), m_deg: num('#kM'), j2: $('#kJ2').checked, name,
       };
+      if ($('#kSso').checked) observer.sso = true; else observer.i_deg = num('#kInc');
+      if ($('#kPlane').value === 'ltan') observer.ltan_h = ltanHours(); else observer.raan_deg = num('#kRaan');
     } else if (m === 'geo') {
       observer = { type: 'geo', lon: num('#geoLon'), name };
     } else if (m === 'sscweb') {
@@ -398,7 +453,8 @@ function buildRequest() {
     min_sun_alt_deg: num('#minAlt'), refraction: $('#refraction').checked,
     earth_atm_km: num('#atm'), include_invisible: $('#includeInvisible').checked,
   };
-  return { phenomena, observer, start: $('#start').value, end: $('#end').value, settings };
+  const sweepStep = observer.type === 'kepler' && $('#kSweep').checked ? num('#kSweepStep', 10) : null;
+  return { phenomena, observer, start: $('#start').value, end: $('#end').value, settings, sweepStep };
 }
 
 async function runSearch() {
@@ -411,11 +467,25 @@ async function runSearch() {
   const msg = req.observer.type === 'horizons' ? 'JPL Horizons から軌道を取得して計算中…' :
     req.observer.type === 'sscweb' ? 'NASA SSCWeb から軌道を取得して計算中…' :
     req.observer.type === 'celestrak' ? 'CelesTrak から TLE を取得して計算中…' : '計算中…';
-  setStatus(st, msg, 'busy');
+  setStatus(st, req.sweepStep ? `平均近点角を ${req.sweepStep}° ずつ変えて計算中…` : msg, 'busy');
   try {
+    if (req.sweepStep) {
+      const { sweepStep, ...body } = req;
+      const r = await api('/api/phase_sweep', { ...body, step_deg: sweepStep });
+      state.sweep = r;
+      state.sweepGroup = 0;
+      state.result = null;
+      setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
+      $('#welcome').hidden = true;
+      $('#resultArea').hidden = false;
+      closeDetail();
+      renderSweep();
+      return;
+    }
     const r = await api('/api/search', req);
     r.request = req;
     state.result = r;
+    state.sweep = null;
     state.filters = new Set();
     setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
     $('#welcome').hidden = true;
@@ -449,6 +519,13 @@ function runExample(name) {
   } else if (name === 'geo') {
     setObsTab('space'); applySatSpec(state.info.satellites[3].spec);
     $('#start').value = isoDate(now); $('#end').value = isoDate(addYears(now, 10));
+  } else if (name === 'prelaunch') {
+    setObsTab('space');
+    applySatSpec({ type: 'kepler', name: '太陽同期 680km（計画）', perigee_alt_km: 680, apogee_alt_km: 680, sso: true, ltan_h: 18, argp_deg: 0, m_deg: 0 });
+    $('#kEpoch').value = '2027-01-01T00:00:00';
+    $('#kSweep').checked = true; $('#kSweepStep').value = '10'; updateKeplerForm();
+    $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
+    $('#start').value = '2027-01-01'; $('#end').value = '2028-01-01';
   } else if (name === 'hinode') {
     setObsTab('space'); applySatSpec(state.info.satellites.find((s) => s.spec.type === 'sscweb').spec);
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
@@ -469,12 +546,19 @@ function observerText(o) {
   let s = `${o.name}（${model}`;
   if (o.perigee_km != null) s += `・高度 ${o.perigee_km.toFixed(0)}〜${o.apogee_km.toFixed(0)} km`;
   if (o.model === 'fixed') s += `・${fmtLon(o.lon)}・高度 ${o.height_km.toFixed(0)} km`;
+  if (o.model === 'kepler') {
+    s += `・傾斜角 ${o.i_deg.toFixed(2)}°`;
+    if (o.ltan_h != null) s += `・昇交点の地方時 ${fmtLtan(o.ltan_h)}`;
+    if (o.sso) s += '・太陽同期';
+  }
   if (o.epoch) s += `・元期 ${fmtDT(o.epoch)}`;
   return s + '）';
 }
 
 function renderResults() {
   const r = state.result;
+  $('#listCard').hidden = false;
+  $('#sweepArea').hidden = true;
   const evs = r.events;
   const global = r.observer.kind === 'global';
   const counts = {};
@@ -515,6 +599,150 @@ function renderResults() {
   }
   tbl.append(tb);
   if (!tb.children.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, '該当する現象はありません。期間や観測者を変えてお試しください。')));
+}
+
+/* ------------------------------------------------------------------ */
+/* phase sweep (satellite position along the orbit unknown)            */
+/* ------------------------------------------------------------------ */
+const BODY_JA = { moon: '日食', mercury: '水星の太陽面通過', venus: '金星の太陽面通過' };
+function renderSweep() {
+  const r = state.sweep;
+  $('#listCard').hidden = true;
+  $('#sweepArea').hidden = false;
+  const n = r.phases.length;
+  const counts = {};
+  r.groups.forEach((g) => { counts[g.body] = (counts[g.body] || 0) + 1; });
+  const what = Object.entries(counts).map(([b, c]) => `${BODY_JA[b]} ${c} 件`).join('・') || '現象なし';
+  $('#summaryText').innerHTML =
+    `<div><span class="big">${what}</span>（平均近点角を ${r.step_deg}° ずつ変えた ${n} 通りで計算）</div>` +
+    `<div class="muted">観測者: ${esc(observerText(r.observer))}<br>期間: ${esc(r.start)} 〜 ${esc(r.end)}（UTC）・暦 ${esc(r.ephemeris)}・計算 ${r.elapsed_s.toFixed(1)} 秒<br>` +
+    '衛星が軌道上のどこにいるかで結果が変わります。行をクリックすると、平均近点角ごとの結果が表示されます。</div>';
+  $('#warnings').innerHTML = (r.warnings || []).map((w) => `<div>⚠ ${esc(w)}</div>`).join('');
+  $('#filters').innerHTML = '';
+  const tbl = $('#sweepTable');
+  tbl.innerHTML = '';
+  const head = ['日付', '現象', '見える位相', '見える回数', '最も深い食の食分', '皆既・金環になる位相', '最大の時刻の範囲'];
+  tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))));
+  const tb = el('tbody');
+  r.groups.forEach((g, k) => {
+    const tr = el('tr', { class: k === state.sweepGroup ? 'selected' : '' });
+    tr.addEventListener('click', () => { state.sweepGroup = k; renderSweep(); });
+    const isT = g.body !== 'moon';
+    const central = g.central_phases.length;
+    tr.append(
+      el('td', {}, fmtDate(g.date)),
+      el('td', {}, BODY_JA[g.body]),
+      el('td', { class: 'num' }, `${g.n_visible} / ${g.n_phases}`),
+      el('td', { class: 'num' }, g.count_min === g.count_max ? `${g.count_max} 回` : `${g.count_min}〜${g.count_max} 回`),
+      el('td', { class: 'num' }, isT || g.mag_min == null ? '—' : `${f3(g.mag_min)} 〜 ${f3(g.mag_max)}`),
+      el('td', { class: 'num' }, isT ? '—' : central ? `${central} / ${g.n_phases}（${Math.round(100 * central / g.n_phases)}%）` : 'なし'),
+      el('td', { class: 'num' }, g.time_first ? sweepRange(g.time_first, g.time_last) : '—'),
+    );
+    if (!g.n_visible) tr.classList.add('dim');
+    tb.append(tr);
+  });
+  if (!r.groups.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, 'この期間には、どの位相でも見られる現象がありません。')));
+  tbl.append(tb);
+  renderSweepGroup();
+}
+function renderSweepGroup() {
+  const r = state.sweep;
+  const g = r.groups[state.sweepGroup];
+  $('#sweepDetail').hidden = !g;
+  if (!g) return;
+  const isT = g.body !== 'moon';
+  $('#sweepTitle').textContent = `${fmtDate(g.date)} の${BODY_JA[g.body]}：平均近点角ごとの結果`;
+  $('#sweepSub').textContent = isT
+    ? '各位相で最も長く見える通過を表示しています。行をクリックすると詳細が開きます。'
+    : '各位相で最も深い食を表示しています（1 周回ごとに複数回起きることがあります）。行をクリックすると詳細が開きます。';
+  $('#sweepChart').replaceChildren(sweepChart(g));
+  const tbl = $('#sweepPhaseTable');
+  tbl.innerHTML = '';
+  const multiDay = g.time_first && dayDiff(g.time_first, g.time_last);
+  const head = ['平均近点角', '見える回数', '種類', '最大の時刻', isT ? '中心間距離' : '食分', '太陽が隠れる割合', isT ? '継続時間' : '中心食の継続', '見えるか'];
+  tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))));
+  const tb = el('tbody');
+  for (const row of g.rows) {
+    const e = row.best;
+    const tr = el('tr', {});
+    if (!e) {
+      tr.append(el('td', { class: 'num' }, `${row.m_deg}°`), el('td', { class: 'num' }, '0 回'),
+        el('td', { colspan: head.length - 2, class: 'muted' }, 'この位相では見られません'));
+      tr.classList.add('dim');
+    } else {
+      tr.addEventListener('click', () => openDetail(e.id, { root: true }));
+      tr.append(
+        el('td', { class: 'num' }, `${row.m_deg}°`),
+        el('td', { class: 'num' }, `${row.count} 回`),
+        el('td', {}, badge(e)),
+        el('td', { class: 'num' }, `${multiDay ? fmtDateShort(e.max).slice(5) + ' ' : ''}${fmtTime(e.max)} ${tzLabel(e.max)}`),
+        el('td', { class: 'num' }, isT ? `${f1(e.min_sep_arcsec)}″` : f3(e.magnitude)),
+        el('td', {}, el('span', {}, el('span', { class: 'bar' }, el('i', { style: `width:${Math.min(100, e.obscuration * 100)}%` })), pct(e.obscuration, isT ? 3 : 1))),
+        el('td', { class: 'num' }, isT ? fmtDur(e.duration_s) : e.type === 'partial' ? '—' : fmtDur(e.central_duration_s, true)),
+        visCell(e, 'space'),
+      );
+      if ((e.vis_fraction || 0) <= 0) tr.classList.add('dim');
+    }
+    tb.append(tr);
+  }
+  tbl.append(tb);
+}
+function sweepRange(a, b) {
+  if (!dayDiff(a, b)) return `${fmtHM(a)} 〜 ${fmtHM(b)} ${tzLabel(a)}`;
+  return `${fmtDateShort(a).slice(5)} ${fmtHM(a)} 〜 ${fmtDateShort(b).slice(5)} ${fmtHM(b)} ${tzLabel(a)}`;
+}
+/* Bar chart of the outcome against the mean anomaly. */
+function sweepChart(g) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const isT = g.body !== 'moon';
+  const W = 720, H = 190, L = 44, R = 10, T = 14, B = 34;
+  const vals = g.rows.map((r) => (r.best && (r.best.vis_fraction || 0) > 0 ? (isT ? r.best.vis_fraction : r.best.magnitude) : 0));
+  const top = isT ? 1 : Math.max(1.05, ...vals) * 1.02;
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  const bw = (W - L - R) / g.rows.length;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', isT ? '平均近点角ごとの見える割合' : '平均近点角ごとの最大食分');
+  const add = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    svg.append(n);
+    return n;
+  };
+  const ticks = isT ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+  for (const t of ticks) {
+    add('line', { x1: L, x2: W - R, y1: y(t), y2: y(t), class: t === 1 && !isT ? 'ref' : 'grid' });
+    add('text', { x: L - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'tick' }, isT ? `${t * 100}%` : t.toFixed(2));
+  }
+  g.rows.forEach((r, k) => {
+    const v = vals[k];
+    const x = L + k * bw;
+    if (v > 0) {
+      const c = CAT[catOf(r.best)];
+      const rect = add('rect', { x: x + bw * 0.15, width: Math.max(1, bw * 0.7), y: y(v), height: y(0) - y(v), fill: c.color, rx: 1.5 });
+      const title = document.createElementNS(NS, 'title');
+      title.textContent = `平均近点角 ${r.m_deg}°：${c.label}・${isT ? '見える割合 ' + pct(v) : '食分 ' + f3(v)}`;
+      rect.append(title);
+    }
+    if (k % Math.max(1, Math.round(g.rows.length / 12)) === 0) add('text', { x: x + bw / 2, y: H - B + 16, 'text-anchor': 'middle', class: 'tick' }, `${r.m_deg}°`);
+  });
+  add('text', { x: L + (W - L - R) / 2, y: H - 4, 'text-anchor': 'middle', class: 'axis' }, '元期での平均近点角（衛星が軌道上のどこにいるか）');
+  if (!isT) add('text', { x: W - R, y: y(1) - 5, 'text-anchor': 'end', class: 'tick' }, '食分 1.0');
+  return svg;
+}
+function downloadSweepCsv() {
+  const r = state.sweep;
+  const rows = [['date_utc', 'phenomenon', 'mean_anomaly_deg', 'visible_count', 'type', 'max_utc', 'magnitude', 'obscuration', 'min_sep_arcsec', 'central_duration_s', 'duration_s', 'visible_fraction']];
+  for (const g of r.groups) {
+    for (const row of g.rows) {
+      const e = row.best || {};
+      rows.push([g.date.slice(0, 10), BODY_JA[g.body], row.m_deg, row.count, e.type ? CAT[catOf(e)].label : '', e.max ?? '', e.magnitude ?? '',
+        e.obscuration ?? '', e.min_sep_arcsec ?? '', e.central_duration_s ?? '', e.duration_s ?? '', e.vis_fraction ?? '']);
+    }
+  }
+  saveFile('phase_sweep.csv', toCsv(rows), 'text/csv');
 }
 
 function globalRow(e, isT) {
@@ -562,6 +790,7 @@ function localRow(e, isT, kind) {
 }
 
 function downloadListCsv() {
+  if (state.sweep) { downloadSweepCsv(); return; }
   const r = state.result;
   if (!r) return;
   const rows = [['date_utc', 'type', 'max_utc', 'c1_utc', 'c4_utc', 'magnitude', 'obscuration', 'ratio', 'min_sep_arcsec', 'gamma',

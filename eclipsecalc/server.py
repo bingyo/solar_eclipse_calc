@@ -15,6 +15,7 @@ from . import __version__
 from .constants import (MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MOON_K_INTERNAL,
                         MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, VENUS_RADIUS,
                         VENUS_RADIUS_NASA, WGS84_A)
+from .conjunctions import find_conjunctions
 from .context import DEFAULT_EPHEMERIS, ROOT_DIR, available_ephemerides, get_context
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
@@ -80,6 +81,10 @@ class SearchRequest(BaseModel):
     start: str
     end: str
     settings: dict = {}
+
+
+class SweepRequest(SearchRequest):
+    step_deg: float = 10.0
 
 
 class LocalRequest(BaseModel):
@@ -174,9 +179,8 @@ def sscweb_satellites():
         raise HTTPException(502, str(exc))
 
 
-@app.post('/api/search')
-def search(req: SearchRequest):
-    t0 = time.time()
+def _parse_request(req):
+    '''Common validation of search requests -> (ctx, params, jd_a, jd_b, phenomena).'''
     try:
         ctx, params = _settings(req.settings)
         jd_a = parse_utc(ctx, req.start)
@@ -193,6 +197,13 @@ def search(req: SearchRequest):
     phen = [p for p in req.phenomena if p in ('moon', 'mercury', 'venus')]
     if not phen:
         raise HTTPException(400, '計算する現象を 1 つ以上選んでください')
+    return ctx, params, jd_a, jd_b, phen
+
+
+@app.post('/api/search')
+def search(req: SearchRequest):
+    t0 = time.time()
+    ctx, params, jd_a, jd_b, phen = _parse_request(req)
     spec = dict(req.observer)
     years = (jd_b - jd_a) / 365.25
     warnings = []
@@ -253,6 +264,102 @@ def search(req: SearchRequest):
         'elapsed_s': time.time() - t0, 'ephemeris': ctx.ephemeris_name,
         'delta_t_mid_s': dt_now, 'delta_t_override': ctx.delta_t_override,
         'params': params.as_dict(), 'start': req.start, 'end': req.end,
+    })
+
+
+SWEEP_MAX_DAYS = 366.0
+CENTRAL_TYPES = ('total', 'annular', 'hybrid')
+
+
+def _visible(e):
+    return (e.get('vis_fraction') or 0) > 0
+
+
+def _sweep_best(events):
+    '''The most significant (visible, if any) event of one phase in one group.'''
+    pool = [e for e in events if _visible(e)] or events
+    if not pool:
+        return None
+    if pool[0]['body'] == 'moon':
+        return max(pool, key=lambda e: e['magnitude'])
+    return max(pool, key=lambda e: (e.get('vis_fraction') or 0, e['duration_s']))
+
+
+@app.post('/api/phase_sweep')
+def phase_sweep(req: SweepRequest):
+    '''Search with the satellite placed at every mean anomaly (step_deg apart).
+
+    Before launch the position of a satellite along its orbit is unknown;
+    this shows the range of possible outcomes for each eclipse/transit.'''
+    t0 = time.time()
+    ctx, params, jd_a, jd_b, phen = _parse_request(req)
+    spec = dict(req.observer)
+    if spec.get('type') != 'kepler':
+        raise HTTPException(400, '位相を変えた一括計算は「軌道要素」で指定した衛星だけで使えます')
+    step = float(req.step_deg)
+    if not 5.0 <= step <= 90.0:
+        raise HTTPException(400, '位相の刻みは 5〜90° で指定してください')
+    if jd_b - jd_a > SWEEP_MAX_DAYS:
+        raise HTTPException(400, '位相を変えた一括計算では期間を 1 年以内にしてください')
+    phases = [float(m) for m in np.arange(0.0, 360.0 - 1e-9, step)]
+    conj = {b: find_conjunctions(ctx, b, jd_a - 2.0, jd_b + 2.0) for b in phen}
+    groups = {}
+    warnings = []
+    obs_desc = None
+    with _compute_lock:
+        try:
+            for m in phases:
+                observer = build_observer(ctx, dict(spec, m_deg=m), parse_time=lambda s: parse_utc(ctx, s))
+                if obs_desc is None:
+                    obs_desc = observer.describe()
+                    obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
+                for body in phen:
+                    ls = LocalSearch(ctx, observer, body, params, jd_a, jd_b)
+                    found = ls.run()
+                    warnings += [w for w in ls.warnings if w not in warnings]
+                    tc = conj[body]
+                    for ev in found:
+                        eid = _put({'kind': 'local', 'event': ev, 'search': ls, 'ctx': ctx,
+                                    'params': params, 'observer': observer, 'global_obs': False})
+                        s = _local_summary(ev, observer)
+                        s['id'] = eid
+                        s['m_deg'] = m
+                        k = int(np.argmin(np.abs(tc - ev['jd_max']))) if len(tc) else -1
+                        g = groups.setdefault((body, k), {
+                            'body': body, 'jd_conj': float(tc[k]) if k >= 0 else ev['jd_max'],
+                            'by_phase': {}})
+                        g['by_phase'].setdefault(m, []).append(s)
+        except ObserverError as exc:
+            raise HTTPException(400, str(exc))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            traceback.print_exc()
+            raise HTTPException(500, f'計算中にエラーが発生しました: {exc}')
+    out = []
+    for g in sorted(groups.values(), key=lambda g: g['jd_conj']):
+        rows = []
+        for m in phases:
+            evs = sorted(g['by_phase'].get(m, []), key=lambda e: e['jd_max'])
+            rows.append({'m_deg': m, 'count': sum(1 for e in evs if _visible(e)), 'n_all': len(evs),
+                         'best': _sweep_best(evs), 'events': evs})
+        bests = [r['best'] for r in rows if r['best'] and _visible(r['best'])]
+        mags = [b['magnitude'] for b in bests]
+        times = sorted(b['max'] for b in bests)
+        out.append({
+            'body': g['body'], 'date': iso_from_jd(ctx, g['jd_conj']),
+            'n_phases': len(phases), 'n_visible': len(bests),
+            'count_min': min(r['count'] for r in rows), 'count_max': max(r['count'] for r in rows),
+            'mag_min': min(mags) if mags else None, 'mag_max': max(mags) if mags else None,
+            'central_phases': [b['m_deg'] for b in bests if b['type'] in CENTRAL_TYPES],
+            'time_first': times[0] if times else None, 'time_last': times[-1] if times else None,
+            'rows': rows,
+        })
+    return _clean({
+        'groups': out, 'phases': phases, 'step_deg': step, 'observer': obs_desc,
+        'warnings': warnings, 'elapsed_s': time.time() - t0, 'ephemeris': ctx.ephemeris_name,
+        'delta_t_override': ctx.delta_t_override, 'params': params.as_dict(),
+        'start': req.start, 'end': req.end,
     })
 
 

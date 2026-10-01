@@ -29,9 +29,9 @@ SATELLITES = [
     {'label': '中国宇宙ステーション 天宮', 'spec': {'type': 'celestrak', 'norad': 48274, 'name': 'Tiangong'}},
     {'label': 'ひまわり9号 (静止 140.7°E)', 'spec': {'type': 'geo', 'lon': 140.7, 'name': 'ひまわり9号'}},
     {'label': 'GOES-19 (静止 75.2°W)', 'spec': {'type': 'geo', 'lon': -75.2, 'name': 'GOES-East'}},
-    {'label': '太陽同期軌道 高度700km (仮想)', 'spec': {
+    {'label': '太陽同期軌道 高度700km・昇交点18時 (仮想)', 'spec': {
         'type': 'kepler', 'name': '太陽同期 700km', 'perigee_alt_km': 700, 'apogee_alt_km': 700,
-        'i_deg': 98.19, 'raan_deg': 0, 'argp_deg': 0, 'm_deg': 0}},
+        'sso': True, 'ltan_h': 18.0, 'argp_deg': 0, 'm_deg': 0}},
     {'label': '準天頂軌道 (仮想・みちびき型)', 'spec': {
         'type': 'kepler', 'name': '準天頂軌道', 'a_km': 42164.0, 'e': 0.075, 'i_deg': 41.0,
         'raan_deg': 0, 'argp_deg': 270, 'm_deg': 0}},

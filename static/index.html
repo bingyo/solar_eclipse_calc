@@ -92,16 +92,34 @@
               <textarea id="tleText" rows="3" spellcheck="false" placeholder="ISS (ZARYA)&#10;1 25544U 98067A   ...&#10;2 25544  51.64 ..."></textarea></label>
           </div>
           <div class="sat-pane" data-sat="kepler" hidden>
-            <label class="field">元期 (UTC)<input id="kEpoch" type="datetime-local" step="1"></label>
+            <label class="field">元期 (UTC)<input id="kEpoch" type="datetime-local" step="1">
+              <small>この時刻での軌道です（打ち上げ前なら軌道投入の予定日など）</small></label>
             <div class="grid2">
               <label class="field">近地点高度 (km)<input id="kPeri" type="number" step="any" value="700"></label>
               <label class="field">遠地点高度 (km)<input id="kApo" type="number" step="any" value="700"></label>
-              <label class="field">軌道傾斜角 (°)<input id="kInc" type="number" step="any" value="98.19"></label>
-              <label class="field">昇交点赤経 (°)<input id="kRaan" type="number" step="any" value="0"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="kSso" checked> 太陽同期軌道（傾斜角を高度から自動で決める）</label>
+            <div class="grid2">
+              <label class="field">軌道傾斜角 (°)<input id="kInc" type="number" step="any" value="98.19"><small id="kIncNote"></small></label>
+              <label class="field">軌道面の指定<select id="kPlane"><option value="ltan">昇交点の地方時</option><option value="raan">昇交点赤経</option></select></label>
+              <label class="field" id="kLtanWrap">昇交点の地方時<input id="kLtan" type="time" step="60" value="18:00">
+                <small>平均太陽時。18:00 は夕方側で北上</small></label>
+              <label class="field" id="kRaanWrap" hidden>昇交点赤経 (°)<input id="kRaan" type="number" step="any" value="0"></label>
               <label class="field">近地点引数 (°)<input id="kArgp" type="number" step="any" value="0"></label>
-              <label class="field">平均近点角 (°)<input id="kM" type="number" step="any" value="0"></label>
+              <label class="field">平均近点角 (°)<input id="kM" type="number" step="any" value="0">
+                <small>元期に衛星が軌道上のどこにいるか</small></label>
             </div>
             <label class="check"><input type="checkbox" id="kJ2" checked> 地球の扁平(J2)による軌道面の歳差を考慮</label>
+            <label class="check"><input type="checkbox" id="kSweep"> 平均近点角を変えて一括計算（打ち上げ前の検討）</label>
+            <label class="field" id="kSweepWrap" hidden>平均近点角の刻み
+              <select id="kSweepStep">
+                <option value="5">5°（72 通り）</option>
+                <option value="10" selected>10°（36 通り）</option>
+                <option value="15">15°（24 通り）</option>
+                <option value="30">30°（12 通り）</option>
+                <option value="45">45°（8 通り）</option>
+              </select>
+              <small>衛星が軌道上のどこにいても起こりうる結果の範囲を、現象ごとにまとめます（期間は 1 年以内）。</small></label>
             <p class="hint">GCRS（J2000赤道）基準の平均要素。計画中・仮想の衛星の検討向けです。</p>
           </div>
           <div class="sat-pane" data-sat="geo" hidden>
@@ -196,6 +214,7 @@
         <button type="button" data-example="iss">ISS（国際宇宙ステーション）から見える日食</button>
         <button type="button" data-example="geo">静止衛星ひまわり9号から見える日食</button>
         <button type="button" data-example="hinode">「ひので」が軌道上で見た 2011年1月4日の金環日食</button>
+        <button type="button" data-example="prelaunch">打ち上げ前の検討：太陽同期軌道 680 km から 2027年に見える日食</button>
       </div>
       <ul class="features">
         <li><b>高精度</b>: JPL DE440 暦、光行時間・ΔT・地球楕円体（WGS84）を厳密に扱い、接触時刻を 0.1 ms まで追い込みます。</li>
@@ -215,8 +234,19 @@
         <div id="warnings" class="warnings"></div>
         <div class="filters" id="filters"></div>
       </div>
-      <div class="card table-card">
+      <div class="card table-card" id="listCard">
         <div class="table-wrap"><table id="eventTable" class="events"></table></div>
+      </div>
+      <div id="sweepArea" hidden>
+        <div class="card table-card">
+          <div class="table-wrap"><table id="sweepTable" class="events"></table></div>
+        </div>
+        <div class="card sweep-detail" id="sweepDetail" hidden>
+          <h3 id="sweepTitle"></h3>
+          <p id="sweepSub" class="muted"></p>
+          <div id="sweepChart" class="sweep-chart"></div>
+          <div class="table-wrap"><table id="sweepPhaseTable" class="events"></table></div>
+        </div>
       </div>
     </div>
 
@@ -285,7 +315,7 @@
     <h3>基本の流れ</h3>
     <ol>
       <li>計算したい現象（日食・水星・金星）にチェックを入れます。</li>
-      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID で指定します。「地球全体」は世界のどこかで見られる現象を探します。</li>
+      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID で指定します。打ち上げ前の衛星は「軌道要素」に計画値を入れ、「平均近点角を変えて一括計算」を使うと、衛星が軌道上のどこにいても起こりうる結果の範囲が分かります。「地球全体」は世界のどこかで見られる現象を探します。</li>
       <li>期間を指定して「計算する」。一覧の行をクリックすると詳細が開きます。</li>
     </ol>
     <h3>用語</h3>

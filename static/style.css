@@ -260,3 +260,13 @@ dialog::backdrop { background: rgba(15, 20, 32, .45); }
 .help dd { margin: 2px 0 0 0; color: var(--ink2); }
 .help li { margin: 4px 0; color: var(--ink2); }
 .right { text-align: right; margin-top: 14px; }
+
+/* phase sweep */
+.sweep-detail h3 { font-size: 15px; margin: 0 0 4px; }
+.sweep-detail > .muted { font-size: 12px; margin: 0 0 10px; }
+.sweep-chart { overflow-x: auto; margin-bottom: 8px; }
+.sweep-chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.sweep-chart .grid { stroke: var(--line); stroke-width: 1; }
+.sweep-chart .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 4 3; }
+.sweep-chart .tick { fill: var(--muted); font-size: 11px; }
+.sweep-chart .axis { fill: var(--ink2); font-size: 12px; }
