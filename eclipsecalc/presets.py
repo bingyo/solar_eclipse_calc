@@ -44,6 +44,8 @@ SATELLITES = [
         'type': 'horizons', 'command': '-21', 'step_min': 60, 'name': 'SOHO'}},
     {'label': 'ISS (Horizons -125544)', 'spec': {
         'type': 'horizons', 'command': '-125544', 'step_min': 2, 'name': 'ISS (Horizons)'}},
+    {'label': '太陽観測衛星ひので (SSCWeb の過去軌道)', 'spec': {
+        'type': 'sscweb', 'id': 'hinode', 'name': 'ひので'}},
 ]
 
 

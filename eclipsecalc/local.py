@@ -32,7 +32,7 @@ from .constants import (AU_KM, DAY_S, MERCURY_RADIUS, MOON_K_EXTERNAL, MOON_K_IN
                         RAD2ARCSEC, SUN_RADIUS_IAU2015, VENUS_RADIUS, WGS84_A, WGS84_B)
 from .conjunctions import BODY_MIN_DISTANCE_KM, find_conjunctions, geocentric_min_separation
 from .geometry import angle_between, magnitude, norm, obscuration
-from .observers import HorizonsObserver, ObserverError
+from .observers import HorizonsObserver, ObserverError, SSCWebObserver
 from .saros import saros_number
 from .timeutil import iso_utc
 
@@ -338,6 +338,20 @@ class LocalSearch:
                                      f'{iso_utc(self.ctx.ts.tt_jd(a2))[:10]}〜{iso_utc(self.ctx.ts.tt_jd(b2))[:10]}）'
                                      'に限定して計算しました')
                 self.jd_a, self.jd_b = a2, b2
+            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
+        elif isinstance(self.observer, SSCWebObserver):
+            cov = self.observer.coverage_jd()
+            if cov and (cov[0] > self.jd_a - margin or cov[1] < self.jd_b + margin):
+                a2 = max(self.jd_a, cov[0] + margin + 0.01)
+                b2 = min(self.jd_b, cov[1] - margin - 0.01)
+                period = (f'{iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10]}〜'
+                          f'{iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10]}')
+                if b2 <= a2:
+                    raise ObserverError(f'指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）')
+                self.warnings.append(f'NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました')
+                self.jd_a, self.jd_b = a2, b2
+            if not self.observer.surveyed:
+                self.observer.survey(self.jd_a, self.jd_b)
             self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
         wins, _ = candidate_windows(ctx, self.observer, self.body, self.jd_a - margin,
                                     self.jd_b + margin, self.p)

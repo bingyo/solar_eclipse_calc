@@ -22,7 +22,7 @@ function el(tag, attrs = {}, ...children) {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  info: null, obsTab: 'ground', satMode: 'celestrak', fetchedTle: null,
+  info: null, obsTab: 'ground', satMode: 'celestrak', fetchedTle: null, sscSats: null,
   result: null, filters: new Set(), selectedId: null,
   detail: null, local: null, stack: [], rootId: null,
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
@@ -212,6 +212,7 @@ async function init() {
   $$('#obsTabs button').forEach((b) => b.addEventListener('click', () => setObsTab(b.dataset.obs)));
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
   $('#fetchTle').addEventListener('click', fetchTle);
+  $('#sscId').addEventListener('change', () => showSscInfo(true));
   $('#pickToggle').addEventListener('click', togglePickMap);
   $$('#quickRange button').forEach((b) => b.addEventListener('click', () => quickRange(b)));
   $('#dtMode').addEventListener('change', () => { $('#dtValue').disabled = $('#dtMode').value !== 'manual'; });
@@ -248,6 +249,32 @@ function setSatMode(mode) {
   state.satMode = mode;
   $$('#satModes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   $$('.sat-pane').forEach((p) => { p.hidden = p.dataset.sat !== mode; });
+  if (mode === 'sscweb') loadSscList();
+}
+async function loadSscList() {
+  if (state.sscSats) { showSscInfo(false); return; }
+  const box = $('#sscInfo');
+  box.hidden = false;
+  box.innerHTML = '<span class="spinner"></span>NASA SSCWeb の衛星一覧を取得中…';
+  try {
+    const d = await api('/api/sscweb/satellites');
+    state.sscSats = d.satellites;
+    const dl = $('#sscList');
+    dl.replaceChildren(...d.satellites.map((s) => el('option', { value: s.id, label: `${s.name}（${s.start.slice(0, 10)}〜${s.end.slice(0, 10)}）` })));
+    showSscInfo(false);
+  } catch (err) {
+    box.innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`;
+  }
+}
+function showSscInfo(setName) {
+  const box = $('#sscInfo');
+  if (!state.sscSats) return;
+  const id = $('#sscId').value.trim().toLowerCase();
+  const s = state.sscSats.find((x) => x.id === id);
+  box.hidden = !id;
+  if (!s) { box.innerHTML = `<span style="color:var(--err)">「${esc(id)}」は SSCWeb の衛星一覧にありません</span>`; return; }
+  if (setName) $('#satName').value = s.name;
+  box.innerHTML = `<b>${esc(s.name)}</b><br>軌道データ: ${s.start.slice(0, 10)} 〜 ${s.end.slice(0, 10)}（${s.resolution_s} 秒間隔）`;
 }
 function applySatSpec(spec) {
   $('#satName').value = spec.name || '';
@@ -256,6 +283,7 @@ function applySatSpec(spec) {
   if (spec.type === 'celestrak') { setSatMode('celestrak'); $('#norad').value = spec.norad; }
   else if (spec.type === 'geo') { setSatMode('geo'); $('#geoLon').value = spec.lon; }
   else if (spec.type === 'horizons') { setSatMode('horizons'); $('#hzId').value = spec.command; $('#hzStep').value = spec.step_min; }
+  else if (spec.type === 'sscweb') { $('#sscId').value = spec.id; setSatMode('sscweb'); }
   else if (spec.type === 'kepler') {
     setSatMode('kepler');
     let peri = spec.perigee_alt_km, apo = spec.apogee_alt_km;
@@ -348,6 +376,10 @@ function buildRequest() {
       };
     } else if (m === 'geo') {
       observer = { type: 'geo', lon: num('#geoLon'), name };
+    } else if (m === 'sscweb') {
+      const id = $('#sscId').value.trim().toLowerCase();
+      if (!id) throw new Error('NASA SSCWeb の衛星 ID を入力してください（例: hinode）');
+      observer = { type: 'sscweb', id, name };
     } else {
       observer = { type: 'horizons', command: $('#hzId').value.trim(), step_min: num('#hzStep', 5), name };
     }
@@ -377,6 +409,7 @@ async function runSearch() {
   const btn = $('#runBtn');
   btn.disabled = true;
   const msg = req.observer.type === 'horizons' ? 'JPL Horizons から軌道を取得して計算中…' :
+    req.observer.type === 'sscweb' ? 'NASA SSCWeb から軌道を取得して計算中…' :
     req.observer.type === 'celestrak' ? 'CelesTrak から TLE を取得して計算中…' : '計算中…';
   setStatus(st, msg, 'busy');
   try {
@@ -416,6 +449,10 @@ function runExample(name) {
   } else if (name === 'geo') {
     setObsTab('space'); applySatSpec(state.info.satellites[3].spec);
     $('#start').value = isoDate(now); $('#end').value = isoDate(addYears(now, 10));
+  } else if (name === 'hinode') {
+    setObsTab('space'); applySatSpec(state.info.satellites.find((s) => s.spec.type === 'sscweb').spec);
+    $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
+    $('#start').value = '2011-01-04'; $('#end').value = '2011-01-05';
   }
   runSearch();
 }
@@ -428,7 +465,7 @@ function observerText(o) {
   if (o.kind === 'global') return '地球全体';
   if (o.kind === 'ground') return `${o.name}（${fmtLatLon(o.lat, o.lon)}・標高 ${Math.round(o.elevation_m)} m）`;
   if (o.kind === 'geocenter') return '地球中心';
-  const model = { tle: 'TLE/SGP4', kepler: '軌道要素', fixed: '地球固定位置', horizons: 'JPL Horizons' }[o.model] || '';
+  const model = { tle: 'TLE/SGP4', kepler: '軌道要素', fixed: '地球固定位置', horizons: 'JPL Horizons', sscweb: 'NASA SSCWeb' }[o.model] || '';
   let s = `${o.name}（${model}`;
   if (o.perigee_km != null) s += `・高度 ${o.perigee_km.toFixed(0)}〜${o.apogee_km.toFixed(0)} km`;
   if (o.model === 'fixed') s += `・${fmtLon(o.lon)}・高度 ${o.height_km.toFixed(0)} km`;

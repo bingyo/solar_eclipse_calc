@@ -78,6 +78,7 @@
             <button type="button" data-mode="kepler">軌道要素</button>
             <button type="button" data-mode="geo">静止衛星</button>
             <button type="button" data-mode="horizons">JPL Horizons</button>
+            <button type="button" data-mode="sscweb">NASA SSCWeb</button>
           </div>
           <div class="sat-pane" data-sat="celestrak">
             <div class="row">
@@ -113,6 +114,12 @@
               <label class="field">位置の刻み (分)<input id="hzStep" type="number" value="60" min="1"></label>
             </div>
             <p class="hint">JPL Horizons の探査機・衛星の精密軌道を使います（例: -170 JWST、-21 SOHO、-125544 ISS）。地球近傍の衛星は刻みを 1〜2 分に。</p>
+          </div>
+          <div class="sat-pane" data-sat="sscweb" hidden>
+            <label class="field">SSCWeb の衛星 ID<input id="sscId" type="text" value="hinode" list="sscList" autocomplete="off" spellcheck="false"></label>
+            <datalist id="sscList"></datalist>
+            <div id="sscInfo" class="satinfo" hidden></div>
+            <p class="hint">NASA SSCWeb（衛星状況センター）が公開している科学衛星の過去の軌道（おもに 1 分間隔）を使います。CelesTrak からは最新の TLE しか取れないため、過去に衛星から見えた日食・太陽面通過を調べるときに使います（例: hinode ひので、iris、iss）。軌道データのない期間は自動的に除きます。</p>
           </div>
           <label class="field">衛星名（任意）<input id="satName" type="text" value="ISS"></label>
           <div id="satInfo" class="satinfo" hidden></div>
@@ -188,10 +195,11 @@
         <button type="button" data-example="global">2001〜2100年の世界の日食と太陽面通過</button>
         <button type="button" data-example="iss">ISS（国際宇宙ステーション）から見える日食</button>
         <button type="button" data-example="geo">静止衛星ひまわり9号から見える日食</button>
+        <button type="button" data-example="hinode">「ひので」が軌道上で見た 2011年1月4日の金環日食</button>
       </div>
       <ul class="features">
         <li><b>高精度</b>: JPL DE440 暦、光行時間・ΔT・地球楕円体（WGS84）を厳密に扱い、接触時刻を 0.1 ms まで追い込みます。</li>
-        <li><b>人工衛星から</b>: TLE（SGP4）、軌道要素、静止衛星、JPL Horizons の探査機軌道に対応。地球に隠される時間も考慮します。</li>
+        <li><b>人工衛星から</b>: TLE（SGP4）、軌道要素、静止衛星、JPL Horizons の探査機軌道、NASA SSCWeb の過去軌道に対応。地球に隠される時間も考慮します。</li>
         <li><b>地図</b>: 皆既帯・金環帯の経路と限界線、部分食の食分分布、太陽面通過の可視地域を表示します。</li>
       </ul>
     </div>
@@ -277,7 +285,7 @@
     <h3>基本の流れ</h3>
     <ol>
       <li>計算したい現象（日食・水星・金星）にチェックを入れます。</li>
-      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID で指定します。「地球全体」は世界のどこかで見られる現象を探します。</li>
+      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID で指定します。「地球全体」は世界のどこかで見られる現象を探します。</li>
       <li>期間を指定して「計算する」。一覧の行をクリックすると詳細が開きます。</li>
     </ol>
     <h3>用語</h3>

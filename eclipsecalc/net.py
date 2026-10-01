@@ -15,8 +15,8 @@ def ssl_context():
         return None
 
 
-def urlopen(url, timeout):
-    req = urllib.request.Request(url, headers={'User-Agent': 'eclipsecalc/1.0'})
+def urlopen(url, timeout, headers=None):
+    req = urllib.request.Request(url, headers={'User-Agent': 'eclipsecalc/1.0', **(headers or {})})
     return urllib.request.urlopen(req, timeout=timeout, context=ssl_context())
 
 

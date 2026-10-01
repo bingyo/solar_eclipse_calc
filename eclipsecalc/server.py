@@ -19,8 +19,8 @@ from .context import DEFAULT_EPHEMERIS, ROOT_DIR, available_ephemerides, get_con
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
 from .local import LocalSearch, Params
-from .observers import (GeocenterObserver, GroundObserver, ObserverError, build_observer,
-                        fetch_tle_celestrak, TLEObserver)
+from .observers import (GeocenterObserver, GroundObserver, ObserverError, SSCWebObserver,
+                        TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
 from .presets import SATELLITES, cities
 from .timeutil import iso_from_jd, parse_utc
 
@@ -166,6 +166,14 @@ def tle(norad: int):
     return d
 
 
+@app.get('/api/sscweb/satellites')
+def sscweb_satellites():
+    try:
+        return {'satellites': ssc_satellites()}
+    except ObserverError as exc:
+        raise HTTPException(502, str(exc))
+
+
 @app.post('/api/search')
 def search(req: SearchRequest):
     t0 = time.time()
@@ -210,7 +218,7 @@ def search(req: SearchRequest):
                     continue
                 ls = LocalSearch(ctx, observer, body, params, jd_a, jd_b)
                 found = ls.run()
-                warnings += ls.warnings
+                warnings += [w for w in ls.warnings if w not in warnings]
                 for ev in found:
                     eid = _put({'kind': 'local', 'event': ev, 'search': ls,
                                 'ctx': ctx, 'params': params, 'observer': observer,
@@ -221,6 +229,8 @@ def search(req: SearchRequest):
                         s['observer_kind'] = 'geocenter'
                     s['warnings'] = observer.warnings_for(ctx, ev['jd_max'])
                     events.append(s)
+            if isinstance(observer, SSCWebObserver):
+                obs_desc = observer.describe()       # orbit size is known after the search
         except ObserverError as exc:
             raise HTTPException(400, str(exc))
         except HTTPException:

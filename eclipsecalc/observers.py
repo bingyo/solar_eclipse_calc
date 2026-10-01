@@ -11,9 +11,11 @@ Supported observers:
   * KeplerObserver   - two-body orbit with J2 secular perturbations
   * FixedITRSObserver - Earth-fixed point in space (e.g. geostationary slot)
   * HorizonsObserver - any spacecraft with a JPL Horizons ephemeris
+  * SSCWebObserver   - historical orbit of a satellite from NASA SSCWeb
 """
 import json
 import math
+import time
 import urllib.parse
 
 import numpy as np
@@ -425,6 +427,242 @@ class HorizonsObserver(Observer):
 
 
 # ---------------------------------------------------------------------------
+# NASA SSCWeb (Satellite Situation Center) - historical orbits
+# ---------------------------------------------------------------------------
+SSC_URL = 'https://sscweb.gsfc.nasa.gov/WS/sscr/2/locations/{sat}/{a},{b}/geij2000/'
+
+
+def _ssc_request(sat, utc_a, utc_b):
+    """Geocentric GEI J2000 positions (km) of SSCWeb satellite ``sat`` between
+    two datetimes (UTC). Returns (list of ISO UTC strings, (3, N) array)."""
+    url = SSC_URL.format(sat=urllib.parse.quote(sat), a=utc_a.strftime('%Y%m%dT%H%M%SZ'),
+                         b=utc_b.strftime('%Y%m%dT%H%M%SZ'))
+    with _urlopen(url, 120, {'Accept': 'application/json'}) as resp:
+        payload = json.loads(resp.read().decode('utf-8'))
+    # SSCWeb's JSON wraps every object as ["java.class.Name", {...}].
+    result = payload[1]['Result'][1]
+    if result.get('StatusCode') != 'SUCCESS':
+        text = result.get('StatusText', ['', []])[1]
+        raise ObserverError(f'NASA SSCWeb からデータを取得できませんでした: {" ".join(text) or result}')
+    data = result.get('Data', ['', []])[1]
+    if not data:
+        raise ObserverError(f'NASA SSCWeb に {sat} の {utc_a:%Y-%m-%d %H:%M}〜{utc_b:%Y-%m-%d %H:%M} '
+                            'の軌道データがありません')
+    sd = data[0][1]
+    coords = next(c[1] for c in sd['Coordinates'][1] if c[1]['CoordinateSystem'] == 'GEI_J_2000')
+    xyz = np.array([coords['X'][1], coords['Y'][1], coords['Z'][1]], float)
+    times = [t[1] for t in sd['Time'][1]]
+    return times, xyz
+
+
+class _SampledVF(VectorFunction):
+    """8-point Lagrange interpolation of tabulated geocentric positions
+    (TT Julian dates); velocities are the derivative of the interpolant."""
+    center = 399
+    ephemeris = None
+    NPT = 8
+
+    def __init__(self, name):
+        self.target = name
+        self.jd = np.zeros(0)
+        self.pos = np.zeros((3, 0))
+
+    def add(self, jd, pos):
+        jd = np.concatenate([self.jd, jd])
+        pos = np.concatenate([self.pos, pos], axis=1)
+        order = np.argsort(jd, kind='stable')
+        jd, pos = jd[order], pos[:, order]
+        keep = np.concatenate([[True], np.diff(jd) > 1e-9])
+        self.jd, self.pos = jd[keep], pos[:, keep]
+
+    def covers(self, a, b):
+        if self.jd.size < self.NPT:
+            return False
+        i, j = np.searchsorted(self.jd, [a, b])
+        if i == 0 or j >= self.jd.size:
+            return False
+        # no gap longer than 3 samples inside [a, b]
+        seg = self.jd[i - 1:j + 1]
+        return float(np.max(np.diff(seg))) <= 3.5 * float(np.median(np.diff(self.jd)))
+
+    def _at(self, t):
+        jd0 = self.jd[0]
+        x = np.asarray((t.whole - jd0) + t.tt_fraction, float)
+        shape = x.shape
+        x = np.atleast_1d(x) * DAY_S
+        nodes = (self.jd - jd0) * DAY_S
+        n = self.NPT
+        if nodes.size < n or np.any(x < nodes[0] - 1e-3) or np.any(x > nodes[-1] + 1e-3):
+            raise ObserverError('NASA SSCWeb の取得範囲外の時刻が要求されました')
+        i0 = np.clip(np.searchsorted(nodes, x) - n // 2, 0, nodes.size - n)
+        idx = i0[:, None] + np.arange(n)[None, :]             # (N, n)
+        X = nodes[idx]
+        d = x[:, None] - X                                     # (N, n)
+        L = np.empty_like(d)
+        dL = np.empty_like(d)
+        for j in range(n):
+            others = [m for m in range(n) if m != j]
+            den = np.prod([X[:, j] - X[:, m] for m in others], axis=0)
+            L[:, j] = np.prod([d[:, m] for m in others], axis=0) / den
+            dL[:, j] = sum(np.prod([d[:, m] for m in others if m != k], axis=0)
+                           for k in others) / den
+        P = self.pos[:, idx]                                   # (3, N, n)
+        p = np.sum(P * L[None], axis=2).reshape((3,) + shape)
+        v = np.sum(P * dL[None], axis=2).reshape((3,) + shape)
+        return p / AU_KM, v * AU_PER_DAY_PER_KM_S, None, None
+
+
+SSC_OBSERVATORIES_URL = 'https://sscweb.gsfc.nasa.gov/WS/sscr/2/observatories'
+_ssc_list = None
+
+
+def ssc_satellites(max_age_days=7.0):
+    """Satellites available from SSCWeb: [{'id', 'name', 'start', 'end',
+    'resolution_s'}] (cached in data/cache for a week)."""
+    global _ssc_list
+    path = CACHE_DIR / 'ssc_observatories.json'
+    if _ssc_list is not None:
+        return _ssc_list
+    fresh = path.exists() and (time.time() - path.stat().st_mtime) < max_age_days * DAY_S
+    if not fresh:
+        try:
+            with _urlopen(SSC_OBSERVATORIES_URL, 60, {'Accept': 'application/json'}) as resp:
+                raw = resp.read().decode('utf-8')
+            json.loads(raw)
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            path.write_text(raw, encoding='utf-8')
+        except Exception as exc:
+            if not path.exists():
+                raise ObserverError(f'NASA SSCWeb の衛星一覧を取得できませんでした: {exc}')
+    payload = json.loads(path.read_text(encoding='utf-8'))
+    out = []
+    for item in payload[1]['Observatory'][1]:
+        o = item[1]
+        out.append({'id': o['Id'], 'name': o['Name'], 'start': o['StartTime'][1][:19] + 'Z',
+                    'end': o['EndTime'][1][:19] + 'Z', 'resolution_s': o.get('Resolution')})
+    out.sort(key=lambda o: o['name'].lower())
+    _ssc_list = out
+    return out
+
+
+class SSCWebObserver(Observer):
+    """Satellite whose (historical) orbit is taken from NASA SSCWeb.
+
+    CelesTrak only serves the latest TLE, so past events seen from a
+    satellite (e.g. eclipses observed by Hinode) need archived orbits.
+    SSCWeb tabulates positions (mostly every 60 s) for about 300 science
+    satellites and spacecraft.
+    """
+    needs_network = True
+    CHUNK_DAYS = 7.0          # longest single request
+    SURVEY_MAX_DAYS = 15.0    # longest orbit sampled to learn the distance range
+    MAX_DAYS = 400.0          # total data fetched for one search
+
+    def __init__(self, ctx, sat_id, name=''):
+        sat_id = str(sat_id).strip().lower()
+        if not sat_id:
+            raise ObserverError('SSCWeb の衛星 ID を指定してください（例: hinode）')
+        self.sat_id = sat_id
+        self.name = name or f'SSCWeb {sat_id}'
+        self.ctx = ctx
+        self.vf = _SampledVF(self.name)
+        self.surveyed = False
+        self.r_min_km = WGS84_A
+        self.r_max_km = WGS84_A
+        self.v_max_km_s = 8.0
+        self.period_min = 90.0
+        self.r_range = None
+
+    def coverage_jd(self):
+        """(start, end) TT Julian dates of the SSCWeb orbit, or None if the
+        satellite list cannot be obtained."""
+        try:
+            sats = ssc_satellites()
+        except ObserverError:
+            return None
+        sat = next((o for o in sats if o['id'] == self.sat_id), None)
+        if sat is None:
+            raise ObserverError(f'NASA SSCWeb に衛星 ID「{self.sat_id}」はありません')
+        t = [self.ctx.ts.utc(int(x[0:4]), int(x[5:7]), int(x[8:10]), int(x[11:13]), int(x[14:16]),
+                             int(x[17:19])) for x in (sat['start'], sat['end'])]
+        return float(t[0].tt), float(t[1].tt)
+
+    def _fetch_one(self, jd_a, jd_b):
+        ts = self.ctx.ts
+        ua = ts.tt_jd(jd_a).utc_datetime().replace(microsecond=0, tzinfo=None)
+        ub = ts.tt_jd(jd_b).utc_datetime().replace(microsecond=0, tzinfo=None)
+        key = f'ssc_{self.sat_id}_{ua:%Y%m%dT%H%M%S}_{ub:%Y%m%dT%H%M%S}'
+        safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in key)
+        path = CACHE_DIR / f'{safe}.npz'
+        if path.exists():
+            d = np.load(path)
+            return d['jd'], d['pos']
+        times, xyz = _ssc_request(self.sat_id, ua, ub)
+        t = ts.utc([int(s[0:4]) for s in times], [int(s[5:7]) for s in times],
+                   [int(s[8:10]) for s in times], [int(s[11:13]) for s in times],
+                   [int(s[14:16]) for s in times], [float(s[17:23]) for s in times])
+        jd = np.asarray(t.tt, float)
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(path, jd=jd, pos=xyz)
+        return jd, xyz
+
+    def _fetch(self, jd_a, jd_b):
+        n = max(1, int(math.ceil((jd_b - jd_a) / self.CHUNK_DAYS)))
+        edges = np.linspace(jd_a, jd_b, n + 1)
+        parts = [self._fetch_one(a, b) for a, b in zip(edges[:-1], edges[1:])]
+        return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts], axis=1)
+
+    def survey(self, jd_a, jd_b):
+        """Learn the distance range from (at least) one full orbit at the start
+        of the search interval."""
+        jd, pos = self._fetch(jd_a, jd_a + 1.0)
+        r0 = float(norm(pos[:, 0]))
+        v0 = float(norm(pos[:, 1] - pos[:, 0])) / ((jd[1] - jd[0]) * DAY_S)
+        inv_a = 2.0 / r0 - v0 * v0 / GM_EARTH
+        if inv_a > 0:
+            period_d = 2 * math.pi * math.sqrt(inv_a ** -3 / GM_EARTH) / DAY_S
+            if period_d > 0.9:
+                extra = min(1.2 * period_d, self.SURVEY_MAX_DAYS)
+                jd2, pos2 = self._fetch(jd_a + 1.0, jd_a + extra)
+                jd, pos = np.concatenate([jd, jd2]), np.concatenate([pos, pos2], axis=1)
+        self.vf.add(jd, pos)
+        r = norm(pos)
+        v = norm(np.diff(pos, axis=1)) / (np.diff(jd) * DAY_S)
+        self.r_range = (float(r.min()), float(r.max()))
+        self.r_min_km = max(float(r.min()) * 0.97, WGS84_A)
+        self.r_max_km = float(r.max()) * 1.03
+        self.v_max_km_s = float(v.max()) * 1.05
+        a = 0.5 * (r.min() + r.max())
+        self.period_min = 2 * math.pi * math.sqrt(a ** 3 / GM_EARTH) / 60.0
+        self.surveyed = True
+
+    def prepare(self, ctx, jd_windows):
+        pad = 10.0 / 1440.0
+        todo = [(a, b) for a, b in jd_windows if not self.vf.covers(a - pad / 2, b + pad / 2)]
+        days = sum(b - a for a, b in todo)
+        if days > self.MAX_DAYS:
+            raise ObserverError(f'NASA SSCWeb から取得する軌道データが多すぎます（{days:.0f} 日分）。'
+                                '期間を短くしてください')
+        for a, b in todo:
+            jd, pos = self._fetch(a - pad, b + pad)
+            self.vf.add(jd, pos)
+        for a, b in jd_windows:
+            if not self.vf.covers(a - 1e-4, b + 1e-4):
+                raise ObserverError('NASA SSCWeb から必要な期間の軌道データを取得できませんでした'
+                                    '（欠損または提供期間外の可能性があります）')
+
+    def char_time_s(self):
+        return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
+
+    def describe(self):
+        d = {'kind': 'space', 'model': 'sscweb', 'name': self.name, 'id': self.sat_id}
+        if self.surveyed:
+            d.update(period_min=self.period_min, perigee_km=self.r_range[0] - WGS84_A,
+                     apogee_km=self.r_range[1] - WGS84_A)
+        return d
+
+
+# ---------------------------------------------------------------------------
 # CelesTrak TLE lookup
 # ---------------------------------------------------------------------------
 def fetch_tle_celestrak(norad_id):
@@ -476,4 +714,6 @@ def build_observer(ctx, spec, parse_time=None):
                               float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name)
     if kind == 'horizons':
         return HorizonsObserver(ctx, spec['command'], int(spec.get('step_min', 5) or 5), name)
+    if kind == 'sscweb':
+        return SSCWebObserver(ctx, spec['id'], name)
     raise ObserverError(f'不明な観測者タイプです: {kind}')

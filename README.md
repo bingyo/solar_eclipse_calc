@@ -27,7 +27,7 @@ python tools/download_ephemeris.py de440
 | 観測者 | 内容 |
 |---|---|
 | 地上の地点 | 緯度・経度・標高（WGS84）。都市プリセット、地図クリックでの地点選択。地平線・大気差・最低太陽高度を考慮 |
-| 人工衛星 | NORAD 番号で CelesTrak から最新 TLE を取得（SGP4）／TLE 貼り付け／ケプラー軌道要素（J2 永年摂動つき）／理想静止衛星／JPL Horizons の任意探査機（JWST、SOHO 等）。**地球による太陽の遮蔽**（大気高度も指定可）を考慮 |
+| 人工衛星 | NORAD 番号で CelesTrak から最新 TLE を取得（SGP4）／TLE 貼り付け／ケプラー軌道要素（J2 永年摂動つき）／理想静止衛星／JPL Horizons の任意探査機（JWST、SOHO 等）／NASA SSCWeb の科学衛星の過去軌道（「ひので」等。過去の現象の再現用）。**地球による太陽の遮蔽**（大気高度も指定可）を考慮 |
 | 地球全体 | 世界のどこかで見える日食を全探索（種類・γ・食分・最大食地点・中心食継続時間・中心食帯幅・サロス番号）。太陽面通過は地心接触時刻 |
 
 結果画面:
@@ -59,6 +59,18 @@ NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validatio
 
 さらに、地図用の「影の円錐」モデルで求めた皆既帯の限界線を、独立した地点計算（Skyfield による地上観測者の視位置）で検証しています。限界線の 100 m 外側は部分日食、100 m 内側は皆既日食になることを確認しています。
 
+### 太陽観測衛星「ひので」の実観測との比較
+
+「ひので」（高度約 680 km）が 2006〜2017 年に軌道上で遭遇した日食・太陽面通過を、NASA SSCWeb の過去軌道を使って計算し、実際の観測画像と国立天文台の予報に照らしました（`python tests/test_hinode.py`、画像の測定は `python tools/validate_hinode_images.py`。詳細は [docs/hinode_validation.md](docs/hinode_validation.md)）。
+
+| 比較対象 | 結果 |
+|---|---|
+| X 線望遠鏡の画像に写った月の位置（2014・2016・2017 年） | 実際の現象との差 0.4〜3.5 秒（軌道の沿軌道誤差 3〜28 km 相当）。画像の回転角は太陽の自転軸方位角と 0.4° 以内で一致 |
+| 国立天文台（相馬充氏）の予報 8 現象・20 パス | 現象ごとにほぼ一定の差（軌道要素の違い）。それを除いた残差は RMS 0.2〜0.65 秒 |
+| 観測報告 11 現象（食分、画像の時刻、軌道上でだけ起きた食、金星の第1接触が地球の影に入ったこと等） | すべて整合 |
+
+低軌道衛星からの食の計算精度は、ほぼ衛星の軌道の精度で決まります（沿軌道 7.5 km ≒ 1 秒）。
+
 ### 計算方法の要点
 
 - **天体位置**: JPL DE440/DE440s（Skyfield）。観測者ごとに光行時間を反復計算（10⁻¹² 日まで収束）
@@ -73,9 +85,9 @@ NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validatio
 
 - 月縁の地形（凹凸）は考慮していないため、実際の接触時刻は ±1〜2 秒程度ずれることがあります（特に皆既の始まり・終わり）。
 - 将来・過去の ΔT は不確かです。時刻そのものよりも「食が見える場所（経度）」に影響します。
-- TLE は元期から日数が経つと位置誤差が大きくなります（画面に警告を表示します）。数か月以上先の衛星からの予報は目安としてください。
+- TLE は元期から日数が経つと位置誤差が大きくなります（画面に警告を表示します）。数か月以上先の衛星からの予報は目安としてください。CelesTrak からは最新の TLE しか取得できないため、過去の現象を衛星から計算するときは当時の TLE を貼り付けるか、「NASA SSCWeb」（衛星 ID で指定。例: hinode）を使ってください。
 - 大気差は太陽高度の表示と「見えるか」の判定に使い、円盤の変形は描画していません（接触時刻には影響しません）。
-- 初回の暦ダウンロード、CelesTrak・JPL Horizons の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
+- 初回の暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
 
 ## ファイル構成
 
@@ -84,7 +96,7 @@ run.py / start.bat          起動スクリプト
 eclipsecalc/
   context.py                暦・時刻系の読み込み（暦の自動ダウンロード）
   net.py                    HTTPS 通信（OS の証明書ストアで検証）
-  observers.py              観測者モデル（地上・TLE・軌道要素・静止・Horizons）
+  observers.py              観測者モデル（地上・TLE・軌道要素・静止・Horizons・SSCWeb）
   conjunctions.py           新月・内合の探索（候補時間帯）
   local.py                  観測者ごとの接触時刻・最大・可視性の計算
   shadow.py                 ITRS での半影/本影円錐
@@ -93,17 +105,20 @@ eclipsecalc/
   server.py                 Web API（FastAPI）
 static/                     画面（HTML/CSS/JavaScript、Leaflet、Natural Earth 地図）
 tests/test_validation.py    NASA 公表値との比較テスト
+tests/test_hinode.py        「ひので」の予報・観測報告との比較テスト
+tools/validate_hinode_images.py  「ひので」の観測画像での検証
+docs/hinode_validation.md   「ひので」による検証の記録
 data/                       JPL 暦（初回起動時に自動取得、git 管理外）
 ```
 
 ### API（抜粋）
 
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
-  - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"global"}`
+  - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
 - `GET /api/event/{id}` … 接触時刻と時系列、`GET /api/event/{id}/map` … 地図データ、`POST /api/local` … 地図上の地点の見え方
 
 `http://127.0.0.1:8765/docs` で対話的な API ドキュメントを参照できます。
 
 ## データとライブラリ
 
-JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
+JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、NASA SSCWeb（衛星の過去軌道）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
