@@ -196,3 +196,7 @@ build/ dist/                配布用 ZIP の作業場所と出力先（git 管�
 ## データとライブラリ
 
 JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、NASA SSCWeb（衛星の過去軌道）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
+
+## ライセンス
+
+[MIT License](LICENSE)。同梱の Leaflet は BSD-2-Clause（[static/vendor/leaflet/LICENSE](static/vendor/leaflet/LICENSE)）です。

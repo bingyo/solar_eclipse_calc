@@ -17,6 +17,18 @@ data/*.bsp
 data/*.part
 data/cache/
 
+# Mac signing secrets (keep them outside the repository; see docs/macos_signing.md)
+signing.json
+*.p12
+*.pfx
+*.p8
+*.cer
+*.pem
+*.key
+p12-password.txt
+AuthKey_*
+app-store-connect-api-key.json
+
 # Local tool settings
 .claude/
 
