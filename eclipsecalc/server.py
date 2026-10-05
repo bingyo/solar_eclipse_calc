@@ -1,13 +1,16 @@
 """FastAPI web server: JSON API + static single-page UI."""
+import asyncio
 import itertools
+import os
+import signal
 import threading
 import time
 import traceback
 from collections import OrderedDict
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -16,7 +19,8 @@ from .constants import (MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MO
                         MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, VENUS_RADIUS,
                         VENUS_RADIUS_NASA, WGS84_A)
 from .conjunctions import find_conjunctions
-from .context import DEFAULT_EPHEMERIS, ROOT_DIR, available_ephemerides, get_context
+from .context import (DEFAULT_EPHEMERIS, DOWNLOADABLE, ROOT_DIR, available_ephemerides,
+                      ensure_ephemeris, get_context)
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
 from .local import LocalSearch, Params
@@ -26,11 +30,13 @@ from .presets import SATELLITES, cities
 from .timeutil import iso_from_jd, parse_utc
 
 STATIC_DIR = ROOT_DIR / 'static'
+APP_MODE = os.environ.get('ECLIPSECALC_APP') == '1'  # started by the macOS app (run.py --app)
 
 app = FastAPI(title='日食・太陽面通過 精密計算機', version=__version__)
 app.mount('/static', StaticFiles(directory=str(STATIC_DIR)), name='static')
 
 _compute_lock = threading.Lock()
+_download_lock = threading.Lock()
 _ids = itertools.count(1)
 _store = OrderedDict()
 _STORE_MAX = 4000
@@ -134,7 +140,10 @@ def info():
     a, b = ctx.coverage_utc()
     return {
         'version': __version__,
+        'app_mode': APP_MODE,
+        'quit_when_closed': QUIT_WHEN_CLOSED,
         'ephemerides': available_ephemerides(),
+        'downloadable_ephemerides': _downloadable_ephemerides(),
         'default_ephemeris': DEFAULT_EPHEMERIS,
         'coverage': {'start': a, 'end': b},
         'cities': cities(),
@@ -148,6 +157,92 @@ def info():
             'venus': {'iau': VENUS_RADIUS, 'nasa': VENUS_RADIUS_NASA},
         },
     }
+
+
+def _downloadable_ephemerides():
+    have = set(available_ephemerides())
+    return [{'name': n, 'description': d} for n, d in DOWNLOADABLE.items() if n not in have]
+
+
+@app.post('/api/ephemeris/download')
+def ephemeris_download(name: str):
+    """Download a JPL ephemeris into data/ (so that DE440 can be added from the UI)."""
+    if name not in DOWNLOADABLE:
+        raise HTTPException(400, f'{name} は自動ダウンロードに対応していません')
+    with _download_lock:
+        try:
+            ensure_ephemeris(name, log=lambda m: print(m, flush=True))
+        except Exception as exc:
+            raise HTTPException(502, f'JPL 暦をダウンロードできませんでした: {exc}')
+    return {'ephemerides': available_ephemerides(), 'downloadable_ephemerides': _downloadable_ephemerides()}
+
+
+# Set by run.py: stops uvicorn gracefully (os.kill with SIGINT would just terminate the process on Windows)
+request_quit = None
+_stopping = threading.Event()
+
+
+def _quit():
+    _stopping.set()
+    if request_quit is not None:
+        request_quit()
+    else:
+        os.kill(os.getpid(), signal.SIGINT)
+
+
+@app.post('/api/shutdown')
+def shutdown():
+    """Quit the server ("終了" button of the macOS app, which has no console window to close)."""
+    if not APP_MODE:
+        raise HTTPException(404, 'Not Found')
+    threading.Timer(0.3, _quit).start()
+    return {'ok': True}
+
+
+# Quit when the last page of the UI is closed.  run.py enables this when it opened the browser
+# itself (the macOS app, start.bat, start.command).  Each open page keeps this event stream open,
+# and the browser drops the connection as soon as the tab or the browser is closed.
+QUIT_WHEN_CLOSED = os.environ.get('ECLIPSECALC_QUIT_WHEN_CLOSED') == '1'
+PAGE_QUIT_GRACE_S = 10  # a reloaded page connects again well within this
+_pages = {'open': 0, 'seen': False, 'changed': 0.0}
+_pages_lock = threading.Lock()
+
+
+@app.get('/api/page/stream')
+async def page_stream(request: Request):
+    async def events():
+        with _pages_lock:
+            _pages['open'] += 1
+            _pages['seen'] = True
+        try:
+            yield 'retry: 2000\n\n'
+            ticks = 0
+            while not _stopping.is_set() and not await request.is_disconnected():
+                await asyncio.sleep(1)
+                ticks += 1
+                if ticks % 15 == 0:
+                    yield ': keep-alive\n\n'
+        finally:
+            with _pages_lock:
+                _pages['open'] -= 1
+                _pages['changed'] = time.monotonic()
+    return StreamingResponse(events(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache'})
+
+
+def _watch_pages():
+    while True:
+        time.sleep(1)
+        with _pages_lock:
+            idle = (_pages['seen'] and _pages['open'] == 0
+                    and time.monotonic() - _pages['changed'] >= PAGE_QUIT_GRACE_S)
+        if idle:
+            print('ブラウザの画面がすべて閉じられたため終了します。', flush=True)
+            _quit()
+            return
+
+
+if QUIT_WHEN_CLOSED:
+    threading.Thread(target=_watch_pages, daemon=True).start()
 
 
 @app.get('/api/ephemeris_coverage')

@@ -5,6 +5,13 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# Python runtime prepared by start.bat / start.command
+.runtime/
+
+# Distribution packages made by tools/build_bundles.py
+build/
+dist/
+
 # JPL ephemerides are large public data files; run.py downloads them on first start
 data/*.bsp
 data/*.part

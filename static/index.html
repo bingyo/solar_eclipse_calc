@@ -25,6 +25,7 @@
       <select id="tz"></select>
     </label>
     <button type="button" class="ghost" id="helpBtn">使い方・用語</button>
+    <button type="button" class="ghost" id="quitBtn" hidden>終了</button>
   </div>
 </header>
 
@@ -168,6 +169,10 @@
       <details class="card advanced">
         <summary><span class="step">4</span>詳細設定 <small class="muted">（精度・モデル）</small></summary>
         <label class="field">暦（天体位置の元データ）<select id="ephem"></select></label>
+        <div id="ephemDl" class="ephem-dl" hidden>
+          <div id="ephemDlButtons"></div>
+          <div id="ephemDlStatus" class="status"></div>
+        </div>
         <div class="grid2">
           <label class="field">ΔT（TT−UT）
             <select id="dtMode"><option value="auto">自動（IERS＋長期モデル）</option><option value="manual">手動で指定</option></select></label>

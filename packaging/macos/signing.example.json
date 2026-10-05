@@ -1,0 +1,8 @@
+{
+  "p12_file": "developer_id_application.p12",
+  "p12_password_file": "p12-password.txt",
+  "api_issuer_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "api_key_id": "XXXXXXXXXX",
+  "api_private_key_file": "AuthKey_XXXXXXXXXX.p8",
+  "bundle_id": "com.example.solareclipsecalc"
+}

@@ -5,22 +5,72 @@
 
 ## 起動
 
+Python をインストールしていなくても使えます。
+
+### 配布用パッケージ（ダウンロード不要）
+
+| OS | ファイル | 中身 |
+|---|---|---|
+| Windows 10 / 11 | `solar_eclipse_calc-<版>-windows-x64.zip`（約 66 MB） | フォルダ（`start.bat` で起動） |
+| macOS 11 以降（Apple シリコン・Intel 共通） | `solar_eclipse_calc-<版>-macos.zip`（約 120 MB） | アプリ「日食計算機」 |
+
+Python・ライブラリ・JPL 暦（1849〜2150 年）が入っているので、初回からインターネットに接続しなくても数秒で起動します。
+ブラウザで `http://127.0.0.1:8765/` が開きます（ポートが使用中の場合は、起動中の本ツールをそのまま開くか、空いているポートを自動で選びます）。
+PC の設定やインストール済みの Python には影響せず、管理者権限も不要です。
+
+**Windows**
+
+1. ZIP を右クリック →「すべて展開」し、展開したフォルダの `start.bat` をダブルクリックします。
+2. 初回に「Windows によって PC が保護されました」と表示されたら、「詳細情報」→「実行」を押します。
+3. 終了するときは、ブラウザの計算機の画面（タブ）をすべて閉じます。約 10 秒後に、起動時に開いた黒い画面（コマンドプロンプト）も自動で閉じます。黒い画面を閉じても終了できます。不要になったらフォルダごと削除してください。
+
+**Mac**
+
+1. ZIP を Safari などのブラウザでダウンロードしてダブルクリックで展開し、「日食計算機」を「アプリケーション」フォルダにドラッグします。
+2. 「日食計算機」をダブルクリックします。初回は「インターネットからダウンロードされたアプリケーションです。開いてもよろしいですか？」と表示されるので「開く」を押します。
+3. 終了するときは、計算機のタブ（またはブラウザ）を閉じるか、画面右上の「終了」を押します。タブをすべて閉じると、計算機も約 10 秒後に自動で終了します。
+
+ZIP をリモートデスクトップの「Windows App」やメッセージアプリなどから Mac に保存すると、macOS がアプリの実行を禁止し、「アプリケーション"日食計算機"を開けません」と表示されます。ブラウザでダウンロードし直してください。
+
+追加した暦などは `~/Library/Application Support/SolarEclipseCalc`、ログは `~/Library/Logs/SolarEclipseCalc.log` に保存されます。不要になったら、アプリとこのフォルダを削除してください。
+Mac 版は Apple の Developer ID で署名し、公証を受けて配布します（[作り方](docs/macos_signing.md)）。公証していない Mac 版は、初回に「"日食計算機"は開いていません」と表示されたあと、「システム設定」→「プライバシーとセキュリティ」の下にある「このまま開く」を押すと開けます。
+
+1550〜2650 年を扱う場合は、画面の「詳細設定」にある **「de440.bsp を追加」** を押すと DE440（約 114 MB）をダウンロードし、暦として選べるようになります。
+Windows で新しい版に入れ替えるときは、追加した暦（`data/de440.bsp`）を新しいフォルダの `data/` に移すとダウンロードを省けます（Mac ではそのまま引き継がれます）。
+
+### ソース一式から起動
+
+リポジトリの ZIP などの配布用パッケージでないフォルダでも、`start.bat`（Windows）／`start.command`（macOS、Linux は端末で `sh start.command`）で起動できます。
+この場合は初回だけ、Python の実行環境（[uv](https://github.com/astral-sh/uv) と Python 3.12）、必要なライブラリ、JPL 暦をインターネットからダウンロードするため、数分かかります。2 回目以降は数秒で起動し、オフラインでも動きます。
+Python 本体とライブラリはフォルダ内の `.runtime/` にだけ置かれます（約 200 MB）。
+
+Mac でダウンロードしたソース一式は、`start.command` をダブルクリックすると「壊れているため開けません」と表示されます（署名のないスクリプトのため）。最初の 1 回だけ「ターミナル」を開いて `sh ` と入力し（sh の後に半角スペース）、`start.command` をターミナルのウィンドウにドラッグして return キーを押してください。このときフォルダから「インターネットから入手」の印を外すので、2 回目からはダブルクリックで起動できます。
+
+### Python をお使いの場合
+
 ```bash
 pip install -r requirements.txt
 python run.py
 ```
 
-ブラウザで `http://127.0.0.1:8765/` が開きます（Windows では `start.bat` をダブルクリックでも可）。
-ポートが使用中の場合は、起動中の本ツールをそのまま開くか、空いているポートを自動で選びます。
+DE440 は `python tools/download_ephemeris.py de440` でも追加できます。
+`start.bat` / `start.command` で準備した Python（`.runtime/venv/`）でテストやツールを実行することもできます（例: Windows は `.runtime\venv\Scripts\python tests\test_validation.py`、Mac・Linux は `.runtime/venv/bin/python tests/test_validation.py`）。
 
-初回起動時に JPL 暦 `data/de440s.bsp`（1849〜2150 年・約 32 MB）を JPL から自動ダウンロードします（暦ファイルはリポジトリには含めていません）。
-1550〜2650 年を扱う場合は
+### 配布用パッケージの作り方
 
 ```bash
-python tools/download_ephemeris.py de440
+python tools/build_bundles.py
 ```
 
-で DE440（約 114 MB）を追加し、画面の「詳細設定 → 暦」で選択します。
+`dist/` に Windows 用と macOS 用の ZIP ができます（数分。Windows でも Mac 用を作れます）。[uv](https://github.com/astral-sh/uv) と git が必要です。
+中身は git で管理しているファイル（`git add` 済みのもの）、`data/de440s.bsp`、Python 3.12（[python-build-standalone](https://github.com/astral-sh/python-build-standalone)。バージョンとチェックサムはスクリプトに固定）と、`requirements.txt` を満たす作成時点のライブラリです。
+ライブラリのバイトコードはあらかじめコンパイルしてあり、初回の起動も速くなっています。Linux 用は `--target linux-x86_64` で作れます。
+
+Mac 版を Developer ID で署名して公証するには `--sign` に設定ファイルを指定します。証明書と API キーの用意から順に [docs/macos_signing.md](docs/macos_signing.md) にまとめています。
+
+```bash
+python tools/build_bundles.py --target macos --sign <署名用フォルダ>/signing.json
+```
 
 ## できること
 
@@ -99,12 +149,13 @@ NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validatio
 - 将来・過去の ΔT は不確かです。時刻そのものよりも「食が見える場所（経度）」に影響します。
 - TLE は元期から日数が経つと位置誤差が大きくなります（画面に警告を表示します）。数か月以上先の衛星からの予報は目安としてください。CelesTrak からは最新の TLE しか取得できないため、過去の現象を衛星から計算するときは当時の TLE を貼り付けるか、「NASA SSCWeb」（衛星 ID で指定。例: hinode）を使ってください。
 - 大気差は太陽高度の表示と「見えるか」の判定に使い、円盤の変形は描画していません（接触時刻には影響しません）。
-- 初回の暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
+- 初回の Python 環境の準備と暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
 
 ## ファイル構成
 
 ```
-run.py / start.bat          起動スクリプト
+start.bat / start.command   起動ファイル（Windows / Linux・Mac のソース一式）。同梱の Python で起動し、なければ初回に .runtime/ へ自動で準備
+run.py                      起動スクリプト（Python から直接起動する場合）
 eclipsecalc/
   context.py                暦・時刻系の読み込み（暦の自動ダウンロード）
   net.py                    HTTPS 通信（OS の証明書ストアで検証）
@@ -120,8 +171,13 @@ tests/test_validation.py    NASA 公表値との比較テスト
 tests/test_hinode.py        「ひので」の予報・観測報告との比較テスト
 tests/test_orbit_planning.py  太陽同期軌道・昇交点地方時・位相の一括計算のテスト
 tools/validate_hinode_images.py  「ひので」の観測画像での検証
+tools/build_bundles.py      Python・ライブラリ・暦を同梱した配布用 ZIP の作成
+packaging/macos/            Mac 版アプリの起動部分（launcher.c・launch.sh）と署名設定の見本
 docs/hinode_validation.md   「ひので」による検証の記録
+docs/macos_signing.md       Mac 版の署名と公証の手順
 data/                       JPL 暦（初回起動時に自動取得、git 管理外）
+.runtime/                   Python・ライブラリ（配布用パッケージに同梱、またはソース一式では初回に準備。git 管理外）
+build/ dist/                配布用 ZIP の作業場所と出力先（git 管理外）
 ```
 
 ### API（抜粋）
@@ -130,6 +186,9 @@ data/                       JPL 暦（初回起動時に自動取得、git 管�
   - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
   - 軌道要素（`kepler`）では `"sso": true`（傾斜角を自動計算）、`"ltan_h": 18.0`（昇交点の地方時で軌道面を指定）も使えます
 - `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler` の衛星の平均近点角を変えて一括計算（期間 1 年以内）
+- `POST /api/ephemeris/download?name=de440.bsp` … JPL 暦を `data/` にダウンロード（画面の「de440.bsp を追加」）
+- `POST /api/shutdown` … 計算機を終了（Mac 版アプリの「終了」。`run.py --app` で起動したときだけ有効）
+- `GET /api/page/stream` … 画面が開いている間つなぎ続けるイベントストリーム。`run.py` がブラウザを開いて起動したときは、これがすべて切れて 10 秒たつと終了します（`--no-browser` では終了しません）
 - `GET /api/event/{id}` … 接触時刻と時系列、`GET /api/event/{id}/map` … 地図データ、`POST /api/local` … 地図上の地点の見え方
 
 `http://127.0.0.1:8765/docs` で対話的な API ドキュメントを参照できます。

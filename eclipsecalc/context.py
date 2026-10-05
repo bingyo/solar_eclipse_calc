@@ -1,11 +1,15 @@
 """Ephemeris / timescale context shared by all computations."""
+import os
 import threading
 from pathlib import Path
 
 from skyfield.api import Loader
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT_DIR / 'data'
+BUNDLED_DATA_DIR = ROOT_DIR / 'data'
+# Downloads and caches go here.  The macOS app keeps the tool inside its signed (read-only)
+# bundle and points this at ~/Library/Application Support/SolarEclipseCalc instead.
+DATA_DIR = Path(os.environ.get('ECLIPSECALC_DATA_DIR') or BUNDLED_DATA_DIR)
 CACHE_DIR = DATA_DIR / 'cache'
 
 DEFAULT_EPHEMERIS = 'de440s.bsp'
@@ -18,16 +22,24 @@ JPL_EPHEMERIS_URL = 'https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/'
 DOWNLOADABLE = {'de440s.bsp': '1849〜2150年・約 32 MB', 'de440.bsp': '1550〜2650年・約 114 MB'}
 
 
+def _ephemeris_path(name):
+    for directory in (DATA_DIR, BUNDLED_DATA_DIR):
+        if (directory / name).is_file():
+            return directory / name
+    return None
+
+
 def available_ephemerides():
-    return sorted(p.name for p in DATA_DIR.glob('*.bsp'))
+    return sorted({p.name for d in (DATA_DIR, BUNDLED_DATA_DIR) for p in d.glob('*.bsp')})
 
 
 def ensure_ephemeris(name=DEFAULT_EPHEMERIS, log=print):
     """Download a JPL ephemeris into data/ if it is not there yet."""
     from .net import download_file
+    found = _ephemeris_path(name)
+    if found:
+        return found
     path = DATA_DIR / name
-    if path.exists():
-        return path
     if name not in DOWNLOADABLE:
         raise ValueError(f'{name} は自動ダウンロードに対応していません（対応: {", ".join(DOWNLOADABLE)}）')
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,9 +58,10 @@ class Context:
     """
 
     def __init__(self, ephemeris=DEFAULT_EPHEMERIS, delta_t=None):
-        if ephemeris not in available_ephemerides():
-            raise ValueError(f'暦ファイル {ephemeris} が data/ フォルダにありません')
-        loader = Loader(str(DATA_DIR), verbose=False)
+        path = _ephemeris_path(ephemeris)
+        if path is None:
+            raise ValueError(f'暦ファイル {ephemeris} が {DATA_DIR} にありません')
+        loader = Loader(str(path.parent), verbose=False)
         self.ephemeris_name = ephemeris
         self.eph = loader(ephemeris)
         if delta_t is None:

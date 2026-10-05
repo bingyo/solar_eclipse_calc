@@ -194,6 +194,11 @@ async function init() {
     return;
   }
   const info = state.info;
+  if (info.app_mode) {
+    $('#quitBtn').hidden = false;
+    $('#quitBtn').addEventListener('click', quitApp);
+  }
+  if (info.quit_when_closed) watchPage();
   const cp = $('#cityPreset');
   info.cities.forEach((c, i) => cp.append(el('option', { value: i }, c.name)));
   cp.addEventListener('change', () => {
@@ -206,10 +211,11 @@ async function init() {
   info.satellites.forEach((s, i) => sp.append(el('option', { value: i }, s.label)));
   sp.addEventListener('change', () => { const s = info.satellites[sp.value]; if (s) applySatSpec(s.spec); });
   const eph = $('#ephem');
-  info.ephemerides.forEach((n) => eph.append(el('option', { value: n }, n + (n === 'de440s.bsp' ? '（1849〜2150年）' : n === 'de440.bsp' ? '（1550〜2650年）' : ''))));
+  fillEphemerides(info.ephemerides);
   eph.value = info.default_ephemeris;
   eph.addEventListener('change', updateCoverage);
   updateCoverage();
+  renderEphemerisDownloads(info.downloadable_ephemerides || []);
 
   $$('#obsTabs button').forEach((b) => b.addEventListener('click', () => setObsTab(b.dataset.obs)));
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
@@ -236,6 +242,64 @@ async function init() {
   $('#dlJson').addEventListener('click', downloadJson);
   $('#dlCsv').addEventListener('click', downloadSeriesCsv);
   $('#copyText').addEventListener('click', copyText);
+}
+
+// The calculator quits by itself when its last page is closed: each page keeps this event stream
+// open, and the browser drops it when the tab or the browser is closed (see server.py)
+function watchPage() {
+  state.pageStream = new EventSource('/api/page/stream');
+  state.pageStream.onerror = () => {
+    if (state.stopped) return;
+    fetch('/api/info').catch(() => showStopped('日食計算機は終了しています'));
+  };
+}
+function showStopped(title) {
+  state.stopped = true;
+  if (state.pageStream) state.pageStream.close();
+  const again = state.info && state.info.app_mode ? '「日食計算機」アプリを開いてください' : 'start.bat（Mac・Linux は start.command）を起動してください';
+  document.body.innerHTML = '';
+  document.body.append(el('div', { class: 'quit-msg' },
+    el('h2', {}, title),
+    el('p', {}, `このタブは閉じてかまいません。もう一度使うときは${again}。`)));
+}
+async function quitApp() {
+  if (!confirm('日食計算機を終了しますか？')) return;
+  state.stopped = true;
+  try { await api('/api/shutdown', {}); } catch (_) { /* already stopped */ }
+  showStopped('日食計算機を終了しました');
+}
+
+function fillEphemerides(names) {
+  const eph = $('#ephem');
+  const cur = eph.value;
+  eph.innerHTML = '';
+  names.forEach((n) => eph.append(el('option', { value: n }, n + (n === 'de440s.bsp' ? '（1849〜2150年）' : n === 'de440.bsp' ? '（1550〜2650年）' : ''))));
+  if (names.includes(cur)) eph.value = cur;
+}
+function renderEphemerisDownloads(list) {
+  const box = $('#ephemDlButtons');
+  box.innerHTML = '';
+  $('#ephemDl').hidden = !list.length;
+  list.forEach((d) => box.append(el('button', {
+    type: 'button', class: 'secondary small', onclick: (ev) => downloadEphemeris(d.name, ev.currentTarget),
+  }, `${d.name} を追加（${d.description}）`)));
+}
+async function downloadEphemeris(name, btn) {
+  const st = $('#ephemDlStatus');
+  btn.disabled = true;
+  setStatus(st, `JPL から ${name} をダウンロード中…（数分かかることがあります）`, 'busy');
+  try {
+    const d = await api('/api/ephemeris/download?name=' + encodeURIComponent(name), {});
+    fillEphemerides(d.ephemerides);
+    $('#ephem').value = name;
+    updateCoverage();
+    renderEphemerisDownloads(d.downloadable_ephemerides);
+    $('#ephemDl').hidden = false;
+    setStatus(st, `${name} を追加し、暦として選択しました。`);
+  } catch (err) {
+    btn.disabled = false;
+    setStatus(st, err.message, 'err');
+  }
 }
 
 async function updateCoverage() {
