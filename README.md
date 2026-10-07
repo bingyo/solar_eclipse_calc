@@ -74,7 +74,7 @@ DE440 は `python tools/download_ephemeris.py de440` でも追加できます。
 |---|---|
 | 軌道6要素 | `--epoch`（元期, UTC）`--a --e --i --raan --argp --m` |
 | 計画中の軌道 | `--epoch` と `--alt`（または `--perigee-alt --apogee-alt`）、`--sso`（または `--i`）、`--ltan`（または `--raan`）。`--sweep 10` で平均近点角ごとの一括計算 |
-| TLE | `--tle ファイル`（`-` で標準入力）、`--norad 番号`（CelesTrak から最新の TLE を取得） |
+| TLE | `--tle ファイル`（`-` で標準入力）、`--norad 番号`（CelesTrak から最新の TLE を取得）。元期から何週間も先なら `--sweep 10` で衛星の位置による幅を確認 |
 | 静止衛星・探査機・過去の軌道 | `--geo-lon 経度`、`--horizons ID`（JPL Horizons）、`--sscweb ID`（NASA SSCWeb） |
 | 地上の地点・地球全体 | `--lat --lon --elev`、`--city 地点名`、`--global` |
 | JSON | `--request ファイル`（Web API と同じ形） |
@@ -223,7 +223,7 @@ build/ dist/                配布用 ZIP の作業場所と出力先（git 管�
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
   - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
   - 軌道要素（`kepler`）では `"sso": true`（傾斜角を自動計算）、`"ltan_h": 18.0`（昇交点の地方時で軌道面を指定）も使えます
-- `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler` の衛星の平均近点角を変えて一括計算（期間 1 年以内）
+- `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler` または `tle` の衛星の平均近点角を変えて一括計算（期間 1 年以内）
 - `POST /api/ephemeris/download?name=de440.bsp` … JPL 暦を `data/` にダウンロード（画面の「de440.bsp を追加」）
 - `POST /api/shutdown` … 計算機を終了（Mac 版アプリの「終了」。`run.py --app` で起動したときだけ有効）
 - `GET /api/page/stream` … 画面が開いている間つなぎ続けるイベントストリーム。`run.py` がブラウザを開いて起動したときは、これがすべて切れて 10 秒たつと終了します（`--no-browser` では終了しません）

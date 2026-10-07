@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import cli  # noqa: E402
 from eclipsecalc import server  # noqa: E402
+from eclipsecalc.observers import tle_with_mean_anomaly  # noqa: E402
 
 PLAN = {'type': 'kepler', 'perigee_alt_km': 680, 'apogee_alt_km': 680, 'sso': True,
         'ltan_h': 18.0, 'argp_deg': 0, 'j2': True, 'name': 'plan'}
@@ -165,6 +166,61 @@ def test_errors_and_exit_codes():
     assert code == 1 and '開始日' in d['error']
     code, d = _cli_json(['--city', '東京', '--start', '2027-02-01', '--end', '2027-01-01'])
     assert code == 1 and not d['ok']
+
+
+def test_tle_dry_run():
+    # The TLE's own elements and the warning about its age (judged at the far end
+    # of the period) are shown before calculating.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'iss.txt')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(ISS_TLE)
+        code, d = _cli_json(['--tle', path, '--start', '2008-09-20', '--end', '2008-12-20', '--dry-run'])
+        o = d['observer']
+        assert code == 0 and o['norad'] == 25544
+        for k, v in (('i_deg', 51.6416), ('raan_deg', 247.4627), ('e', 0.0006703), ('argp_deg', 130.5360),
+                     ('m_deg', 325.0288), ('mean_motion_rev_per_day', 15.72125391)):
+            assert abs(o[k] - v) < 1e-6, (k, o[k])
+        assert len(d['warnings']) == 1 and ' 90 日' in d['warnings'][0], d['warnings']
+        code, d = _cli_json(['--tle', path, '--start', '2008-09-20', '--end', '2009-12-20', '--sweep', '30',
+                             '--dry-run'])
+        assert code == 1 and '1 年以内' in d['error']
+
+
+def test_tle_with_mean_anomaly():
+    line2 = ISS_TLE.splitlines()[2]
+    assert tle_with_mean_anomaly(line2, 325.0288) == line2          # same checksum as the original
+    moved = tle_with_mean_anomaly(line2, 370.0)
+    assert moved[43:51] == ' 10.0000' and moved[:43] == line2[:43] and moved[51:68] == line2[51:68]
+    assert int(moved[68]) == sum(int(c) if c.isdigit() else c == '-' for c in moved[:68]) % 10
+
+
+def test_tle_sweep():
+    # Mean-anomaly sweep of a TLE: each phase must agree with an ordinary search
+    # of the TLE with that mean anomaly.
+    lines = ISS_TLE.splitlines()
+    tle = {'type': 'tle', 'line1': lines[1], 'line2': lines[2], 'name': lines[0]}
+    kw = dict(phenomena=['moon'], start='2008-07-25', end='2008-08-05', settings={})
+    r = server.phase_sweep(server.SweepRequest(observer=tle, step_deg=45, **kw))
+    assert abs(r['observer']['m_deg'] - 325.0288) < 1e-9 and r['warnings']
+    g = r['groups'][0]
+    assert g['n_phases'] == 8 and g['n_visible'] >= 1 and g['count_max'] >= 1
+    row = next(row for row in g['rows'] if row['best'])
+    s = server.search(server.SearchRequest(observer=dict(tle, line2=tle_with_mean_anomaly(lines[2], row['m_deg'])),
+                                           **kw))
+    e = max(s['events'], key=lambda e: e['magnitude'])
+    assert e['max'] == row['best']['max'] and abs(e['magnitude'] - row['best']['magnitude']) < 1e-9
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'iss.txt')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(ISS_TLE)
+        got = _run_cli(['--tle', path, '--sweep', '45', '--start', kw['start'], '--end', kw['end'],
+                        '--phenomena', 'moon'])
+    assert [x['best'] for x in got['groups'][0]['rows']] == _strip(g['rows'])
+
+
+def _strip(rows):
+    return cli._strip_ids([x['best'] for x in rows])
 
 if __name__ == '__main__':
     failed = 0

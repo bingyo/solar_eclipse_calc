@@ -27,8 +27,9 @@ python cli.py --help
 ## 生成 AI が計算するときの手順
 
 1. **観測者を決める**（下の表）。人から受け取った情報をなるべくそのままの形で渡し、AI が別の形式に換算しないようにします（換算の誤りを避けるため）。
-2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・昇交点の地方時（`ltan_h`）などを、人から受け取った情報と照らし合わせてください。
+2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。
 3. **計算する**: `--format json` で実行し、終了コードと `ok` を確認します。`warnings` があれば必ず人に伝えます（例: TLE の元期から日数が経っていて誤差が大きい）。接触時刻まで必要なら `--detail` を付けます。
+   TLE の元期から何週間も先の現象は、衛星が軌道上のどこにいるかがほとんど分からなくなるため（大気の抵抗や軌道変更）、`--sweep 10` も実行して、位置による結果の幅（時刻・回数・食分の範囲）を一緒に伝えてください。
 4. **報告する**: 時刻は UTC で返るので、人の地域の時刻に直して伝えます（日本時間 = UTC+9）。表で見せるときは `--format table --tz 9` が便利です。計算条件（出力の `request`）を残しておくと、`--request` で同じ計算を再現できます。
 
 ### 入力情報と観測者の対応
@@ -40,6 +41,7 @@ python cli.py --help
 | 軌道6要素（元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角） | `--epoch --a --e --i --raan --argp --m` |
 | 計画中の軌道（高度・太陽同期・昇交点の地方時など） | `--epoch` と `--alt`（円軌道）または `--perigee-alt --apogee-alt`、`--i` または `--sso`、`--raan` または `--ltan` |
 | 打ち上げ前で、軌道上の位置（位相）が決まっていない | 上の軌道要素に `--sweep 10`（平均近点角を 10° 刻みで一括計算） |
+| TLE の元期から何週間も先の現象 | `--tle` に `--sweep 10`（TLE の平均近点角を 10° 刻みで置き換えて一括計算） |
 | 静止衛星の経度 | `--geo-lon 140.7` |
 | 探査機・宇宙望遠鏡（JWST、SOHO など） | `--horizons -170`（JPL Horizons の ID。地球近傍の衛星は `--horizons-step 1`〜`2`） |
 | 科学衛星が過去に見た現象（ひので など） | `--sscweb hinode`（ID は `--list-sscweb` で確認） |
@@ -63,7 +65,7 @@ python cli.py --help
 |---|---|
 | 期間（既定の暦 de440s） | 1849-12-26〜2150-01-20。1550〜2650 年は `python tools/download_ephemeris.py de440` のあと `--ephemeris de440` |
 | 人工衛星の期間 | 20 年以内（`--sweep` は 1 年以内） |
-| TLE | 元期から離れるほど誤差が大きくなります（7 日超・30 日超で `warnings` に注意が入ります）。現象の数日前の TLE を使うと秒単位の精度になります |
+| TLE | 元期から離れるほど誤差が大きくなります（7 日超・30 日超で `warnings` に注意が入ります）。現象の数日前の TLE を使うと秒単位の精度になります。何週間も先なら `--sweep` で位置による幅を確かめます |
 | JPL Horizons・SSCWeb | 各サービスが軌道データを提供している期間のみ。範囲外は `warnings` に入るか、エラーになります |
 
 ## JSON での指定（`--request`）
@@ -90,7 +92,7 @@ python cli.py --request request.json --format json
 | type | 項目 |
 |---|---|
 | `kepler` | `epoch`（UTC）、大きさ: `a_km` と `e`、または `perigee_alt_km` と `apogee_alt_km`、傾斜角: `i_deg` または `"sso": true`、軌道面: `raan_deg` または `ltan_h`（時。18.0 = 18:00）、`argp_deg`、`m_deg`、`j2`（既定 true） |
-| `tle` | `line1`、`line2` |
+| `tle` | `line1`、`line2`（`m_deg` を加えると、平均近点角をその値に置き換えた TLE で計算します） |
 | `celestrak` | `norad`（CelesTrak から最新の TLE を取得し、`request` には `tle` として記録されます） |
 | `geo` | `lon` |
 | `horizons` | `command`（ID）、`step_min` |
@@ -98,7 +100,7 @@ python cli.py --request request.json --format json
 | `ground` | `lat`、`lon`、`elevation_m` |
 | `global` | （なし） |
 
-`step_deg`（5〜90）を加えると、`kepler` で平均近点角を変えた一括計算になります。
+`step_deg`（5〜90）を加えると、`kepler` と `tle` で平均近点角を変えた一括計算になります。
 `settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`。省略すると画面の既定値です。
 
 ## 出力（`--format json`）
@@ -109,9 +111,9 @@ python cli.py --request request.json --format json
 |---|---|
 | `ok` | `true` |
 | `request` | 計算に使った条件（`--request` にそのまま渡せる） |
-| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`ltan_h`、`sso` も |
+| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準） |
 | `events` | 現象の一覧（最大の時刻順。下の表） |
-| `warnings` | 注意（文字列の配列）。人に伝えてください |
+| `warnings` | 注意（文字列の配列）。人に伝えてください。TLE の古さの注意にある日数は、通常の計算では見つかった現象のうち元期から最も遠いものまでの日数、`--dry-run` と `--sweep` では期間の端のうち元期から遠いほうまでの日数です |
 | `start`、`end`、`ephemeris`、`delta_t_mid_s`、`params` | 期間、暦、期間中央の ΔT（秒）、計算に使った半径などの設定 |
 | `dry_run` | `--dry-run` のときだけ `true`（`events` はありません） |
 
@@ -172,7 +174,7 @@ python cli.py --request request.json --format json
 
 ### 一括計算（`--sweep` / `step_deg`）の出力
 
-`events` の代わりに `groups`（現象ごと）があります。
+`events` の代わりに `groups`（現象ごと）があります。`observer` は指定したとおりの軌道です（TLE なら `m_deg` が TLE 本来の平均近点角）。
 
 | 項目 | 内容 |
 |---|---|
@@ -190,5 +192,5 @@ python cli.py --request request.json --format json
 - **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと）、`python tests/test_orbit_planning.py`、`python tests/test_hinode.py`（「ひので」の実観測との比較。要インターネット）。どれも全項目が `PASS` になることを確かめます。
 - **地球全体の結果**: `--global` の日食の時刻・γ・食分・中心食の継続時間は、NASA の日食カタログ（Espenak & Meeus）と比べられます（一致の程度は README の「精度と検証」）。
 - **地上の結果**: 同じ日食を `--global` で計算し、その地点が中心食帯の中にあるか、最大の時刻が `p1`〜`p4` に入っているかなどで整合を確かめられます。
-- **衛星の結果**: 衛星の位置の誤差がそのまま時刻の誤差になります（低軌道で沿軌道 7.5 km ≒ 1 秒）。TLE なら元期が現象に近いもので計算し直して差を見ます。打ち上げ前なら `--sweep` で位相による結果の幅を示します。
+- **衛星の結果**: 衛星の位置の誤差がそのまま時刻の誤差になります（低軌道で沿軌道 7.5 km ≒ 1 秒）。TLE なら元期が現象に近いもので計算し直して差を見ます。打ち上げ前や TLE の元期から何週間も先なら、`--sweep` で位相による結果の幅を示します。
 - **入力の解釈**: `--dry-run` の `observer` を人から受け取った情報と照合します。

@@ -384,13 +384,15 @@ def _sweep_best(events):
 def phase_sweep(req: SweepRequest):
     '''Search with the satellite placed at every mean anomaly (step_deg apart).
 
-    Before launch the position of a satellite along its orbit is unknown;
-    this shows the range of possible outcomes for each eclipse/transit.'''
+    Before launch the position of a satellite along its orbit is unknown, and
+    months after the epoch of a TLE it is no longer known well either (drag,
+    manoeuvres); this shows the range of possible outcomes for each
+    eclipse/transit. Works for Keplerian elements and for TLEs.'''
     t0 = time.time()
     ctx, params, jd_a, jd_b, phen = _parse_request(req)
     spec = dict(req.observer)
-    if spec.get('type') != 'kepler':
-        raise HTTPException(400, '位相を変えた一括計算は「軌道要素」で指定した衛星だけで使えます')
+    if spec.get('type') not in ('kepler', 'tle'):
+        raise HTTPException(400, '位相を変えた一括計算は「軌道要素」または TLE で指定した衛星だけで使えます')
     step = float(req.step_deg)
     if not 5.0 <= step <= 90.0:
         raise HTTPException(400, '位相の刻みは 5〜90° で指定してください')
@@ -400,14 +402,16 @@ def phase_sweep(req: SweepRequest):
     conj = {b: find_conjunctions(ctx, b, jd_a - 2.0, jd_b + 2.0) for b in phen}
     groups = {}
     warnings = []
-    obs_desc = None
     with _compute_lock:
         try:
+            # the observer as given (for a TLE: with its own mean anomaly)
+            observer = build_observer(ctx, spec, parse_time=lambda s: parse_utc(ctx, s))
+            obs_desc = observer.describe()
+            obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
+            epoch = obs_desc['epoch_jd_tt']
+            warnings += observer.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
             for m in phases:
                 observer = build_observer(ctx, dict(spec, m_deg=m), parse_time=lambda s: parse_utc(ctx, s))
-                if obs_desc is None:
-                    obs_desc = observer.describe()
-                    obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
                 for body in phen:
                     ls = LocalSearch(ctx, observer, body, params, jd_a, jd_b)
                     found = ls.run()

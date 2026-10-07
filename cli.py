@@ -42,7 +42,7 @@ CONTACT_JA = {'C1': '第1接触', 'C2': '第2接触', 'MAX': '最大', 'C3': '�
 AZ_NAMES = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東',
             '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西']
 ORBIT_ARGS = ('epoch', 'a', 'e', 'i', 'raan', 'alt', 'perigee_alt', 'apogee_alt', 'sso', 'ltan')
-ORBIT_ONLY = ('argp', 'm', 'no_j2', 'sweep')
+ORBIT_ONLY = ('argp', 'm', 'no_j2')
 
 EXAMPLES = '''観測者は次のどれか 1 つで指定します:
   軌道6要素     --epoch --a --e --i --raan（と --argp --m）
@@ -135,7 +135,8 @@ def build_parser():
     p.add_argument('--phenomena', metavar='LIST',
                    help='計算する現象をカンマ区切りで: moon（日食）, mercury, venus（既定 すべて）')
     p.add_argument('--sweep', type=float, metavar='STEP',
-                   help='軌道要素の衛星のみ: 平均近点角をこの刻み (°, 5〜90) で変えて一括計算する（打ち上げ前の検討。期間は 1 年以内）')
+                   help='軌道要素・TLE の衛星のみ: 平均近点角（軌道上の位置）をこの刻み (°, 5〜90) で変えて一括計算する'
+                        '（打ち上げ前や、TLE の元期から何か月も先の検討。期間は 1 年以内）')
 
     s = ap.add_argument_group('詳細設定')
     s.add_argument('--ephemeris', metavar='FILE', help='暦（既定 de440s.bsp = 1849〜2150 年。de440.bsp なら 1550〜2650 年）')
@@ -214,6 +215,8 @@ def parse_args(argv):
         extra = [f'--{k.replace("_", "-")}' for k in ORBIT_ONLY if _given(args, k)]
         if extra:
             raise UsageError(f'{" ".join(extra)} は軌道要素で指定した衛星だけで使えます')
+    if _given(args, 'sweep') and args.mode not in ('kepler', 'tle'):
+        raise UsageError('--sweep は軌道要素または TLE で指定した衛星だけで使えます')
     if args.mode == 'tle' and _given(args, 'tle') and _given(args, 'norad'):
         raise UsageError('--tle と --norad はどちらか一方だけ指定してください')
     if args.mode == 'ground':
@@ -407,8 +410,8 @@ def build_request(args, log):
     if bad or not ph:
         raise InputError(f'現象は moon, mercury, venus から選んでください（指定: {", ".join(map(str, bad)) or "なし"}）')
     req['phenomena'] = ph
-    if req.get('step_deg') is not None and req['observer'].get('type') != 'kepler':
-        raise InputError('平均近点角を変えた一括計算（step_deg）は軌道要素で指定した衛星だけで使えます')
+    if req.get('step_deg') is not None and req['observer'].get('type') not in ('kepler', 'tle'):
+        raise InputError('平均近点角を変えた一括計算（step_deg）は軌道要素または TLE で指定した衛星だけで使えます')
     return req
 
 
@@ -449,11 +452,11 @@ def check_utc(text, what):
 
 
 def check_observer(ctx, spec):
-    """Build the observer once to report input errors cleanly -> its description."""
+    """Build the observer once to report input errors cleanly -> (description, observer)."""
     from eclipsecalc.observers import ObserverError, build_observer
     from eclipsecalc.timeutil import iso_from_jd, parse_utc
     if spec.get('type') == 'global':
-        return {'kind': 'global', 'name': '地球全体'}
+        return {'kind': 'global', 'name': '地球全体'}, None
     if spec.get('type') == 'kepler':
         check_utc(spec.get('epoch', ''), '元期')
     try:
@@ -467,7 +470,29 @@ def check_observer(ctx, spec):
     d = obs.describe()
     if d.get('epoch_jd_tt'):
         d['epoch'] = iso_from_jd(ctx, d['epoch_jd_tt'])
-    return d
+    return d, obs
+
+
+def preflight(req, obs):
+    """For --dry-run: the checks the calculation would make on the period, and
+    the warnings it would give (an old TLE is judged at the end of the period
+    farthest from its epoch) -> list of warnings."""
+    from fastapi import HTTPException
+
+    from eclipsecalc import server
+    kw = {k: req[k] for k in ('phenomena', 'observer', 'start', 'end', 'settings')}
+    try:
+        ctx, _, jd_a, jd_b, _ = server._parse_request(server.SearchRequest(**kw))
+    except HTTPException as exc:
+        raise InputError(str(exc.detail))
+    if obs is not None and obs.kind == 'space' and (jd_b - jd_a) / 365.25 > 20:
+        raise InputError('人工衛星の観測者では期間を 20 年以内にしてください')
+    if req.get('step_deg') is not None and jd_b - jd_a > server.SWEEP_MAX_DAYS:
+        raise InputError('位相を変えた一括計算では期間を 1 年以内にしてください')
+    epoch = getattr(obs, 'epoch_jd', None)
+    if epoch is None:
+        return []
+    return obs.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
 
 
 def calculate(req, debug=False):
@@ -597,6 +622,8 @@ def observer_text(o):
     s = f'{o["name"]}（{label}'
     if o.get('perigee_km') is not None:
         s += f'・高度 {o["perigee_km"]:,.0f}〜{o["apogee_km"]:,.0f} km・周期 {o["period_min"]:.1f} 分'
+    if model == 'tle' and o.get('i_deg') is not None:
+        s += f'・傾斜角 {o["i_deg"]:.2f}°・離心率 {o["e"]:.5f}'
     if model == 'kepler':
         s += f'・傾斜角 {o["i_deg"]:.2f}°・昇交点赤経 {o["raan_deg"]:.2f}°'
         if o.get('ltan_h') is not None:
@@ -697,6 +724,9 @@ def sweep_table(res, args):
     groups = res['groups']
     tz = args.tz_hours
     lines = _header(res, args, f'・平均近点角を {res["step_deg"]:g}° ずつ変えた {len(res["phases"])} 通り')
+    if res['observer'].get('model') == 'tle':
+        lines.append(f'TLE の平均近点角（元期での衛星の位置）は {res["observer"]["m_deg"]:.2f}° です。'
+                     'TLE どおりの位置での結果は --sweep を付けずに計算できます。')
     lines += ['', f'{len(groups)} 件の現象（衛星が軌道上のどこにいるかで結果が変わります）' if groups
               else 'この期間には、どの位相でも見られる現象がありません']
     if not groups:
@@ -803,15 +833,16 @@ def run(args):
     check_utc(req['start'], '開始日')
     check_utc(req['end'], '終了日')
     ctx = _context(req)
-    observer = check_observer(ctx, req['observer'])
+    observer, obs = check_observer(ctx, req['observer'])
     base = {'ok': True, 'tool': 'solar_eclipse_calc cli.py', 'version': __version__, 'request': req}
     if args.dry_run:
+        warnings = preflight(req, obs)
         if args.format == 'json':
-            _emit(_json_text(dict(base, dry_run=True, observer=observer)), args)
+            _emit(_json_text(dict(base, dry_run=True, observer=observer, warnings=warnings)), args)
         else:
             _emit(f'観測者: {observer_text(observer)}\n期間: {req["start"]} 〜 {req["end"]}（UTC）'
-                  f'・現象: {", ".join(req["phenomena"])}\n計算条件（--request で使える JSON）:\n'
-                  + _json_text(req), args)
+                  f'・現象: {", ".join(req["phenomena"])}\n' + ''.join(f'注意: {w}\n' for w in warnings)
+                  + '計算条件（--request で使える JSON）:\n' + _json_text(req), args)
         return 0
 
     t0 = time.time()

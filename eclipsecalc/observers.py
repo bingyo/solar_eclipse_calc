@@ -164,11 +164,30 @@ class TLEObserver(Observer):
         return []
 
     def describe(self):
+        m = self.vf.model
+        # the TLE's own mean elements (TEME of epoch; for checking what was read)
         return {'kind': 'space', 'model': 'tle', 'name': self.name, 'line1': self.line1,
-                'line2': self.line2, 'period_min': self.period_min,
+                'line2': self.line2, 'norad': m.satnum, 'period_min': self.period_min,
                 'perigee_km': self.r_min_km - WGS84_A,
                 'apogee_km': self.a_km * (1 + self.e) - WGS84_A,
-                'epoch_jd_tt': self.epoch_jd}
+                'a_km': self.a_km, 'e': self.e, 'i_deg': math.degrees(m.inclo),
+                'raan_deg': math.degrees(m.nodeo), 'argp_deg': math.degrees(m.argpo),
+                'm_deg': math.degrees(m.mo), 'mean_motion_rev_per_day': m.no_kozai * 1440 / (2 * math.pi),
+                'bstar': m.bstar, 'epoch_jd_tt': self.epoch_jd}
+
+
+def _tle_checksum(line):
+    return sum(int(c) if c.isdigit() else c == '-' for c in line[:68]) % 10
+
+
+def tle_with_mean_anomaly(line2, m_deg):
+    """Line 2 of a TLE with the mean anomaly at epoch (columns 44-51) replaced
+    and the checksum redone: the same orbit with the satellite elsewhere on it."""
+    line2 = line2.rstrip()
+    if len(line2) < 68 or not line2.startswith('2 '):
+        raise ObserverError('TLE の 2 行目が短すぎます（69 文字の形式で指定してください）')
+    body = f'{line2[:43]}{float(m_deg) % 360.0:8.4f}{line2[51:68]}'
+    return body + str(_tle_checksum(body))
 
 
 class _KeplerVF(VectorFunction):
@@ -736,7 +755,10 @@ def build_observer(ctx, spec, parse_time=None):
         return FixedITRSObserver(float(spec.get('lat', 0)), float(spec['lon']),
                                  float(spec['height_km']), name)
     if kind == 'tle':
-        return TLEObserver(ctx, spec['line1'], spec['line2'], name)
+        line2 = spec['line2']
+        if spec.get('m_deg') is not None:      # phase sweep: move the satellite along its orbit
+            line2 = tle_with_mean_anomaly(line2, spec['m_deg'])
+        return TLEObserver(ctx, spec['line1'], line2, name)
     if kind == 'celestrak':
         nm, l1, l2 = fetch_tle_celestrak(spec['norad'])
         return TLEObserver(ctx, l1, l2, name or nm)
