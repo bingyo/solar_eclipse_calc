@@ -24,6 +24,8 @@
     <label class="tz">表示する時刻
       <select id="tz"></select>
     </label>
+    <button type="button" class="ghost" data-open>保存した結果を開く</button>
+    <input type="file" id="openFile" accept=".json,application/json" hidden>
     <button type="button" class="ghost" id="helpBtn">使い方・用語</button>
     <button type="button" class="ghost" id="quitBtn" hidden>終了</button>
   </div>
@@ -223,7 +225,8 @@
     <div id="welcome" class="card welcome">
       <h2>ようこそ</h2>
       <p>左の設定で <b>①現象</b>・<b>②観測者</b>・<b>③期間</b> を選んで「計算する」を押すと、見られる日食や太陽面通過の一覧が表示されます。
-        一覧の行をクリックすると、欠け方の動画・グラフ・地図などの詳しい結果を確認できます。</p>
+        一覧の行をクリックすると、欠け方の動画・グラフ・地図などの詳しい結果を確認できます。
+        「結果を保存」で保存したファイルは <button type="button" class="link" data-open>保存した結果を開く</button> から、あとで同じ画面で見返せます。</p>
       <div class="examples">
         <button type="button" data-example="tokyo">東京で今後30年に見られる日食</button>
         <button type="button" data-example="global">2001〜2100年の世界の日食と太陽面通過</button>
@@ -244,6 +247,7 @@
         <div class="summary-top">
           <div id="summaryText" class="summary-text"></div>
           <div class="summary-actions">
+            <button type="button" class="secondary small" id="saveBtn" title="一覧と計算条件を保存します。「保存した結果を開く」で、あとから同じ画面で見返せます">結果を保存</button>
             <button type="button" class="secondary small" id="csvBtn">一覧をCSV保存</button>
           </div>
         </div>
@@ -334,6 +338,9 @@
       <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID で指定します。打ち上げ前の衛星は「軌道要素」に計画値を入れ、「平均近点角を変えて一括計算」を使うと、衛星が軌道上のどこにいても起こりうる結果の範囲が分かります。「地球全体」は世界のどこかで見られる現象を探します。</li>
       <li>期間を指定して「計算する」。一覧の行をクリックすると詳細が開きます。</li>
     </ol>
+    <h3>結果の保存と見返し</h3>
+    <p>一覧の「結果を保存」で、一覧と計算条件を JSON ファイルに保存します。上の「保存した結果を開く」でそのファイルを選ぶと、一覧が保存したときのまま表示され、左の設定も保存した条件に戻ります。
+      一覧の行をクリックすると、保存した計算条件でその現象の詳細（接触時刻・動画・グラフ・地図）を計算し直して表示します。詳細の「データ」タブの「JSON をダウンロード」で保存した 1 件の現象や、cli.py の <code>--format json</code> の出力も開けます。</p>
     <h3>用語</h3>
     <dl>
       <dt>食分</dt><dd>太陽の<b>直径</b>のうち月に隠された割合。皆既日食では 1 以上になります（地球全体の一覧では NASA と同じく中心食の場合は月と太陽の視直径比）。</dd>

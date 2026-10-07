@@ -25,7 +25,7 @@ const state = {
   info: null, obsTab: 'ground', satMode: 'celestrak', kInput: 'plan', fetchedTle: null, sscSats: null,
   sweep: null, sweepGroup: 0,
   result: null, filters: new Set(), selectedId: null,
-  detail: null, local: null, stack: [], rootId: null,
+  detail: null, local: null, stack: [], rootId: null, saved: null,
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
 };
 
@@ -235,6 +235,13 @@ async function init() {
   $('#form').addEventListener('submit', (ev) => { ev.preventDefault(); runSearch(); });
   $('#helpBtn').addEventListener('click', () => $('#helpDlg').showModal());
   $('#csvBtn').addEventListener('click', downloadListCsv);
+  $('#saveBtn').addEventListener('click', saveResult);
+  $$('[data-open]').forEach((b) => b.addEventListener('click', () => $('#openFile').click()));
+  $('#openFile').addEventListener('change', (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (f) openSavedFile(f);
+  });
   $('#closeDetail').addEventListener('click', closeDetail);
   $('#backBtn').addEventListener('click', goBack);
   $$('#detailTabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -356,8 +363,13 @@ function applySatSpec(spec) {
   else if (spec.type === 'geo') { setSatMode('geo'); $('#geoLon').value = spec.lon; }
   else if (spec.type === 'horizons') { setSatMode('horizons'); $('#hzId').value = spec.command; $('#hzStep').value = spec.step_min; }
   else if (spec.type === 'sscweb') { $('#sscId').value = spec.id; setSatMode('sscweb'); }
-  else if (spec.type === 'kepler') {
+  else if (spec.type === 'tle') {
+    setSatMode('tle');
+    $('#tleText').value = [spec.name, spec.line1, spec.line2].filter(Boolean).join('\n');
+  } else if (spec.type === 'kepler') {
     setSatMode('kepler');
+    if (spec.epoch) $('#kEpoch').value = spec.epoch.replace(' ', 'T').replace('Z', '').slice(0, 19);
+    $('#kJ2').checked = spec.j2 !== false;
     let peri = spec.perigee_alt_km, apo = spec.apogee_alt_km;
     if (spec.a_km) {
       const e = spec.e ?? 0;
@@ -580,9 +592,11 @@ async function runSearch() {
     if (req.sweepStep) {
       const { sweepStep, ...body } = req;
       const r = await api('/api/phase_sweep', { ...body, step_deg: sweepStep });
+      r.request = savedRequest(req, r);
       state.sweep = r;
       state.sweepGroup = 0;
       state.result = null;
+      state.saved = null;
       setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
       $('#welcome').hidden = true;
       $('#resultArea').hidden = false;
@@ -591,9 +605,10 @@ async function runSearch() {
       return;
     }
     const r = await api('/api/search', req);
-    r.request = req;
+    r.request = savedRequest(req, r);
     state.result = r;
     state.sweep = null;
+    state.saved = null;
     state.filters = new Set();
     setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
     $('#welcome').hidden = true;
@@ -676,6 +691,7 @@ function renderResults() {
   $('#summaryText').innerHTML =
     `<div><span class="big">${evs.length} 件</span> の現象が見つかりました` +
     (!global && r.params.include_invisible ? `（うち見えるもの ${visCount} 件）` : '') + '</div>' +
+    savedNote() +
     `<div class="muted">観測者: ${esc(observerText(r.observer))}<br>期間: ${esc(r.start)} 〜 ${esc(r.end)}（UTC）・暦 ${esc(r.ephemeris)}・ΔT ${r.delta_t_override != null ? r.delta_t_override + ' 秒（手動）' : '約 ' + r.delta_t_mid_s.toFixed(1) + ' 秒（期間中央）'}・計算 ${r.elapsed_s.toFixed(1)} 秒</div>`;
   $('#warnings').innerHTML = (r.warnings || []).map((w) => `<div>⚠ ${esc(w)}</div>`).join('');
 
@@ -724,6 +740,7 @@ function renderSweep() {
   const what = Object.entries(counts).map(([b, c]) => `${BODY_JA[b]} ${c} 件`).join('・') || '現象なし';
   $('#summaryText').innerHTML =
     `<div><span class="big">${what}</span>（平均近点角を ${r.step_deg}° ずつ変えた ${n} 通りで計算）</div>` +
+    savedNote() +
     `<div class="muted">観測者: ${esc(observerText(r.observer))}<br>期間: ${esc(r.start)} 〜 ${esc(r.end)}（UTC）・暦 ${esc(r.ephemeris)}・計算 ${r.elapsed_s.toFixed(1)} 秒<br>` +
     '衛星が軌道上のどこにいるかで結果が変わります。行をクリックすると、平均近点角ごとの結果が表示されます。</div>';
   $('#warnings').innerHTML = (r.warnings || []).map((w) => `<div>⚠ ${esc(w)}</div>`).join('');
@@ -923,15 +940,200 @@ function saveFile(name, text, type) {
 }
 
 /* ------------------------------------------------------------------ */
+/* saving and opening results                                          */
+/* ------------------------------------------------------------------ */
+const SAVE_TOOL = 'solar_eclipse_calc 画面';
+/* The request of a result in the shape of the web API and of `cli.py --request`.
+   A TLE fetched from CelesTrak is kept as fetched, so that the result can be computed again. */
+function savedRequest(req, r) {
+  const { sweepStep, ...out } = req;
+  if (sweepStep) out.step_deg = sweepStep;
+  const o = r.observer;
+  if (req.observer.type === 'celestrak' && o && o.line1) {
+    out.observer = { type: 'tle', line1: o.line1, line2: o.line2, name: req.observer.name || o.name, norad: req.observer.norad };
+  }
+  return out;
+}
+/* An event without the server's id (which means nothing once the server is restarted). */
+function noId({ id, ...e }) { return e; }
+function stripIds(r) {
+  const out = { ...r };
+  if (r.events) out.events = r.events.map(noId);
+  if (r.groups) {
+    out.groups = r.groups.map((g) => ({
+      ...g, rows: g.rows.map((row) => ({ ...row, best: row.best && noId(row.best), events: (row.events || []).map(noId) })),
+    }));
+  }
+  return out;
+}
+function stamp() {
+  const p = parts(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `${p.year}${p.month}${p.day}_${p.hour}${p.minute}`;
+}
+/* The whole result (list, or phase sweep) and the request that computed it.  The file has the
+   shape of `cli.py --format json`, so either can be opened again with "保存した結果を開く". */
+function saveResult() {
+  const r = state.sweep || state.result;
+  if (!r) return;
+  const { request, ...rest } = r;
+  const out = { tool: SAVE_TOOL, version: state.info.version, saved_at: new Date().toISOString(), request, ...stripIds(rest) };
+  saveFile(`eclipse_result_${stamp()}.json`, JSON.stringify(out, null, 1), 'application/json');
+}
+async function openSavedFile(file) {
+  const st = $('#status');
+  let data;
+  try {
+    data = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+  } catch (_) {
+    setStatus(st, `「${file.name}」は JSON ファイルとして読めません`, 'err');
+    return;
+  }
+  try {
+    if (data && data.event && data.event.max) openSavedEvent(data, file.name);
+    else if (data && (Array.isArray(data.events) || Array.isArray(data.groups))) openSavedResult(data, file.name);
+    else if (data && data.dry_run) throw new Error('このファイルは解釈の確認（--dry-run）の出力で、計算結果を含みません');
+    else throw new Error(`「${file.name}」は日食計算機で保存した結果ではありません（「結果を保存」で保存した JSON、詳細の「JSON をダウンロード」、cli.py の --format json の出力を開けます）`);
+  } catch (err) {
+    setStatus(st, err.message, 'err');
+  }
+}
+function openSavedResult(data, name) {
+  const events = new Map();
+  const tag = (e) => { e.id = `saved${events.size + 1}`; events.set(e.id, e); };
+  if (data.groups) {
+    for (const g of data.groups) {
+      for (const row of g.rows) {
+        (row.events || []).forEach(tag);
+        if (!row.best) continue;
+        const same = (row.events || []).find((x) => x.jd_max === row.best.jd_max);
+        if (same) row.best = same; else tag(row.best);
+      }
+    }
+  } else data.events.forEach(tag);
+  const { tool, version, saved_at: savedAt, ok, request, ...r } = data;
+  r.request = request;
+  if (r.elapsed_s == null) r.elapsed_s = 0;
+  state.saved = { request, events, name, savedAt, tool };
+  if (request) {
+    try { applyRequestToForm(request); } catch (err) { console.warn(err); }
+  }
+  closeDetail();
+  $('#welcome').hidden = true;
+  $('#resultArea').hidden = false;
+  if (data.groups) {
+    state.sweep = r; state.sweepGroup = 0; state.result = null;
+    renderSweep();
+  } else {
+    state.result = r; state.sweep = null; state.filters = new Set();
+    renderResults();
+  }
+  setStatus($('#status'), `「${name}」を開きました`);
+}
+/* One event saved from the detail view ("JSON をダウンロード"): shown as saved; the map and
+   other places are computed from the request saved with it. */
+function openSavedEvent(data, name) {
+  const d = data.event;
+  d.id = 'saved1';
+  state.saved = { request: d.request || data.request, events: new Map([[d.id, d]]), name, savedAt: data.saved_at, tool: data.tool };
+  if (state.saved.request) {
+    try { applyRequestToForm(state.saved.request); } catch (err) { console.warn(err); }
+  }
+  state.result = null; state.sweep = null;
+  $('#welcome').hidden = true;
+  $('#resultArea').hidden = true;
+  state.stack = []; state.rootId = d.id; state.selectedId = null;
+  state.detail = d;
+  state.local = d.kind === 'global' ? data.local || null : d;
+  $('#detail').hidden = false;
+  $('#backBtn').hidden = true;
+  renderDetailAll(true);
+  if (d.kind === 'global' && !state.local) loadGeLocal(d);
+  setStatus($('#status'), `「${name}」を開きました（保存した現象）`);
+}
+function savedNote() {
+  const s = state.saved;
+  if (!s) return '';
+  const when = s.savedAt ? `・${fmtDT(s.savedAt)} ${tzLabel(s.savedAt)} に保存` : '';
+  const how = s.request ? '詳細は保存した計算条件で再計算します。' : 'このファイルには計算条件がないため、詳細は表示できません。';
+  return `<div class="saved-note">保存した結果を表示しています（${esc(s.name)}${when}）。${how}</div>`;
+}
+/* The server's id of an event: an event of a saved result is computed again (once) from the
+   saved request; the server forgets it when restarted, then it is computed again. */
+async function liveDetail(id) {
+  const s = state.saved && state.saved.events.get(id);
+  if (!s) return api('/api/event/' + id);
+  if (s.serverId) {
+    try { return await api('/api/event/' + s.serverId); } catch (_) { s.serverId = null; }
+  }
+  if (!state.saved.request) throw new Error('このファイルには計算条件（request）がないため、詳細を計算できません');
+  const event = Object.fromEntries(['body', 'kind', 'jd_max', 'jd_c1', 'jd_c4', 'm_deg'].filter((k) => s[k] != null).map((k) => [k, s[k]]));
+  const d = await api('/api/restore', { request: state.saved.request, event });
+  s.serverId = d.id;
+  return d;
+}
+async function liveId(id) {
+  const s = state.saved && state.saved.events.get(id);
+  if (!s) return id;
+  if (!s.serverId) await liveDetail(id);
+  return s.serverId;
+}
+/* Set the form to a saved request, so that it can be changed and computed again. */
+function applyRequestToForm(req) {
+  const ph = req.phenomena || ['moon', 'mercury', 'venus'];
+  $$('input[name=ph]').forEach((i) => { i.checked = ph.includes(i.value); });
+  const o = req.observer || {};
+  if (o.type === 'ground') {
+    setObsTab('ground');
+    $('#cityPreset').value = '';
+    $('#lat').value = o.lat; $('#lon').value = o.lon; $('#elev').value = o.elevation_m ?? 0; $('#placeName').value = o.name || '';
+    updatePickMarker();
+  } else if (o.type === 'global') {
+    setObsTab('global');
+  } else if (o.type) {
+    setObsTab('space');
+    $('#satPreset').value = '';
+    applySatSpec(o);
+    $('#kSweep').checked = o.type === 'kepler' && req.step_deg != null;
+    if (req.step_deg != null && $$('#kSweepStep option').some((x) => +x.value === +req.step_deg)) $('#kSweepStep').value = String(+req.step_deg);
+    updateKeplerForm();
+  }
+  if (req.start) $('#start').value = req.start.slice(0, 10);
+  if (req.end) $('#end').value = req.end.slice(0, 10);
+  const s = { ...state.info.defaults, ...(req.settings || {}) };
+  const eph = s.ephemeris && !s.ephemeris.endsWith('.bsp') ? s.ephemeris + '.bsp' : s.ephemeris;
+  if (eph && $$('#ephem option').some((x) => x.value === eph)) { $('#ephem').value = eph; updateCoverage(); }
+  const manual = s.delta_t != null && s.delta_t !== '' && s.delta_t !== 'auto';
+  $('#dtMode').value = manual ? 'manual' : 'auto';
+  $('#dtValue').value = manual ? s.delta_t : '';
+  $('#dtValue').disabled = !manual;
+  const rp = state.info.radius_presets;
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const sun = Object.keys(rp.sun).find((k) => near(rp.sun[k], s.sun_radius_km));
+  $('#sunR').value = sun || 'custom';
+  if (!sun) $('#sunRCustom').value = s.sun_radius_km;
+  $('#sunRCustomWrap').hidden = !!sun;
+  const moon = Object.keys(rp.moon).find((k) => near(rp.moon[k][0], s.moon_radius_ext_km) && near(rp.moon[k][1], s.moon_radius_int_km));
+  $('#moonR').value = moon || 'custom';
+  if (!moon) { $('#moonRExt').value = s.moon_radius_ext_km; $('#moonRInt').value = s.moon_radius_int_km; }
+  $('#moonRCustomWrap').hidden = !!moon;
+  $('#planetR').value = Object.keys(rp.mercury).find((k) => near(rp.mercury[k], s.mercury_radius_km)) || 'iau';
+  $('#minAlt').value = s.min_sun_alt_deg;
+  $('#atm').value = s.earth_atm_km;
+  $('#refraction').checked = !!s.refraction;
+  $('#includeInvisible').checked = !!s.include_invisible;
+}
+
+/* ------------------------------------------------------------------ */
 /* detail                                                              */
 /* ------------------------------------------------------------------ */
 async function openDetail(id, { root = false, push = false } = {}) {
   const st = $('#status');
-  setStatus(st, '詳細を計算中…', 'busy');
+  const saved = state.saved && state.saved.events.get(id);
+  setStatus(st, saved && !saved.serverId ? '保存した計算条件で詳細を計算中…' : '詳細を計算中…', 'busy');
   try {
-    const d = await api('/api/event/' + id);
+    const d = await liveDetail(id);
     if (push && state.detail) state.stack.push(state.detail.id);
-    if (root) { state.stack = []; state.rootId = id; }
+    if (root) { state.stack = []; state.rootId = d.id; }
     state.detail = d;
     state.selectedId = root ? id : state.selectedId;
     $$('#eventTable tbody tr').forEach((tr) => tr.classList.toggle('selected', tr.dataset.id === state.selectedId));
@@ -948,7 +1150,7 @@ async function openDetail(id, { root = false, push = false } = {}) {
 }
 async function loadGeLocal(d) {
   try {
-    const r = await api('/api/local', { event_id: d.id, lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: '最大食の地点' });
+    const r = await api('/api/local', { event_id: await liveId(d.id), lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: '最大食の地点' });
     if (state.detail !== d || !r.found) return;
     state.local = r;
     renderOverview();
@@ -1589,7 +1791,7 @@ async function loadMap(force = false) {
   if (state.mapData[d.id] === undefined || force || state.mapData[d.id] === null) {
     setStatus(st, '地図データを計算中…（数秒かかります）', 'busy');
     try {
-      const md = await api(`/api/event/${d.id}/map`);
+      const md = await api(`/api/event/${await liveId(d.id)}/map`);
       state.mapData[d.id] = md;
       if (state.detail === d) { drawMap(d, md); setStatus(st, ''); }
     } catch (err) { setStatus(st, err.message, 'err'); }
@@ -1781,7 +1983,7 @@ async function onMapClick(ev) {
   const base = state.rootId || d.id;
   const popup = L.popup().setLatLng(ev.latlng).setContent('<span class="spinner"></span>この地点での見え方を計算中…').openOn(state.map);
   try {
-    const r = await api('/api/local', { event_id: base, lat: ll.lat, lon: ll.lng, elevation_m: 0, name: `地図上の地点 ${fmtLatLon(ll.lat, ll.lng)}` });
+    const r = await api('/api/local', { event_id: await liveId(base), lat: ll.lat, lon: ll.lng, elevation_m: 0, name: `地図上の地点 ${fmtLatLon(ll.lat, ll.lng)}` });
     if (!r.found) { popup.setContent(`${fmtLatLon(ll.lat, ll.lng)}<br>この地点では${d.body === 'moon' || d.kind === 'global' ? '食は起こりません' : '見られません'}。`); return; }
     const moon = r.body === 'moon';
     const vis = r.vis_fraction >= 0.999 ? '全経過が見える' : r.vis_fraction > 0 ? `一部が見える（${Math.round(r.vis_fraction * 100)}%）` : '太陽が地平線の下で見えない';
@@ -1835,7 +2037,10 @@ function renderData() {
 function downloadJson() {
   const d = state.detail;
   if (!d) return;
-  saveFile(`eclipse_${d.max.slice(0, 10)}_${d.id}.json`, JSON.stringify({ event: d, local: state.local }, null, 2), 'application/json');
+  const out = { tool: SAVE_TOOL, version: state.info.version, saved_at: new Date().toISOString(), event: d, local: state.local };
+  out.event = noId(d);
+  if (out.local) out.local = noId(out.local);
+  saveFile(`eclipse_${d.max.slice(0, 10)}_${d.id}.json`, JSON.stringify(out, null, 2), 'application/json');
 }
 function downloadSeriesCsv() {
   const L = state.local;

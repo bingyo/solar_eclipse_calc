@@ -274,3 +274,4 @@ dialog::backdrop { background: rgba(15, 20, 32, .45); }
 .sweep-chart .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 4 3; }
 .sweep-chart .tick { fill: var(--muted); font-size: 11px; }
 .sweep-chart .axis { fill: var(--ink2); font-size: 12px; }
+.saved-note { margin-bottom: 6px; padding: 6px 10px; border-radius: 8px; background: #eef4ff; color: #24427a; font-size: 13px; }

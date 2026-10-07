@@ -93,6 +93,11 @@ class SweepRequest(SearchRequest):
     step_deg: float = 10.0
 
 
+class RestoreRequest(BaseModel):
+    request: dict
+    event: dict
+
+
 class LocalRequest(BaseModel):
     event_id: str
     lat: float
@@ -312,13 +317,15 @@ def search(req: SearchRequest):
                 obs_desc = observer.describe()
                 if obs_desc.get('epoch_jd_tt'):
                     obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
+            saved = _saved_request(req, spec, observer)
             if observer.kind == 'space' and years > 20:
                 raise ObserverError('人工衛星の観測者では期間を 20 年以内にしてください')
             events = []
             for body in phen:
                 if spec.get('type') == 'global' and body == 'moon':
                     for ev in search_global(ctx, jd_a, jd_b, params):
-                        eid = _put({'kind': 'global', 'event': ev, 'ctx': ctx, 'params': params})
+                        eid = _put({'kind': 'global', 'event': ev, 'ctx': ctx, 'params': params,
+                                    'request': saved})
                         s = dict(ev, id=eid)
                         events.append(s)
                     continue
@@ -328,7 +335,7 @@ def search(req: SearchRequest):
                 for ev in found:
                     eid = _put({'kind': 'local', 'event': ev, 'search': ls,
                                 'ctx': ctx, 'params': params, 'observer': observer,
-                                'global_obs': spec.get('type') == 'global'})
+                                'global_obs': spec.get('type') == 'global', 'request': saved})
                     s = _local_summary(ev, observer)
                     s['id'] = eid
                     if spec.get('type') == 'global':
@@ -412,6 +419,7 @@ def phase_sweep(req: SweepRequest):
             warnings += observer.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
             for m in phases:
                 observer = build_observer(ctx, dict(spec, m_deg=m), parse_time=lambda s: parse_utc(ctx, s))
+                saved = _saved_request(req, dict(spec, m_deg=m), observer)
                 for body in phen:
                     ls = LocalSearch(ctx, observer, body, params, jd_a, jd_b)
                     found = ls.run()
@@ -419,7 +427,8 @@ def phase_sweep(req: SweepRequest):
                     tc = conj[body]
                     for ev in found:
                         eid = _put({'kind': 'local', 'event': ev, 'search': ls, 'ctx': ctx,
-                                    'params': params, 'observer': observer, 'global_obs': False})
+                                    'params': params, 'observer': observer, 'global_obs': False,
+                                    'request': saved})
                         s = _local_summary(ev, observer)
                         s['id'] = eid
                         s['m_deg'] = m
@@ -462,6 +471,70 @@ def phase_sweep(req: SweepRequest):
     })
 
 
+def _saved_request(req, spec, observer):
+    '''The request that computes an event again (a TLE fetched from CelesTrak is kept as fetched).'''
+    if spec.get('type') == 'celestrak':
+        spec = {'type': 'tle', 'line1': observer.line1, 'line2': observer.line2,
+                'name': observer.name, 'norad': spec.get('norad')}
+    return {'phenomena': list(req.phenomena), 'observer': dict(spec), 'start': req.start,
+            'end': req.end, 'settings': dict(req.settings)}
+
+
+RESTORE_MARGIN_D = 0.5
+
+
+@app.post('/api/restore')
+def restore(req: RestoreRequest):
+    '''Compute one event of a saved result again.
+
+    A saved result keeps the list as it was computed; the details of an event (contacts,
+    timeseries, map) are computed again from the saved request around the saved time.'''
+    r, ev = req.request, req.event
+    if not isinstance(r.get('observer'), dict) or ev.get('jd_max') is None:
+        raise HTTPException(400, '保存したファイルに計算条件または現象の時刻がありません')
+    body = ev.get('body') or 'moon'
+    try:
+        ctx, params = _settings(r.get('settings') or {})
+        jd = float(ev['jd_max'])
+        a = (ev.get('jd_c1') or jd) - RESTORE_MARGIN_D
+        b = (ev.get('jd_c4') or jd) + RESTORE_MARGIN_D
+        # keep the period of the original search (contacts cut at its ends stay cut)
+        if r.get('start'):
+            a = max(a, parse_utc(ctx, r['start']))
+        if r.get('end'):
+            b = min(b, parse_utc(ctx, r['end']))
+    except ObserverError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, f'保存した計算条件を解釈できません: {exc}')
+    spec = dict(r['observer'])
+    if ev.get('m_deg') is not None:
+        spec['m_deg'] = ev['m_deg']
+    with _compute_lock:
+        try:
+            if spec.get('type') == 'global' and body == 'moon':
+                found = search_global(ctx, a, b, params)
+                obj = {'kind': 'global', 'ctx': ctx, 'params': params}
+            else:
+                observer = build_observer(ctx, spec, parse_time=lambda s: parse_utc(ctx, s))
+                ls = LocalSearch(ctx, observer, body, params, a, b)
+                found = ls.run()
+                obj = {'kind': 'local', 'search': ls, 'ctx': ctx, 'params': params,
+                       'observer': observer, 'global_obs': spec.get('type') == 'global'}
+        except ObserverError as exc:
+            raise HTTPException(400, str(exc))
+        except Exception as exc:
+            traceback.print_exc()
+            raise HTTPException(500, f'計算中にエラーが発生しました: {exc}')
+    hit = [e for e in found if abs(e['jd_max'] - jd) < 0.1]
+    if not hit:
+        raise HTTPException(404, 'この現象を保存した計算条件で再計算できませんでした')
+    obj['event'] = min(hit, key=lambda e: abs(e['jd_max'] - jd))
+    obj['request'] = {'phenomena': [body], 'observer': spec, 'start': r.get('start'),
+                      'end': r.get('end'), 'settings': r.get('settings') or {}}
+    return event_detail(_put(obj))
+
+
 def _local_detail(obj):
     ev, ls = obj['event'], obj['search']
     with _compute_lock:
@@ -478,6 +551,8 @@ def _local_detail(obj):
     d['warnings'] = obj['observer'].warnings_for(obj['ctx'], ev['jd_max'])
     d['params'] = obj['params'].as_dict()
     d['ephemeris'] = obj['ctx'].ephemeris_name
+    if obj.get('request'):
+        d['request'] = obj['request']
     return d
 
 
@@ -486,6 +561,8 @@ def event_detail(eid: str):
     obj = _get(eid)
     if obj['kind'] == 'global':
         ev = dict(obj['event'], id=eid)
+        if obj.get('request'):
+            ev['request'] = obj['request']
         return _clean(ev)
     d = _local_detail(obj)
     d['id'] = eid
@@ -545,8 +622,13 @@ def local_at(req: LocalRequest):
     if not found:
         return {'found': False, 'observer': observer.describe()}
     e = min(found, key=lambda x: abs(x['jd_max'] - ev['jd_max']))
+    parent = obj.get('request') or {}
+    request = {'phenomena': [body], 'observer': {'type': 'ground', 'lat': req.lat, 'lon': req.lon,
+                                                 'elevation_m': req.elevation_m, 'name': req.name},
+               'start': iso_from_jd(ctx, a - 0.3), 'end': iso_from_jd(ctx, b + 0.3),
+               'settings': dict(parent.get('settings') or {}, include_invisible=True)}
     eid = _put({'kind': 'local', 'event': e, 'search': ls, 'ctx': ctx, 'params': p2,
-                'observer': observer})
+                'observer': observer, 'request': request})
     d = _local_detail(_store[eid])
     d['id'] = eid
     d['found'] = True
