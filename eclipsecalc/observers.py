@@ -26,6 +26,7 @@ from .constants import (AU_KM, DAY_S, EARTH_OMEGA, GM_EARTH, J2_EARTH, WGS84_A,
                         WGS84_B)
 from .context import CACHE_DIR
 from .geometry import norm
+from .i18n import tr
 from .net import urlopen as _urlopen
 
 AU_PER_DAY_PER_KM_S = DAY_S / AU_KM
@@ -69,13 +70,16 @@ class Observer:
 
 class GeocenterObserver(Observer):
     kind = 'geocenter'
-    name = '地心'
     r_min_km = 0.0
     r_max_km = 0.0
     v_max_km_s = 0.0
 
     def __init__(self):
         self.vf = _ZeroVector()
+
+    @property
+    def name(self):
+        return tr('地心')
 
     def char_time_s(self):
         return 1e9
@@ -86,9 +90,9 @@ class GroundObserver(Observer):
 
     def __init__(self, lat, lon, elevation_m=0.0, name=''):
         if not (-90 <= lat <= 90):
-            raise ObserverError('緯度は -90〜90 度で指定してください')
+            raise ObserverError(tr('緯度は -90〜90 度で指定してください'))
         if not (-180 <= lon <= 360):
-            raise ObserverError('経度は -180〜180 度で指定してください')
+            raise ObserverError(tr('経度は -180〜180 度で指定してください'))
         self.lat = float(lat)
         self.lon = float(((lon + 180.0) % 360.0) - 180.0)
         self.elevation_m = float(elevation_m)
@@ -113,7 +117,7 @@ class FixedITRSObserver(Observer):
 
     def __init__(self, lat, lon, height_km, name=''):
         self.lat, self.lon, self.height_km = float(lat), float(lon), float(height_km)
-        self.name = name or f'地球固定点 {lon:.2f}°'
+        self.name = name or tr('地球固定点 {lon:.2f}°', lon=lon)
         self.vf = wgs84.latlon(self.lat, self.lon, elevation_m=self.height_km * 1000.0)
         r = WGS84_A + self.height_km
         self.r_min_km = self.r_max_km = r
@@ -131,11 +135,11 @@ class TLEObserver(Observer):
     def __init__(self, ctx, line1, line2, name=''):
         line1, line2 = line1.strip(), line2.strip()
         if not (line1.startswith('1 ') and line2.startswith('2 ')):
-            raise ObserverError('TLE の 1 行目は "1 "、2 行目は "2 " で始まる必要があります')
+            raise ObserverError(tr('TLE の 1 行目は "1 "、2 行目は "2 " で始まる必要があります'))
         try:
             self.vf = EarthSatellite(line1, line2, name or None, ctx.ts)
         except Exception as exc:  # pragma: no cover - sgp4 raises various errors
-            raise ObserverError(f'TLE を解釈できません: {exc}')
+            raise ObserverError(tr('TLE を解釈できません: {exc}', exc=exc))
         m = self.vf.model
         self.line1, self.line2 = line1, line2
         self.name = name or f'NORAD {m.satnum}'
@@ -149,7 +153,7 @@ class TLEObserver(Observer):
         self.v_max_km_s = math.sqrt(GM_EARTH * (2 / self.r_min_km - 1 / a)) * 1.02
         self.epoch_jd = float(self.vf.epoch.tt)
         if self.r_min_km < WGS84_A:
-            raise ObserverError('この TLE の近地点は地球内部にあります（再突入済みの可能性）')
+            raise ObserverError(tr('この TLE の近地点は地球内部にあります（再突入済みの可能性）'))
 
     def char_time_s(self):
         return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
@@ -157,10 +161,10 @@ class TLEObserver(Observer):
     def warnings_for(self, ctx, jd):
         age = abs(jd - self.epoch_jd)
         if age > 30:
-            return [f'TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
-                    '結果は目安として扱ってください。']
+            return [tr('TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
+                       '結果は目安として扱ってください。', age=age)]
         if age > 7:
-            return [f'TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。']
+            return [tr('TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。', age=age)]
         return []
 
     def describe(self):
@@ -185,7 +189,7 @@ def tle_with_mean_anomaly(line2, m_deg):
     and the checksum redone: the same orbit with the satellite elsewhere on it."""
     line2 = line2.rstrip()
     if len(line2) < 68 or not line2.startswith('2 '):
-        raise ObserverError('TLE の 2 行目が短すぎます（69 文字の形式で指定してください）')
+        raise ObserverError(tr('TLE の 2 行目が短すぎます（69 文字の形式で指定してください）'))
     body = f'{line2[:43]}{float(m_deg) % 360.0:8.4f}{line2[51:68]}'
     return body + str(_tle_checksum(body))
 
@@ -283,7 +287,7 @@ def sun_synchronous_inclination(a_km, e=0.0):
         n = n0 * (1 + f * math.sqrt(1 - e * e) * (1 - 1.5 * math.sin(i) ** 2))
         c = -target / (f * n)
         if c < -1:
-            raise ObserverError('この軌道の大きさでは太陽同期軌道になりません（高度が高すぎます）')
+            raise ObserverError(tr('この軌道の大きさでは太陽同期軌道になりません（高度が高すぎます）'))
         i = math.acos(c)
     return math.degrees(i)
 
@@ -292,10 +296,10 @@ class KeplerObserver(Observer):
     def __init__(self, ctx, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg,
                  j2=True, name=''):
         if a_km * (1 - e) <= WGS84_A:
-            raise ObserverError('近地点高度が地表より低くなっています')
+            raise ObserverError(tr('近地点高度が地表より低くなっています'))
         if not (0 <= e < 1):
-            raise ObserverError('離心率は 0 以上 1 未満で指定してください')
-        self.name = name or '軌道要素で指定した衛星'
+            raise ObserverError(tr('離心率は 0 以上 1 未満で指定してください'))
+        self.name = name or tr('軌道要素で指定した衛星')
         self.params = dict(epoch_jd_tt=epoch_jd_tt, a_km=a_km, e=e, i_deg=i_deg,
                            raan_deg=raan_deg, argp_deg=argp_deg, m_deg=m_deg, j2=j2)
         self.vf = _KeplerVF(self.name, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg,
@@ -350,7 +354,7 @@ def _horizons_request(command, jd_start_tdb, jd_stop_tdb, step_min):
         msg = payload.get('error') or text.strip().splitlines()[-12:]
         if isinstance(msg, list):
             msg = '\n'.join(msg)
-        raise ObserverError(f'JPL Horizons からデータを取得できませんでした:\n{msg}')
+        raise ObserverError(tr('JPL Horizons からデータを取得できませんでした:\n{msg}', msg=msg))
     body = text.split('$$SOE', 1)[1].split('$$EOE', 1)[0]
     rows = []
     for line in body.strip().splitlines():
@@ -359,7 +363,7 @@ def _horizons_request(command, jd_start_tdb, jd_stop_tdb, step_min):
             continue
         rows.append([float(parts[0])] + [float(v) for v in parts[2:8]])
     if not rows:
-        raise ObserverError('JPL Horizons の応答にデータ行がありません')
+        raise ObserverError(tr('JPL Horizons の応答にデータ行がありません'))
     arr = np.array(rows)
     return arr[:, 0], arr[:, 1:4].T, arr[:, 4:7].T
 
@@ -392,7 +396,7 @@ class _HorizonsVF(VectorFunction):
         x = np.atleast_1d(x)
         jd = self.jd
         if jd.size < 2 or np.any(x < jd[0] - 1e-9) or np.any(x > jd[-1] + 1e-9):
-            raise ObserverError('JPL Horizons の取得範囲外の時刻が要求されました')
+            raise ObserverError(tr('JPL Horizons の取得範囲外の時刻が要求されました'))
         i = np.clip(np.searchsorted(jd, x) - 1, 0, jd.size - 2)
         h = (jd[i + 1] - jd[i]) * DAY_S
         s = (x - jd[i]) * DAY_S / h
@@ -421,7 +425,7 @@ class HorizonsObserver(Observer):
     def __init__(self, ctx, command, step_min=5, name=''):
         command = str(command).strip()
         if not command:
-            raise ObserverError('Horizons の天体 ID を指定してください（例: -170 = JWST）')
+            raise ObserverError(tr('Horizons の天体 ID を指定してください（例: -170 = JWST）'))
         self.command = command
         self.step_min = max(1, int(step_min))
         self.name = name or f'Horizons {command}'
@@ -436,8 +440,8 @@ class HorizonsObserver(Observer):
         n = (jd_b - jd_a) * 1440 / step_min
         if n > self.MAX_POINTS:
             raise ObserverError(
-                f'Horizons から取得するデータ点が多すぎます（{int(n)} 点）。期間を短くするか'
-                '刻み幅を大きくしてください。')
+                tr('Horizons から取得するデータ点が多すぎます（{n} 点）。期間を短くするか'
+                   '刻み幅を大きくしてください。', n=int(n)))
         key = f'{self.command}_{jd_a:.5f}_{jd_b:.5f}_{step_min}'.replace('/', '_')
         safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in key)
         path = CACHE_DIR / f'horizons_{safe}.npz'
@@ -473,8 +477,8 @@ class HorizonsObserver(Observer):
                 self.vf.add(jd, pos, vel)
         for a, b in jd_windows:
             if not self.vf.covers(a - 1e-4, b + 1e-4):
-                raise ObserverError('JPL Horizons から必要な期間の軌道データを取得できませんでした'
-                                    '（探査機の軌道データが提供されている期間外の可能性があります）')
+                raise ObserverError(tr('JPL Horizons から必要な期間の軌道データを取得できませんでした'
+                                       '（探査機の軌道データが提供されている期間外の可能性があります）'))
 
     def char_time_s(self):
         return max(60.0, min(self.r_min_km / self.v_max_km_s, 6 * 3600.0))
@@ -502,11 +506,11 @@ def _ssc_request(sat, utc_a, utc_b):
     result = payload[1]['Result'][1]
     if result.get('StatusCode') != 'SUCCESS':
         text = result.get('StatusText', ['', []])[1]
-        raise ObserverError(f'NASA SSCWeb からデータを取得できませんでした: {" ".join(text) or result}')
+        raise ObserverError(tr('NASA SSCWeb からデータを取得できませんでした: {msg}', msg=' '.join(text) or result))
     data = result.get('Data', ['', []])[1]
     if not data:
-        raise ObserverError(f'NASA SSCWeb に {sat} の {utc_a:%Y-%m-%d %H:%M}〜{utc_b:%Y-%m-%d %H:%M} '
-                            'の軌道データがありません')
+        raise ObserverError(tr('NASA SSCWeb に {sat} の {start}〜{end} の軌道データがありません', sat=sat,
+                               start=f'{utc_a:%Y-%m-%d %H:%M}', end=f'{utc_b:%Y-%m-%d %H:%M}'))
     sd = data[0][1]
     coords = next(c[1] for c in sd['Coordinates'][1] if c[1]['CoordinateSystem'] == 'GEI_J_2000')
     xyz = np.array([coords['X'][1], coords['Y'][1], coords['Z'][1]], float)
@@ -552,7 +556,7 @@ class _SampledVF(VectorFunction):
         nodes = (self.jd - jd0) * DAY_S
         n = self.NPT
         if nodes.size < n or np.any(x < nodes[0] - 1e-3) or np.any(x > nodes[-1] + 1e-3):
-            raise ObserverError('NASA SSCWeb の取得範囲外の時刻が要求されました')
+            raise ObserverError(tr('NASA SSCWeb の取得範囲外の時刻が要求されました'))
         i0 = np.clip(np.searchsorted(nodes, x) - n // 2, 0, nodes.size - n)
         idx = i0[:, None] + np.arange(n)[None, :]             # (N, n)
         X = nodes[idx]
@@ -592,7 +596,7 @@ def ssc_satellites(max_age_days=7.0):
             path.write_text(raw, encoding='utf-8')
         except Exception as exc:
             if not path.exists():
-                raise ObserverError(f'NASA SSCWeb の衛星一覧を取得できませんでした: {exc}')
+                raise ObserverError(tr('NASA SSCWeb の衛星一覧を取得できませんでした: {exc}', exc=exc))
     payload = json.loads(path.read_text(encoding='utf-8'))
     out = []
     for item in payload[1]['Observatory'][1]:
@@ -620,7 +624,7 @@ class SSCWebObserver(Observer):
     def __init__(self, ctx, sat_id, name=''):
         sat_id = str(sat_id).strip().lower()
         if not sat_id:
-            raise ObserverError('SSCWeb の衛星 ID を指定してください（例: hinode）')
+            raise ObserverError(tr('SSCWeb の衛星 ID を指定してください（例: hinode）'))
         self.sat_id = sat_id
         self.name = name or f'SSCWeb {sat_id}'
         self.ctx = ctx
@@ -641,7 +645,7 @@ class SSCWebObserver(Observer):
             return None
         sat = next((o for o in sats if o['id'] == self.sat_id), None)
         if sat is None:
-            raise ObserverError(f'NASA SSCWeb に衛星 ID「{self.sat_id}」はありません')
+            raise ObserverError(tr('NASA SSCWeb に衛星 ID「{sat}」はありません', sat=self.sat_id))
         t = [self.ctx.ts.utc(int(x[0:4]), int(x[5:7]), int(x[8:10]), int(x[11:13]), int(x[14:16]),
                              int(x[17:19])) for x in (sat['start'], sat['end'])]
         return float(t[0].tt), float(t[1].tt)
@@ -700,15 +704,15 @@ class SSCWebObserver(Observer):
         todo = [(a, b) for a, b in jd_windows if not self.vf.covers(a - pad / 2, b + pad / 2)]
         days = sum(b - a for a, b in todo)
         if days > self.MAX_DAYS:
-            raise ObserverError(f'NASA SSCWeb から取得する軌道データが多すぎます（{days:.0f} 日分）。'
-                                '期間を短くしてください')
+            raise ObserverError(tr('NASA SSCWeb から取得する軌道データが多すぎます（{days:.0f} 日分）。'
+                                   '期間を短くしてください', days=days))
         for a, b in todo:
             jd, pos = self._fetch(a - pad, b + pad)
             self.vf.add(jd, pos)
         for a, b in jd_windows:
             if not self.vf.covers(a - 1e-4, b + 1e-4):
-                raise ObserverError('NASA SSCWeb から必要な期間の軌道データを取得できませんでした'
-                                    '（欠損または提供期間外の可能性があります）')
+                raise ObserverError(tr('NASA SSCWeb から必要な期間の軌道データを取得できませんでした'
+                                       '（欠損または提供期間外の可能性があります）'))
 
     def char_time_s(self):
         return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
@@ -731,7 +735,7 @@ def fetch_tle_celestrak(norad_id):
         text = resp.read().decode('utf-8', 'replace')
     lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
     if len(lines) < 2 or 'No GP data' in text:
-        raise ObserverError(f'CelesTrak に NORAD {norad_id} の軌道要素が見つかりません')
+        raise ObserverError(tr('CelesTrak に NORAD {norad} の軌道要素が見つかりません', norad=norad_id))
     if lines[0].startswith('1 ') and len(lines) >= 2:
         return f'NORAD {norad_id}', lines[0], lines[1]
     return lines[0].strip(), lines[1], lines[2]
@@ -750,7 +754,7 @@ def build_observer(ctx, spec, parse_time=None):
         return GeocenterObserver()
     if kind == 'geo':
         lon = float(spec['lon'])
-        return FixedITRSObserver(0.0, lon, 35_786.0, name or f'静止衛星 {lon:.1f}°')
+        return FixedITRSObserver(0.0, lon, 35_786.0, name or tr('静止衛星 {lon:.1f}°', lon=lon))
     if kind == 'fixed':
         return FixedITRSObserver(float(spec.get('lat', 0)), float(spec['lon']),
                                  float(spec['height_km']), name)
@@ -775,7 +779,7 @@ def build_observer(ctx, spec, parse_time=None):
         sso = bool(spec.get('sso'))
         if sso:
             if not 0 <= e < 1:
-                raise ObserverError('離心率は 0 以上 1 未満で指定してください')
+                raise ObserverError(tr('離心率は 0 以上 1 未満で指定してください'))
             i_deg = sun_synchronous_inclination(a, e)
         else:
             i_deg = float(spec['i_deg'])
@@ -792,4 +796,4 @@ def build_observer(ctx, spec, parse_time=None):
         return HorizonsObserver(ctx, spec['command'], int(spec.get('step_min', 5) or 5), name)
     if kind == 'sscweb':
         return SSCWebObserver(ctx, spec['id'], name)
-    raise ObserverError(f'不明な観測者タイプです: {kind}')
+    raise ObserverError(tr('不明な観測者タイプです: {kind}', kind=kind))

@@ -22,4 +22,4 @@ python cli.py --tle iss.txt --start 2026-10-01 --end 2027-10-01 --format json --
 
 - 計算処理は `eclipsecalc/`、Web API は `eclipsecalc/server.py`、画面は `static/`。`cli.py` は `server.search` / `server.phase_sweep` を呼ぶだけなので、計算を変えたら画面と CLI の両方に反映されます。
 - テストは `tests/` のスクリプトを `python tests/<名前>.py` で実行します（pytest は不要）。`test_hinode.py` とテストの一部は初回にインターネットが必要です。
-- 文書・画面・メッセージは日本語です。
+- 文書・画面・メッセージは日本語です。画面は英語・フランス語・ロシア語・スペイン語・中国語・ヒンディー語にも切り替えられます。画面の文言は `t('日本語')` で書き、`static/i18n.js` の `I18N` に 6 言語の訳を加えます（`index.html` の固定の文言は自動で、マークアップを含む部分は `HTML_BLOCKS` で翻訳）。Web API のエラー・注意は `eclipsecalc/i18n.py` の `tr()` と `MESSAGES` で、画面の言語（`X-Lang` ヘッダー）に合わせます。

@@ -21,6 +21,9 @@
     </div>
   </div>
   <div class="top-controls">
+    <label class="tz" title="言語 / Language"><span aria-hidden="true">🌐</span>
+      <select id="lang" aria-label="言語 / Language"></select>
+    </label>
     <label class="tz">表示する時刻
       <select id="tz"></select>
     </label>
@@ -224,7 +227,7 @@
   <section class="results" aria-live="polite">
     <div id="welcome" class="card welcome">
       <h2>ようこそ</h2>
-      <p>左の設定で <b>①現象</b>・<b>②観測者</b>・<b>③期間</b> を選んで「計算する」を押すと、見られる日食や太陽面通過の一覧が表示されます。
+      <p data-i18n-html="welcome">左の設定で <b>①現象</b>・<b>②観測者</b>・<b>③期間</b> を選んで「計算する」を押すと、見られる日食や太陽面通過の一覧が表示されます。
         一覧の行をクリックすると、欠け方の動画・グラフ・地図などの詳しい結果を確認できます。
         「結果を保存」で保存したファイルは <button type="button" class="link" data-open>保存した結果を開く</button> から、あとで同じ画面で見返せます。</p>
       <div class="examples">
@@ -331,6 +334,7 @@
 
 <dialog id="helpDlg">
   <form method="dialog" class="help">
+    <div data-i18n-html="help">
     <h2>使い方と用語</h2>
     <h3>基本の流れ</h3>
     <ol>
@@ -358,11 +362,13 @@
       <li>月の縁の凹凸（山や谷）は考慮していません。NASA 方式の 2 種類の月半径でその平均的な効果を近似しています。実際の接触時刻は月縁地形により ±1〜2 秒ほど変わることがあります。</li>
       <li>人工衛星の精度は軌道情報の精度で決まります。TLE は元期から日数が経つと数 km〜数百 km の誤差を生じます。</li>
     </ul>
+    </div>
     <div class="right"><button class="primary">閉じる</button></div>
   </form>
 </dialog>
 
 <script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

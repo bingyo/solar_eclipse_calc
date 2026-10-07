@@ -27,6 +27,7 @@ const state = {
   result: null, filters: new Set(), selectedId: null,
   detail: null, local: null, stack: [], rootId: null, saved: null,
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
+  tleInfo: null, downloadable: [], layerControls: [],
 };
 
 /* ------------------------------------------------------------------ */
@@ -37,23 +38,28 @@ const TZ_OPTIONS = [
   ['Asia/Seoul', '韓国'], ['Asia/Shanghai', '中国'], ['Asia/Singapore', 'シンガポール'],
   ['Australia/Sydney', 'シドニー'], ['Pacific/Honolulu', 'ハワイ'],
   ['America/Los_Angeles', '米国太平洋'], ['America/Chicago', '米国中部'], ['America/New_York', '米国東部'],
-  ['Europe/London', '英国'], ['Europe/Paris', '中央ヨーロッパ'], ['Africa/Cairo', 'エジプト'],
+  ['Europe/London', '英国'], ['Europe/Paris', '中央ヨーロッパ'], ['Europe/Moscow', 'モスクワ'],
+  ['Africa/Cairo', 'エジプト'], ['Asia/Kolkata', 'インド'], ['America/Mexico_City', 'メキシコ'],
 ];
 const _fmtCache = new Map();
 function tzId() { const v = $('#tz').value; return v === 'local' ? undefined : v; }
-function dtf(opts) {
-  const key = (tzId() || 'local') + JSON.stringify(opts);
-  if (!_fmtCache.has(key)) _fmtCache.set(key, new Intl.DateTimeFormat('ja-JP', { timeZone: tzId(), hourCycle: 'h23', ...opts }));
+/* Numbers of dates and times come from a fixed locale; with `local` the words (weekday, month,
+   time zone) are in the language of the page. */
+function dtf(opts, local = false) {
+  const loc = local ? langLocale() : 'ja-JP';
+  const key = loc + (tzId() || 'local') + JSON.stringify(opts);
+  if (!_fmtCache.has(key)) _fmtCache.set(key, new Intl.DateTimeFormat(loc, { timeZone: tzId(), hourCycle: 'h23', ...opts }));
   return _fmtCache.get(key);
 }
-function parts(date, opts) {
+function parts(date, opts, local = false) {
   const o = {};
-  for (const p of dtf(opts).formatToParts(date)) o[p.type] = p.value;
+  for (const p of dtf(opts, local).formatToParts(date)) o[p.type] = p.value;
   return o;
 }
 function toDate(iso) { return iso instanceof Date ? iso : new Date(iso); }
 function fmtDate(iso) {
   if (!iso) return '—';
+  if (LANG !== 'ja') return dtf({ year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' }, true).format(toDate(iso));
   const p = parts(toDate(iso), { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
   return `${p.year}年${+p.month}月${+p.day}日(${p.weekday})`;
 }
@@ -79,9 +85,8 @@ function fmtHM(iso) {
 }
 function fmtDT(iso, digits = 0) { return iso ? `${fmtDateShort(iso)} ${fmtTime(iso, digits)}` : '—'; }
 function tzLabel(iso) {
-  if (!tzId()) return '';
   if (tzId() === 'UTC') return 'UTC';
-  const p = parts(toDate(iso || Date.now()), { timeZoneName: 'short', hour: '2-digit' });
+  const p = parts(toDate(iso || Date.now()), { timeZoneName: 'short', hour: '2-digit' }, true);
   return p.timeZoneName || '';
 }
 function dayDiff(isoA, isoB) {
@@ -91,31 +96,32 @@ function dayDiff(isoA, isoB) {
 }
 function fmtDur(s, precise = false) {
   if (s == null || !isFinite(s)) return '—';
-  if (s < 60) return `${s.toFixed(precise ? 1 : 0)}秒`;
+  if (s < 60) return t('{s}秒', { s: s.toFixed(precise ? 1 : 0) });
   if (s < 3600) {
     const m = Math.floor(s / 60), r = s - 60 * m;
-    return `${m}分${precise ? r.toFixed(1).padStart(4, '0') : String(Math.round(r)).padStart(2, '0')}秒`;
+    return t('{m}分{s}秒', { m, s: precise ? r.toFixed(1).padStart(4, '0') : String(Math.round(r)).padStart(2, '0') });
   }
   const h = Math.floor(s / 3600), m = Math.round((s - 3600 * h) / 60);
-  return m === 60 ? `${h + 1}時間00分` : `${h}時間${String(m).padStart(2, '0')}分`;
+  return m === 60 ? t('{h}時間{m}分', { h: h + 1, m: '00' }) : t('{h}時間{m}分', { h, m: String(m).padStart(2, '0') });
 }
 const f1 = (v) => (v == null ? '—' : Number(v).toFixed(1));
 const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
 const f4 = (v) => (v == null ? '—' : Number(v).toFixed(4));
 const pct = (v, d = 1) => (v == null ? '—' : (100 * v).toFixed(d) + '%');
-function fmtLat(v) { return v == null ? '—' : `${v >= 0 ? '北緯' : '南緯'} ${Math.abs(v).toFixed(2)}°`; }
-function fmtLon(v) { return v == null ? '—' : `${v >= 0 ? '東経' : '西経'} ${Math.abs(v).toFixed(2)}°`; }
-function fmtLatLon(la, lo) { return `${fmtLat(la)}・${fmtLon(lo)}`; }
+function fmtLat(v) { return v == null ? '—' : v >= 0 ? t('北緯 {v}°', { v: Math.abs(v).toFixed(2) }) : t('南緯 {v}°', { v: Math.abs(v).toFixed(2) }); }
+function fmtLon(v) { return v == null ? '—' : v >= 0 ? t('東経 {v}°', { v: Math.abs(v).toFixed(2) }) : t('西経 {v}°', { v: Math.abs(v).toFixed(2) }); }
+function km(v) { return t('{v} km', { v }); }
+function fmtLatLon(la, lo) { return `${fmtLat(la)}${sep()}${fmtLon(lo)}`; }
 function azName(a) {
-  const n = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
-  return n[Math.round(((a % 360) + 360) % 360 / 22.5) % 16];
+  return compassPoints()[Math.round(((a % 360) + 360) % 360 / 22.5) % 16];
 }
 
 /* ------------------------------------------------------------------ */
 /* API                                                                 */
 /* ------------------------------------------------------------------ */
 async function api(path, body) {
-  const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+  const headers = { 'X-Lang': LANG };   // errors and warnings in the language of the page
+  const opt = body ? { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { headers };
   const res = await fetch(path, opt);
   let data = null;
   try { data = await res.json(); } catch (_) { /* ignore */ }
@@ -134,34 +140,39 @@ function setStatus(elm, msg, kind = '') {
 /* labels                                                              */
 /* ------------------------------------------------------------------ */
 const CAT = {
-  total: { label: '皆既日食', cls: 'total', color: '#262b38' },
-  annular: { label: '金環日食', cls: 'annular', color: '#e8850c' },
-  hybrid: { label: '金環皆既日食', cls: 'hybrid', color: '#8a3fd1' },
-  partial: { label: '部分日食', cls: 'partial', color: '#8f9bb3' },
-  mercury: { label: '水星の太陽面通過', cls: 'mercury', color: '#2b8fbf' },
-  venus: { label: '金星の太陽面通過', cls: 'venus', color: '#c9a227' },
+  total: { get label() { return t('皆既日食'); }, cls: 'total', color: '#262b38' },
+  annular: { get label() { return t('金環日食'); }, cls: 'annular', color: '#e8850c' },
+  hybrid: { get label() { return t('金環皆既日食'); }, cls: 'hybrid', color: '#8a3fd1' },
+  partial: { get label() { return t('部分日食'); }, cls: 'partial', color: '#8f9bb3' },
+  mercury: { get label() { return t('水星の太陽面通過'); }, cls: 'mercury', color: '#2b8fbf' },
+  venus: { get label() { return t('金星の太陽面通過'); }, cls: 'venus', color: '#c9a227' },
 };
 function catOf(e) { return e.body === 'moon' ? e.type : e.body; }
+/* The kind of an event, e.g. "皆既日食" or "水星の太陽面通過（外接のみ）". */
+function typeLabel(e) {
+  return CAT[catOf(e)].label + (e.body !== 'moon' && e.type === 'transit_grazing' ? t('（外接のみ）') : '');
+}
 function badge(e) {
   const c = CAT[catOf(e)];
-  let label = c.label;
-  if (e.body !== 'moon' && e.type === 'transit_grazing') label += '(外接のみ)';
-  if (e.kind === 'global' && e.noncentral) label += '(非中心)';
+  let label = typeLabel(e);
+  if (e.kind === 'global' && e.noncentral) label += t('（非中心）');
   return el('span', { class: 'badge ' + c.cls }, label);
 }
 function contactName(label, e) {
   const moon = e.body === 'moon';
-  const tot = e.type === 'total' ? '皆既' : e.type === 'annular' ? '金環' : '中心食';
   const map = moon ? {
-    C1: ['第1接触', '欠け始め'], C2: ['第2接触', `${tot}の始まり`], MAX: ['食の最大', ''],
-    C3: ['第3接触', `${tot}の終わり`], C4: ['第4接触', '欠け終わり'],
+    C1: [t('第1接触'), t('欠け始め')],
+    C2: [t('第2接触'), e.type === 'total' ? t('皆既の始まり') : e.type === 'annular' ? t('金環の始まり') : t('中心食の始まり')],
+    MAX: [t('食の最大'), ''],
+    C3: [t('第3接触'), e.type === 'total' ? t('皆既の終わり') : e.type === 'annular' ? t('金環の終わり') : t('中心食の終わり')],
+    C4: [t('第4接触'), t('欠け終わり')],
   } : {
-    C1: ['第1接触', '外接・入り始め'], C2: ['第2接触', '内接・入り終わり'], MAX: ['最大', '太陽中心に最も近づく'],
-    C3: ['第3接触', '内接・出始め'], C4: ['第4接触', '外接・出終わり'],
+    C1: [t('第1接触'), t('外接・入り始め')], C2: [t('第2接触'), t('内接・入り終わり')], MAX: [t('最大'), t('太陽中心に最も近づく')],
+    C3: [t('第3接触'), t('内接・出始め')], C4: [t('第4接触'), t('外接・出終わり')],
   };
   return map[label] || [label, ''];
 }
-function bodyJa(b) { return { moon: '月', mercury: '水星', venus: '金星' }[b]; }
+function bodyJa(b) { return { moon: t('月'), mercury: t('水星'), venus: t('金星') }[b]; }
 
 /* ------------------------------------------------------------------ */
 /* initialisation                                                      */
@@ -171,8 +182,10 @@ function addYears(d, y) { const r = new Date(d); r.setUTCFullYear(r.getUTCFullYe
 
 async function init() {
   const tz = $('#tz');
-  for (const [v, l] of TZ_OPTIONS) tz.append(el('option', { value: v }, l));
-  try { localStorage && localStorage.getItem('tz') && (tz.value = localStorage.getItem('tz')); } catch (_) { /* ignore */ }
+  initLanguage();
+  let savedTz = null;
+  try { savedTz = localStorage.getItem('tz'); } catch (_) { /* ignore */ }
+  fillTzOptions(savedTz || (LANG === 'ja' ? 'Asia/Tokyo' : 'local'));
   tz.addEventListener('change', () => {
     _fmtCache.clear();
     try { localStorage.setItem('tz', tz.value); } catch (_) { /* ignore */ }
@@ -190,7 +203,7 @@ async function init() {
   try {
     state.info = await api('/api/info');
   } catch (err) {
-    setStatus($('#status'), 'サーバーに接続できません: ' + err.message, 'err');
+    setStatus($('#status'), t('サーバーに接続できません: {msg}', { msg: err.message }), 'err');
     return;
   }
   const info = state.info;
@@ -200,22 +213,23 @@ async function init() {
   }
   if (info.quit_when_closed) watchPage();
   const cp = $('#cityPreset');
-  info.cities.forEach((c, i) => cp.append(el('option', { value: i }, c.name)));
+  fillPresets();
   cp.addEventListener('change', () => {
     const c = info.cities[cp.value];
     if (!c) return;
-    $('#lat').value = c.lat; $('#lon').value = c.lon; $('#elev').value = c.elevation_m; $('#placeName').value = c.name;
+    $('#lat').value = c.lat; $('#lon').value = c.lon; $('#elev').value = c.elevation_m; $('#placeName').value = t(c.name);
     updatePickMarker();
   });
+  if ($('#placeName').value === '東京') $('#placeName').value = t('東京');
   const sp = $('#satPreset');
-  info.satellites.forEach((s, i) => sp.append(el('option', { value: i }, s.label)));
-  sp.addEventListener('change', () => { const s = info.satellites[sp.value]; if (s) applySatSpec(s.spec); });
+  sp.addEventListener('change', () => { const s = info.satellites[sp.value]; if (s) applySatSpec(presetSpec(s.spec)); });
   const eph = $('#ephem');
   fillEphemerides(info.ephemerides);
   eph.value = info.default_ephemeris;
   eph.addEventListener('change', updateCoverage);
   updateCoverage();
-  renderEphemerisDownloads(info.downloadable_ephemerides || []);
+  state.downloadable = info.downloadable_ephemerides || [];
+  renderEphemerisDownloads();
 
   $$('#obsTabs button').forEach((b) => b.addEventListener('click', () => setObsTab(b.dataset.obs)));
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
@@ -236,7 +250,8 @@ async function init() {
   $('#helpBtn').addEventListener('click', () => $('#helpDlg').showModal());
   $('#csvBtn').addEventListener('click', downloadListCsv);
   $('#saveBtn').addEventListener('click', saveResult);
-  $$('[data-open]').forEach((b) => b.addEventListener('click', () => $('#openFile').click()));
+  // (delegated: the welcome text with one of these buttons is replaced when the language changes)
+  document.addEventListener('click', (ev) => { if (ev.target.closest('[data-open]')) $('#openFile').click(); });
   $('#openFile').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
     ev.target.value = '';
@@ -252,58 +267,116 @@ async function init() {
   $('#copyText').addEventListener('click', copyText);
 }
 
+/* ------------------------------------------------------------------ */
+/* language                                                            */
+/* ------------------------------------------------------------------ */
+function initLanguage() {
+  const sel = $('#lang');
+  sel.replaceChildren(...LANGS.map(([v, name]) => el('option', { value: v }, name)));
+  sel.value = LANG;
+  translatePage();
+  sel.addEventListener('change', () => changeLanguage(sel.value));
+}
+/* Switch the language of the page, keeping what is entered and shown. */
+function changeLanguage(lang) {
+  const prev = LANG;
+  setLanguage(lang);
+  $('#lang').value = LANG;
+  _fmtCache.clear();
+  fillTzOptions();
+  fillSpeedOptions();
+  $('#copyText').textContent = t('結果をテキストでコピー');
+  const info = state.info;
+  if (!info) return;
+  retranslateInput('#placeName', [...info.cities.map((c) => c.name), '地図で選んだ地点'], prev);
+  retranslateInput('#satName', [...info.satellites.map((s) => s.spec.name), PRELAUNCH_NAME], prev);
+  fillPresets();
+  fillEphemerides([...$('#ephem').options].map((o) => o.value));
+  renderEphemerisDownloads();
+  updateKeplerForm();
+  updateCoverage();
+  if (state.sscSats) showSscInfo(false);
+  if (state.tleInfo && !$('#satInfo').hidden) renderTleInfo();
+  state.layerControls.forEach(relabelLayerControl);
+  if (state.sweep) renderSweep();
+  else if (state.result) renderResults();
+  if (state.detail) renderDetailAll(false);
+}
+/* A name entered from a preset follows the language; one typed by hand is kept. */
+function retranslateInput(sel, keys, prev) {
+  const v = $(sel).value;
+  const key = keys.find((k) => k && tIn(prev, k) === v);
+  if (key) $(sel).value = t(key);
+}
+function fillTzOptions(value = $('#tz').value) {
+  const tz = $('#tz');
+  tz.replaceChildren(...TZ_OPTIONS.map(([v, l]) => el('option', { value: v }, t(l))));
+  if (TZ_OPTIONS.some(([v]) => v === value)) tz.value = value;
+}
+function fillPresets() {
+  const fill = (sel, items, label) => {
+    const s = $(sel), cur = s.value;
+    s.replaceChildren(s.options[0], ...items.map((x, i) => el('option', { value: i }, label(x))));
+    s.value = cur;
+  };
+  fill('#cityPreset', state.info.cities, (c) => t(c.name));
+  fill('#satPreset', state.info.satellites, (s) => t(s.label));
+}
+function presetSpec(spec) { return { ...spec, name: t(spec.name) }; }
+
 // The calculator quits by itself when its last page is closed: each page keeps this event stream
 // open, and the browser drops it when the tab or the browser is closed (see server.py)
 function watchPage() {
   state.pageStream = new EventSource('/api/page/stream');
   state.pageStream.onerror = () => {
     if (state.stopped) return;
-    fetch('/api/info').catch(() => showStopped('日食計算機は終了しています'));
+    fetch('/api/info').catch(() => showStopped(t('日食計算機は終了しています')));
   };
 }
 function showStopped(title) {
   state.stopped = true;
   if (state.pageStream) state.pageStream.close();
-  const again = state.info && state.info.app_mode ? '「日食計算機」アプリを開いてください' : 'start.bat（Mac・Linux は start.command）を起動してください';
+  const again = state.info && state.info.app_mode ? t('「日食計算機」アプリを開いてください') : t('start.bat（Mac・Linux は start.command）を起動してください');
   document.body.innerHTML = '';
   document.body.append(el('div', { class: 'quit-msg' },
     el('h2', {}, title),
-    el('p', {}, `このタブは閉じてかまいません。もう一度使うときは${again}。`)));
+    el('p', {}, t('このタブは閉じてかまいません。もう一度使うときは{again}。', { again }))));
 }
 async function quitApp() {
-  if (!confirm('日食計算機を終了しますか？')) return;
+  if (!confirm(t('日食計算機を終了しますか？'))) return;
   state.stopped = true;
   try { await api('/api/shutdown', {}); } catch (_) { /* already stopped */ }
-  showStopped('日食計算機を終了しました');
+  showStopped(t('日食計算機を終了しました'));
 }
 
 function fillEphemerides(names) {
   const eph = $('#ephem');
   const cur = eph.value;
   eph.innerHTML = '';
-  names.forEach((n) => eph.append(el('option', { value: n }, n + (n === 'de440s.bsp' ? '（1849〜2150年）' : n === 'de440.bsp' ? '（1550〜2650年）' : ''))));
+  names.forEach((n) => eph.append(el('option', { value: n }, n + (n === 'de440s.bsp' ? t('（1849〜2150年）') : n === 'de440.bsp' ? t('（1550〜2650年）') : ''))));
   if (names.includes(cur)) eph.value = cur;
 }
-function renderEphemerisDownloads(list) {
+function renderEphemerisDownloads(list = state.downloadable) {
   const box = $('#ephemDlButtons');
   box.innerHTML = '';
   $('#ephemDl').hidden = !list.length;
   list.forEach((d) => box.append(el('button', {
     type: 'button', class: 'secondary small', onclick: (ev) => downloadEphemeris(d.name, ev.currentTarget),
-  }, `${d.name} を追加（${d.description}）`)));
+  }, t('{name} を追加（{desc}）', { name: d.name, desc: t(d.description) }))));
 }
 async function downloadEphemeris(name, btn) {
   const st = $('#ephemDlStatus');
   btn.disabled = true;
-  setStatus(st, `JPL から ${name} をダウンロード中…（数分かかることがあります）`, 'busy');
+  setStatus(st, t('JPL から {name} をダウンロード中…（数分かかることがあります）', { name }), 'busy');
   try {
     const d = await api('/api/ephemeris/download?name=' + encodeURIComponent(name), {});
     fillEphemerides(d.ephemerides);
     $('#ephem').value = name;
     updateCoverage();
-    renderEphemerisDownloads(d.downloadable_ephemerides);
+    state.downloadable = d.downloadable_ephemerides;
+    renderEphemerisDownloads();
     $('#ephemDl').hidden = false;
-    setStatus(st, `${name} を追加し、暦として選択しました。`);
+    setStatus(st, t('{name} を追加し、暦として選択しました。', { name }));
   } catch (err) {
     btn.disabled = false;
     setStatus(st, err.message, 'err');
@@ -313,7 +386,7 @@ async function downloadEphemeris(name, btn) {
 async function updateCoverage() {
   try {
     const c = await api('/api/ephemeris_coverage?name=' + encodeURIComponent($('#ephem').value));
-    $('#coverageHint').textContent = `選択中の暦で計算できる期間: ${c.start} 〜 ${c.end}`;
+    $('#coverageHint').textContent = t('選択中の暦で計算できる期間: {start} 〜 {end}', { start: c.start, end: c.end });
     state.coverage = c;
   } catch (err) { $('#coverageHint').textContent = err.message; }
 }
@@ -334,12 +407,12 @@ async function loadSscList() {
   if (state.sscSats) { showSscInfo(false); return; }
   const box = $('#sscInfo');
   box.hidden = false;
-  box.innerHTML = '<span class="spinner"></span>NASA SSCWeb の衛星一覧を取得中…';
+  box.innerHTML = '<span class="spinner"></span>' + esc(t('NASA SSCWeb の衛星一覧を取得中…'));
   try {
     const d = await api('/api/sscweb/satellites');
     state.sscSats = d.satellites;
     const dl = $('#sscList');
-    dl.replaceChildren(...d.satellites.map((s) => el('option', { value: s.id, label: `${s.name}（${s.start.slice(0, 10)}〜${s.end.slice(0, 10)}）` })));
+    dl.replaceChildren(...d.satellites.map((s) => el('option', { value: s.id, label: s.name + paren(`${s.start.slice(0, 10)} – ${s.end.slice(0, 10)}`) })));
     showSscInfo(false);
   } catch (err) {
     box.innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`;
@@ -351,13 +424,14 @@ function showSscInfo(setName) {
   const id = $('#sscId').value.trim().toLowerCase();
   const s = state.sscSats.find((x) => x.id === id);
   box.hidden = !id;
-  if (!s) { box.innerHTML = `<span style="color:var(--err)">「${esc(id)}」は SSCWeb の衛星一覧にありません</span>`; return; }
+  if (!s) { box.innerHTML = `<span style="color:var(--err)">${esc(t('「{id}」は SSCWeb の衛星一覧にありません', { id }))}</span>`; return; }
   if (setName) $('#satName').value = s.name;
-  box.innerHTML = `<b>${esc(s.name)}</b><br>軌道データ: ${s.start.slice(0, 10)} 〜 ${s.end.slice(0, 10)}（${s.resolution_s} 秒間隔）`;
+  box.innerHTML = `<b>${esc(s.name)}</b><br>` +
+    esc(t('軌道データ: {start} 〜 {end}（{res} 秒間隔）', { start: s.start.slice(0, 10), end: s.end.slice(0, 10), res: s.resolution_s }));
 }
 function applySatSpec(spec) {
   $('#satName').value = spec.name || '';
-  state.fetchedTle = null;
+  state.fetchedTle = null; state.tleInfo = null;
   $('#satInfo').hidden = true;
   if (spec.type === 'celestrak') { setSatMode('celestrak'); $('#norad').value = spec.norad; }
   else if (spec.type === 'geo') { setSatMode('geo'); $('#geoLon').value = spec.lon; }
@@ -429,7 +503,7 @@ function ssoInclination(periKm, apoKm) {
 }
 function ltanHours() {
   const [h, m] = ($('#kLtan').value || '').split(':').map(Number);
-  if (!isFinite(h)) throw new Error('昇交点の地方時を入力してください（例: 18:00）');
+  if (!isFinite(h)) throw new Error(t('昇交点の地方時を入力してください（例: 18:00）'));
   return h + (isFinite(m) ? m : 0) / 60;
 }
 function fmtLtan(h) {
@@ -443,8 +517,8 @@ function updateKeplerForm() {
   const note = $('#kIncNote');
   if (sso) {
     const i = ssoInclination(num('#kPeri'), num('#kApo'));
-    if (i == null) { note.textContent = 'この高度では太陽同期軌道になりません'; }
-    else { $('#kInc').value = i.toFixed(3); note.textContent = '太陽同期になるよう自動で決めた値'; }
+    if (i == null) { note.textContent = t('この高度では太陽同期軌道になりません'); }
+    else { $('#kInc').value = i.toFixed(3); note.textContent = t('太陽同期になるよう自動で決めた値'); }
   } else note.textContent = '';
   const ltan = !elements && $('#kPlane').value === 'ltan';
   $('#kLtanWrap').hidden = !ltan;
@@ -454,23 +528,31 @@ function updateKeplerForm() {
   $('#kSweepWrap').hidden = !sweep;
   const a = num('#kA', NaN), e = num('#kE', NaN);
   $('#kANote').textContent = a > 0 && e >= 0 && e < 1
-    ? `高度 ${(a * (1 - e) - R_EARTH).toFixed(0)}〜${(a * (1 + e) - R_EARTH).toFixed(0)} km・周期 ${(2 * Math.PI * Math.sqrt(a ** 3 / 398600.4418) / 60).toFixed(1)} 分`
+    ? t('高度 {lo}〜{hi} km', { lo: (a * (1 - e) - R_EARTH).toFixed(0), hi: (a * (1 + e) - R_EARTH).toFixed(0) }) + sep() +
+      t('周期 {p} 分', { p: (2 * Math.PI * Math.sqrt(a ** 3 / 398600.4418) / 60).toFixed(1) })
     : '';
 }
 async function fetchTle() {
   const box = $('#satInfo');
   box.hidden = false;
-  box.innerHTML = '<span class="spinner"></span>CelesTrak から取得中…';
+  box.innerHTML = '<span class="spinner"></span>' + esc(t('CelesTrak から取得中…'));
   try {
     const d = await api('/api/tle?norad=' + encodeURIComponent($('#norad').value));
     state.fetchedTle = { norad: +$('#norad').value, line1: d.line1, line2: d.line2, name: d.name };
     if (!$('#satName').value || $('#satPreset').value === '') $('#satName').value = d.name;
-    box.innerHTML = `<b>${esc(d.name)}</b><br>元期: ${fmtDT(d.epoch)} ${tzLabel(d.epoch)}<br>周期 ${d.period_min.toFixed(1)} 分・近地点 ${d.perigee_km.toFixed(0)} km・遠地点 ${d.apogee_km.toFixed(0)} km` +
-      `<br><small>TLE の予報精度は元期の前後数日が目安です。</small>`;
+    state.tleInfo = d;
+    renderTleInfo();
     $('#tleText').value = `${d.name}\n${d.line1}\n${d.line2}`;
   } catch (err) {
     box.innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`;
   }
+}
+function renderTleInfo() {
+  const d = state.tleInfo;
+  $('#satInfo').innerHTML = `<b>${esc(d.name)}</b><br>` + esc(t('元期: {epoch}', { epoch: `${fmtDT(d.epoch)} ${tzLabel(d.epoch)}` })) + '<br>' +
+    esc([t('周期 {p} 分', { p: d.period_min.toFixed(1) }), t('近地点 {v} km', { v: d.perigee_km.toFixed(0) }),
+      t('遠地点 {v} km', { v: d.apogee_km.toFixed(0) })].join(sep())) +
+    `<br><small>${esc(t('TLE の予報精度は元期の前後数日が目安です。'))}</small>`;
 }
 function quickRange(b) {
   const today = new Date();
@@ -489,12 +571,12 @@ function togglePickMap() {
   if (box.hidden) return;
   if (!state.pickMap) {
     const m = L.map(box, { worldCopyJump: true }).setView([+$('#lat').value || 35, +$('#lon').value || 135], 4);
-    baseLayers(m, true);
+    baseLayers(m);
     state.pickMarker = L.marker([+$('#lat').value, +$('#lon').value]).addTo(m);
     m.on('click', (ev) => {
       const ll = ev.latlng.wrap();
       $('#lat').value = ll.lat.toFixed(4); $('#lon').value = ll.lng.toFixed(4);
-      $('#placeName').value = '地図で選んだ地点'; $('#cityPreset').value = '';
+      $('#placeName').value = t('地図で選んだ地点'); $('#cityPreset').value = '';
       updatePickMarker();
     });
     state.pickMap = m;
@@ -530,19 +612,19 @@ function buildRequest() {
     } else if (m === 'tle') {
       const lines = $('#tleText').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       const i1 = lines.findIndex((s) => s.startsWith('1 '));
-      if (i1 < 0 || !lines[i1 + 1] || !lines[i1 + 1].startsWith('2 ')) throw new Error('TLE の 1 行目（"1 "で始まる）と 2 行目（"2 "で始まる）を貼り付けてください');
+      if (i1 < 0 || !lines[i1 + 1] || !lines[i1 + 1].startsWith('2 ')) throw new Error(t('TLE の 1 行目（"1 "で始まる）と 2 行目（"2 "で始まる）を貼り付けてください'));
       observer = { type: 'tle', line1: lines[i1], line2: lines[i1 + 1], name: name || (i1 > 0 ? lines[i1 - 1] : '') };
     } else if (m === 'kepler') {
       const ep = $('#kEpoch').value;
-      if (!ep) throw new Error('軌道要素の元期を入力してください');
+      if (!ep) throw new Error(t('軌道要素の元期を入力してください'));
       observer = {
         type: 'kepler', epoch: ep.length === 16 ? ep + ':00' : ep,
         argp_deg: num('#kArgp'), m_deg: num('#kM'), j2: $('#kJ2').checked, name,
       };
       if (state.kInput === 'elements') {
         const a = num('#kA', NaN), e = num('#kE', NaN);
-        if (!(a > 0)) throw new Error('軌道長半径を入力してください');
-        if (!(e >= 0 && e < 1)) throw new Error('軌道離心率は 0 以上 1 未満で入力してください');
+        if (!(a > 0)) throw new Error(t('軌道長半径を入力してください'));
+        if (!(e >= 0 && e < 1)) throw new Error(t('軌道離心率は 0 以上 1 未満で入力してください'));
         Object.assign(observer, { a_km: a, e, i_deg: num('#kInc'), raan_deg: num('#kRaan') });
       } else {
         Object.assign(observer, { perigee_alt_km: num('#kPeri'), apogee_alt_km: num('#kApo') });
@@ -553,7 +635,7 @@ function buildRequest() {
       observer = { type: 'geo', lon: num('#geoLon'), name };
     } else if (m === 'sscweb') {
       const id = $('#sscId').value.trim().toLowerCase();
-      if (!id) throw new Error('NASA SSCWeb の衛星 ID を入力してください（例: hinode）');
+      if (!id) throw new Error(t('NASA SSCWeb の衛星 ID を入力してください（例: hinode）'));
       observer = { type: 'sscweb', id, name };
     } else {
       observer = { type: 'horizons', command: $('#hzId').value.trim(), step_min: num('#hzStep', 5), name };
@@ -581,13 +663,13 @@ async function runSearch() {
   const st = $('#status');
   let req;
   try { req = buildRequest(); } catch (err) { setStatus(st, err.message, 'err'); return; }
-  if (!req.phenomena.length) { setStatus(st, '計算する現象を 1 つ以上選んでください', 'err'); return; }
+  if (!req.phenomena.length) { setStatus(st, t('計算する現象を 1 つ以上選んでください'), 'err'); return; }
   const btn = $('#runBtn');
   btn.disabled = true;
-  const msg = req.observer.type === 'horizons' ? 'JPL Horizons から軌道を取得して計算中…' :
-    req.observer.type === 'sscweb' ? 'NASA SSCWeb から軌道を取得して計算中…' :
-    req.observer.type === 'celestrak' ? 'CelesTrak から TLE を取得して計算中…' : '計算中…';
-  setStatus(st, req.sweepStep ? `平均近点角を ${req.sweepStep}° ずつ変えて計算中…` : msg, 'busy');
+  const msg = req.observer.type === 'horizons' ? t('JPL Horizons から軌道を取得して計算中…') :
+    req.observer.type === 'sscweb' ? t('NASA SSCWeb から軌道を取得して計算中…') :
+    req.observer.type === 'celestrak' ? t('CelesTrak から TLE を取得して計算中…') : t('計算中…');
+  setStatus(st, req.sweepStep ? t('平均近点角を {step}° ずつ変えて計算中…', { step: req.sweepStep }) : msg, 'busy');
   try {
     if (req.sweepStep) {
       const { sweepStep, ...body } = req;
@@ -597,7 +679,7 @@ async function runSearch() {
       state.sweepGroup = 0;
       state.result = null;
       state.saved = null;
-      setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
+      setStatus(st, t('完了（{s} 秒）', { s: r.elapsed_s.toFixed(1) }));
       $('#welcome').hidden = true;
       $('#resultArea').hidden = false;
       closeDetail();
@@ -610,7 +692,7 @@ async function runSearch() {
     state.sweep = null;
     state.saved = null;
     state.filters = new Set();
-    setStatus(st, `完了（${r.elapsed_s.toFixed(1)} 秒）`);
+    setStatus(st, t('完了（{s} 秒）', { s: r.elapsed_s.toFixed(1) }));
     $('#welcome').hidden = true;
     $('#resultArea').hidden = false;
     closeDetail();
@@ -623,34 +705,35 @@ async function runSearch() {
   }
 }
 
+const PRELAUNCH_NAME = '太陽同期 680km（計画）';
 function runExample(name) {
   const now = new Date();
   $$('input[name=ph]').forEach((i) => { i.checked = true; });
   if (name === 'tokyo') {
     setObsTab('ground');
     const c = state.info.cities.find((x) => x.name === '東京');
-    $('#lat').value = c.lat; $('#lon').value = c.lon; $('#elev').value = c.elevation_m; $('#placeName').value = c.name;
+    $('#lat').value = c.lat; $('#lon').value = c.lon; $('#elev').value = c.elevation_m; $('#placeName').value = t(c.name);
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
     $('#start').value = isoDate(now); $('#end').value = isoDate(addYears(now, 30));
   } else if (name === 'global') {
     setObsTab('global');
     $('#start').value = '2001-01-01'; $('#end').value = '2101-01-01';
   } else if (name === 'iss') {
-    setObsTab('space'); applySatSpec(state.info.satellites[0].spec);
+    setObsTab('space'); applySatSpec(presetSpec(state.info.satellites[0].spec));
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
     $('#start').value = isoDate(now); $('#end').value = isoDate(addYears(now, 1));
   } else if (name === 'geo') {
-    setObsTab('space'); applySatSpec(state.info.satellites[3].spec);
+    setObsTab('space'); applySatSpec(presetSpec(state.info.satellites[3].spec));
     $('#start').value = isoDate(now); $('#end').value = isoDate(addYears(now, 10));
   } else if (name === 'prelaunch') {
     setObsTab('space');
-    applySatSpec({ type: 'kepler', name: '太陽同期 680km（計画）', perigee_alt_km: 680, apogee_alt_km: 680, sso: true, ltan_h: 18, argp_deg: 0, m_deg: 0 });
+    applySatSpec({ type: 'kepler', name: t(PRELAUNCH_NAME), perigee_alt_km: 680, apogee_alt_km: 680, sso: true, ltan_h: 18, argp_deg: 0, m_deg: 0 });
     $('#kEpoch').value = '2027-01-01T00:00:00';
     $('#kSweep').checked = true; $('#kSweepStep').value = '10'; updateKeplerForm();
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
     $('#start').value = '2027-01-01'; $('#end').value = '2028-01-01';
   } else if (name === 'hinode') {
-    setObsTab('space'); applySatSpec(state.info.satellites.find((s) => s.spec.type === 'sscweb').spec);
+    setObsTab('space'); applySatSpec(presetSpec(state.info.satellites.find((s) => s.spec.type === 'sscweb').spec));
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
     $('#start').value = '2011-01-04'; $('#end').value = '2011-01-05';
   }
@@ -662,21 +745,21 @@ function runExample(name) {
 /* ------------------------------------------------------------------ */
 function observerText(o) {
   if (!o) return '';
-  if (o.kind === 'global') return '地球全体';
-  if (o.kind === 'ground') return `${o.name}（${fmtLatLon(o.lat, o.lon)}・標高 ${Math.round(o.elevation_m)} m）`;
-  if (o.kind === 'geocenter') return '地球中心';
-  const model = { tle: 'TLE/SGP4', kepler: '軌道要素', fixed: '地球固定位置', horizons: 'JPL Horizons', sscweb: 'NASA SSCWeb' }[o.model] || '';
-  let s = `${o.name}（${model}`;
-  if (o.perigee_km != null) s += `・高度 ${o.perigee_km.toFixed(0)}〜${o.apogee_km.toFixed(0)} km`;
-  if (o.model === 'fixed') s += `・${fmtLon(o.lon)}・高度 ${o.height_km.toFixed(0)} km`;
+  if (o.kind === 'global') return t('地球全体');
+  if (o.kind === 'ground') return o.name + paren(fmtLatLon(o.lat, o.lon) + sep() + t('標高 {v} m', { v: Math.round(o.elevation_m) }));
+  if (o.kind === 'geocenter') return t('地球中心');
+  const model = { tle: 'TLE/SGP4', kepler: t('軌道要素'), fixed: t('地球固定位置'), horizons: 'JPL Horizons', sscweb: 'NASA SSCWeb' }[o.model] || '';
+  const items = [model];
+  if (o.perigee_km != null) items.push(t('高度 {lo}〜{hi} km', { lo: o.perigee_km.toFixed(0), hi: o.apogee_km.toFixed(0) }));
+  if (o.model === 'fixed') items.push(fmtLon(o.lon), t('高度 {v} km', { v: o.height_km.toFixed(0) }));
   if (o.model === 'kepler') {
-    s += `・傾斜角 ${o.i_deg.toFixed(2)}°`;
-    if (o.raan_deg != null && !o.sso) s += `・昇交点赤経 ${o.raan_deg.toFixed(2)}°`;
-    if (o.ltan_h != null) s += `・昇交点の地方時 ${fmtLtan(o.ltan_h)}`;
-    if (o.sso) s += '・太陽同期';
+    items.push(t('傾斜角 {v}°', { v: o.i_deg.toFixed(2) }));
+    if (o.raan_deg != null && !o.sso) items.push(t('昇交点赤経 {v}°', { v: o.raan_deg.toFixed(2) }));
+    if (o.ltan_h != null) items.push(t('昇交点の地方時 {v}', { v: fmtLtan(o.ltan_h) }));
+    if (o.sso) items.push(t('太陽同期'));
   }
-  if (o.epoch) s += `・元期 ${fmtDT(o.epoch)}`;
-  return s + '）';
+  if (o.epoch) items.push(t('元期 {v}', { v: fmtDT(o.epoch) }));
+  return o.name + paren(items.join(sep()));
 }
 
 function renderResults() {
@@ -689,10 +772,13 @@ function renderResults() {
   evs.forEach((e) => { counts[catOf(e)] = (counts[catOf(e)] || 0) + 1; });
   const visCount = evs.filter((e) => e.kind === 'global' || (e.vis_fraction || 0) > 0).length;
   $('#summaryText').innerHTML =
-    `<div><span class="big">${evs.length} 件</span> の現象が見つかりました` +
-    (!global && r.params.include_invisible ? `（うち見えるもの ${visCount} 件）` : '') + '</div>' +
+    '<div>' + t('<span class="big">{n} 件</span> の現象が見つかりました', { n: evs.length }) +
+    (!global && r.params.include_invisible ? esc(t('（うち見えるもの {n} 件）', { n: visCount })) : '') + '</div>' +
     savedNote() +
-    `<div class="muted">観測者: ${esc(observerText(r.observer))}<br>期間: ${esc(r.start)} 〜 ${esc(r.end)}（UTC）・暦 ${esc(r.ephemeris)}・ΔT ${r.delta_t_override != null ? r.delta_t_override + ' 秒（手動）' : '約 ' + r.delta_t_mid_s.toFixed(1) + ' 秒（期間中央）'}・計算 ${r.elapsed_s.toFixed(1)} 秒</div>`;
+    `<div class="muted">${esc(t('観測者: {obs}', { obs: observerText(r.observer) }))}<br>` +
+    esc([t('期間: {start} 〜 {end}（UTC）', { start: r.start, end: r.end }), t('暦 {name}', { name: r.ephemeris }),
+      r.delta_t_override != null ? t('ΔT {v} 秒（手動）', { v: r.delta_t_override }) : t('ΔT 約 {v} 秒（期間中央）', { v: r.delta_t_mid_s.toFixed(1) }),
+      t('計算 {s} 秒', { s: r.elapsed_s.toFixed(1) })].join(sep())) + '</div>';
   $('#warnings').innerHTML = (r.warnings || []).map((w) => `<div>⚠ ${esc(w)}</div>`).join('');
 
   const fbox = $('#filters');
@@ -708,8 +794,9 @@ function renderResults() {
   const tbl = $('#eventTable');
   tbl.innerHTML = '';
   const head = global
-    ? ['日付', '種類', '最大食の時刻', '食分', 'γ', '中心食の継続', '中心食帯の幅', '最大食の地点', 'サロス']
-    : ['日付', '種類', '最大の時刻', '規模', '太陽が隠れる割合', '継続時間', r.observer.kind === 'ground' ? '最大時の太陽' : r.observer.kind === 'space' ? '最大時の衛星位置' : '—', '見えるか', 'サロス'];
+    ? [t('日付'), t('種類'), t('最大食の時刻'), t('食分'), 'γ', t('中心食の継続'), t('中心食帯の幅'), t('最大食の地点'), t('サロス')]
+    : [t('日付'), t('種類'), t('最大の時刻'), t('規模'), t('太陽が隠れる割合'), t('継続時間'),
+      r.observer.kind === 'ground' ? t('最大時の太陽') : r.observer.kind === 'space' ? t('最大時の衛星位置') : '—', t('見えるか'), t('サロス')];
   tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))));
   const tb = el('tbody');
   for (const e of evs) {
@@ -723,13 +810,13 @@ function renderResults() {
     tb.append(tr);
   }
   tbl.append(tb);
-  if (!tb.children.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, '該当する現象はありません。期間や観測者を変えてお試しください。')));
+  if (!tb.children.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, t('該当する現象はありません。期間や観測者を変えてお試しください。'))));
 }
 
 /* ------------------------------------------------------------------ */
 /* phase sweep (satellite position along the orbit unknown)            */
 /* ------------------------------------------------------------------ */
-const BODY_JA = { moon: '日食', mercury: '水星の太陽面通過', venus: '金星の太陽面通過' };
+function phenLabel(b) { return { moon: t('日食'), mercury: t('水星の太陽面通過'), venus: t('金星の太陽面通過') }[b]; }
 function renderSweep() {
   const r = state.sweep;
   $('#listCard').hidden = true;
@@ -737,17 +824,19 @@ function renderSweep() {
   const n = r.phases.length;
   const counts = {};
   r.groups.forEach((g) => { counts[g.body] = (counts[g.body] || 0) + 1; });
-  const what = Object.entries(counts).map(([b, c]) => `${BODY_JA[b]} ${c} 件`).join('・') || '現象なし';
+  const what = Object.entries(counts).map(([b, c]) => t('{what} {n} 件', { what: phenLabel(b), n: c })).join(sep()) || t('現象なし');
   $('#summaryText').innerHTML =
-    `<div><span class="big">${what}</span>（平均近点角を ${r.step_deg}° ずつ変えた ${n} 通りで計算）</div>` +
+    `<div><span class="big">${esc(what)}</span>${esc(t('（平均近点角を {step}° ずつ変えた {n} 通りで計算）', { step: r.step_deg, n }))}</div>` +
     savedNote() +
-    `<div class="muted">観測者: ${esc(observerText(r.observer))}<br>期間: ${esc(r.start)} 〜 ${esc(r.end)}（UTC）・暦 ${esc(r.ephemeris)}・計算 ${r.elapsed_s.toFixed(1)} 秒<br>` +
-    '衛星が軌道上のどこにいるかで結果が変わります。行をクリックすると、平均近点角ごとの結果が表示されます。</div>';
+    `<div class="muted">${esc(t('観測者: {obs}', { obs: observerText(r.observer) }))}<br>` +
+    esc([t('期間: {start} 〜 {end}（UTC）', { start: r.start, end: r.end }), t('暦 {name}', { name: r.ephemeris }),
+      t('計算 {s} 秒', { s: r.elapsed_s.toFixed(1) })].join(sep())) + '<br>' +
+    esc(t('衛星が軌道上のどこにいるかで結果が変わります。行をクリックすると、平均近点角ごとの結果が表示されます。')) + '</div>';
   $('#warnings').innerHTML = (r.warnings || []).map((w) => `<div>⚠ ${esc(w)}</div>`).join('');
   $('#filters').innerHTML = '';
   const tbl = $('#sweepTable');
   tbl.innerHTML = '';
-  const head = ['日付', '現象', '見える位相', '見える回数', '最も深い食の食分', '皆既・金環になる位相', '最大の時刻の範囲'];
+  const head = [t('日付'), t('現象'), t('見える位相'), t('見える回数'), t('最も深い食の食分'), t('皆既・金環になる位相'), t('最大の時刻の範囲')];
   tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))));
   const tb = el('tbody');
   r.groups.forEach((g, k) => {
@@ -757,17 +846,17 @@ function renderSweep() {
     const central = g.central_phases.length;
     tr.append(
       el('td', {}, fmtDate(g.date)),
-      el('td', {}, BODY_JA[g.body]),
+      el('td', {}, phenLabel(g.body)),
       el('td', { class: 'num' }, `${g.n_visible} / ${g.n_phases}`),
-      el('td', { class: 'num' }, g.count_min === g.count_max ? `${g.count_max} 回` : `${g.count_min}〜${g.count_max} 回`),
-      el('td', { class: 'num' }, isT || g.mag_min == null ? '—' : `${f3(g.mag_min)} 〜 ${f3(g.mag_max)}`),
-      el('td', { class: 'num' }, isT ? '—' : central ? `${central} / ${g.n_phases}（${Math.round(100 * central / g.n_phases)}%）` : 'なし'),
+      el('td', { class: 'num' }, g.count_min === g.count_max ? t('{n} 回', { n: g.count_max }) : t('{a}〜{b} 回', { a: g.count_min, b: g.count_max })),
+      el('td', { class: 'num' }, isT || g.mag_min == null ? '—' : span(f3(g.mag_min), f3(g.mag_max))),
+      el('td', { class: 'num' }, isT ? '—' : central ? `${central} / ${g.n_phases}` + paren(`${Math.round(100 * central / g.n_phases)}%`) : t('なし')),
       el('td', { class: 'num' }, g.time_first ? sweepRange(g.time_first, g.time_last) : '—'),
     );
     if (!g.n_visible) tr.classList.add('dim');
     tb.append(tr);
   });
-  if (!r.groups.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, 'この期間には、どの位相でも見られる現象がありません。')));
+  if (!r.groups.length) tb.append(el('tr', {}, el('td', { colspan: head.length, style: 'text-align:center;color:var(--muted);padding:20px' }, t('この期間には、どの位相でも見られる現象がありません。'))));
   tbl.append(tb);
   renderSweepGroup();
 }
@@ -777,29 +866,30 @@ function renderSweepGroup() {
   $('#sweepDetail').hidden = !g;
   if (!g) return;
   const isT = g.body !== 'moon';
-  $('#sweepTitle').textContent = `${fmtDate(g.date)} の${BODY_JA[g.body]}：平均近点角ごとの結果`;
+  $('#sweepTitle').textContent = t('{date} の{what}：平均近点角ごとの結果', { date: fmtDate(g.date), what: phenLabel(g.body) });
   $('#sweepSub').textContent = isT
-    ? '各位相で最も長く見える通過を表示しています。行をクリックすると詳細が開きます。'
-    : '各位相で最も深い食を表示しています（1 周回ごとに複数回起きることがあります）。行をクリックすると詳細が開きます。';
+    ? t('各位相で最も長く見える通過を表示しています。行をクリックすると詳細が開きます。')
+    : t('各位相で最も深い食を表示しています（1 周回ごとに複数回起きることがあります）。行をクリックすると詳細が開きます。');
   $('#sweepChart').replaceChildren(sweepChart(g));
   const tbl = $('#sweepPhaseTable');
   tbl.innerHTML = '';
   const multiDay = g.time_first && dayDiff(g.time_first, g.time_last);
-  const head = ['平均近点角', '見える回数', '種類', '最大の時刻', isT ? '中心間距離' : '食分', '太陽が隠れる割合', isT ? '継続時間' : '中心食の継続', '見えるか'];
+  const head = [t('平均近点角'), t('見える回数'), t('種類'), t('最大の時刻'), isT ? t('中心間距離') : t('食分'), t('太陽が隠れる割合'),
+    isT ? t('継続時間') : t('中心食の継続'), t('見えるか')];
   tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))));
   const tb = el('tbody');
   for (const row of g.rows) {
     const e = row.best;
     const tr = el('tr', {});
     if (!e) {
-      tr.append(el('td', { class: 'num' }, `${row.m_deg}°`), el('td', { class: 'num' }, '0 回'),
-        el('td', { colspan: head.length - 2, class: 'muted' }, 'この位相では見られません'));
+      tr.append(el('td', { class: 'num' }, `${row.m_deg}°`), el('td', { class: 'num' }, t('{n} 回', { n: 0 })),
+        el('td', { colspan: head.length - 2, class: 'muted' }, t('この位相では見られません')));
       tr.classList.add('dim');
     } else {
       tr.addEventListener('click', () => openDetail(e.id, { root: true }));
       tr.append(
         el('td', { class: 'num' }, `${row.m_deg}°`),
-        el('td', { class: 'num' }, `${row.count} 回`),
+        el('td', { class: 'num' }, t('{n} 回', { n: row.count })),
         el('td', {}, badge(e)),
         el('td', { class: 'num' }, `${multiDay ? fmtDateShort(e.max).slice(5) + ' ' : ''}${fmtTime(e.max)} ${tzLabel(e.max)}`),
         el('td', { class: 'num' }, isT ? `${f1(e.min_sep_arcsec)}″` : f3(e.magnitude)),
@@ -814,8 +904,8 @@ function renderSweepGroup() {
   tbl.append(tb);
 }
 function sweepRange(a, b) {
-  if (!dayDiff(a, b)) return `${fmtHM(a)} 〜 ${fmtHM(b)} ${tzLabel(a)}`;
-  return `${fmtDateShort(a).slice(5)} ${fmtHM(a)} 〜 ${fmtDateShort(b).slice(5)} ${fmtHM(b)} ${tzLabel(a)}`;
+  if (!dayDiff(a, b)) return `${span(fmtHM(a), fmtHM(b))} ${tzLabel(a)}`;
+  return `${span(`${fmtDateShort(a).slice(5)} ${fmtHM(a)}`, `${fmtDateShort(b).slice(5)} ${fmtHM(b)}`)} ${tzLabel(a)}`;
 }
 /* Bar chart of the outcome against the mean anomaly. */
 function sweepChart(g) {
@@ -829,7 +919,7 @@ function sweepChart(g) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', isT ? '平均近点角ごとの見える割合' : '平均近点角ごとの最大食分');
+  svg.setAttribute('aria-label', isT ? t('平均近点角ごとの見える割合') : t('平均近点角ごとの最大食分'));
   const add = (tag, attrs, text) => {
     const n = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
@@ -849,13 +939,13 @@ function sweepChart(g) {
       const c = CAT[catOf(r.best)];
       const rect = add('rect', { x: x + bw * 0.15, width: Math.max(1, bw * 0.7), y: y(v), height: y(0) - y(v), fill: c.color, rx: 1.5 });
       const title = document.createElementNS(NS, 'title');
-      title.textContent = `平均近点角 ${r.m_deg}°：${c.label}・${isT ? '見える割合 ' + pct(v) : '食分 ' + f3(v)}`;
+      title.textContent = t('平均近点角 {m}°：{what}', { m: r.m_deg, what: c.label + sep() + (isT ? t('見える割合 {v}', { v: pct(v) }) : t('食分 {v}', { v: f3(v) })) });
       rect.append(title);
     }
     if (k % Math.max(1, Math.round(g.rows.length / 12)) === 0) add('text', { x: x + bw / 2, y: H - B + 16, 'text-anchor': 'middle', class: 'tick' }, `${r.m_deg}°`);
   });
-  add('text', { x: L + (W - L - R) / 2, y: H - 4, 'text-anchor': 'middle', class: 'axis' }, '元期での平均近点角（衛星が軌道上のどこにいるか）');
-  if (!isT) add('text', { x: W - R, y: y(1) - 5, 'text-anchor': 'end', class: 'tick' }, '食分 1.0');
+  add('text', { x: L + (W - L - R) / 2, y: H - 4, 'text-anchor': 'middle', class: 'axis' }, t('元期での平均近点角（衛星が軌道上のどこにいるか）'));
+  if (!isT) add('text', { x: W - R, y: y(1) - 5, 'text-anchor': 'end', class: 'tick' }, t('食分 {v}', { v: '1.0' }));
   return svg;
 }
 function downloadSweepCsv() {
@@ -864,7 +954,7 @@ function downloadSweepCsv() {
   for (const g of r.groups) {
     for (const row of g.rows) {
       const e = row.best || {};
-      rows.push([g.date.slice(0, 10), BODY_JA[g.body], row.m_deg, row.count, e.type ? CAT[catOf(e)].label : '', e.max ?? '', e.magnitude ?? '',
+      rows.push([g.date.slice(0, 10), phenLabel(g.body), row.m_deg, row.count, e.type ? CAT[catOf(e)].label : '', e.max ?? '', e.magnitude ?? '',
         e.obscuration ?? '', e.min_sep_arcsec ?? '', e.central_duration_s ?? '', e.duration_s ?? '', e.vis_fraction ?? '']);
     }
   }
@@ -874,40 +964,44 @@ function downloadSweepCsv() {
 function globalRow(e, isT) {
   if (isT) {
     return [el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
-      el('td', { class: 'num' }, `中心間 ${f1(e.min_sep_arcsec)}″`), el('td', {}, '—'), el('td', { class: 'num' }, fmtDur(e.duration_s)),
-      el('td', {}, '—'), el('td', { class: 'muted' }, '地球中心から見た値'), el('td', {}, '—')];
+      el('td', { class: 'num' }, t('中心間 {v}″', { v: f1(e.min_sep_arcsec) })), el('td', {}, '—'), el('td', { class: 'num' }, fmtDur(e.duration_s)),
+      el('td', {}, '—'), el('td', { class: 'muted' }, t('地球中心から見た値')), el('td', {}, '—')];
   }
   return [
     el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
     el('td', { class: 'num' }, f4(e.magnitude)), el('td', { class: 'num' }, (e.gamma >= 0 ? '+' : '') + f4(e.gamma)),
     el('td', { class: 'num' }, e.type === 'partial' ? '—' : fmtDur(e.central_duration_s, true)),
-    el('td', { class: 'num' }, e.path_width_km ? `${e.path_width_km.toFixed(0)} km` : '—'),
+    el('td', { class: 'num' }, e.path_width_km ? km(e.path_width_km.toFixed(0)) : '—'),
     el('td', {}, fmtLatLon(e.ge_lat, e.ge_lon)), el('td', { class: 'num' }, e.saros ?? '—'),
   ];
 }
 function visCell(e, kind) {
-  if (kind === 'geocenter') return el('td', { class: 'vis yes' }, '（地心）');
+  if (kind === 'geocenter') return el('td', { class: 'vis yes' }, t('（地心）'));
   const f = e.vis_fraction || 0;
   let txt, cls;
-  if (f >= 0.999) { txt = '◎ 全経過'; cls = 'yes'; }
+  if (f >= 0.999) { txt = t('◎ 全経過'); cls = 'yes'; }
   else if (f > 0) {
     cls = 'part';
+    const part = t('○ 一部 {p}%', { p: Math.round(f * 100) });
     if (kind === 'ground') {
       const startVis = e.visible_intervals[0][0] === e.c1;
-      txt = `○ 一部 ${Math.round(f * 100)}%` + (startVis ? '（日の入り帯食）' : '（日の出帯食）');
-      if (e.visible_intervals.length > 1) txt = `○ 一部 ${Math.round(f * 100)}%`;
-    } else txt = `○ 一部 ${Math.round(f * 100)}%（地球に隠される）`;
-  } else { txt = kind === 'ground' ? '× 地平線の下' : '× 地球に隠される'; cls = 'no'; }
+      txt = part + (startVis ? t('（日の入り帯食）') : t('（日の出帯食）'));
+      if (e.visible_intervals.length > 1) txt = part;
+    } else txt = part + t('（地球に隠される）');
+  } else { txt = kind === 'ground' ? t('× 地平線の下') : t('× 地球に隠される'); cls = 'no'; }
   return el('td', { class: 'vis ' + cls }, txt);
 }
 function localRow(e, isT, kind) {
-  const scale = isT ? `中心間 ${f1(e.min_sep_arcsec)}″` : `食分 ${f3(e.magnitude)}`;
+  const scale = isT ? t('中心間 {v}″', { v: f1(e.min_sep_arcsec) }) : t('食分 {v}', { v: f3(e.magnitude) });
   const obs = isT ? `${pct(e.obscuration, 3)}` : el('span', {}, el('span', { class: 'bar' }, el('i', { style: `width:${Math.min(100, e.obscuration * 100)}%` })), pct(e.obscuration));
   let dur = fmtDur(e.duration_s);
-  if (!isT && e.central_duration_s > 0) dur = `${e.type === 'total' ? '皆既' : '金環'} ${fmtDur(e.central_duration_s, true)}／全体 ${fmtDur(e.duration_s)}`;
+  if (!isT && e.central_duration_s > 0) {
+    const v = { c: fmtDur(e.central_duration_s, true), d: fmtDur(e.duration_s) };
+    dur = e.type === 'total' ? t('皆既 {c}／全体 {d}', v) : t('金環 {c}／全体 {d}', v);
+  }
   let pos = '—';
-  if (kind === 'ground' && e.sun_alt_max != null) pos = `高度 ${e.sun_alt_max.toFixed(0)}°・${azName(e.sun_az_max)}`;
-  if (kind === 'space' && e.sat_lat_max != null) pos = `${fmtLatLon(e.sat_lat_max, e.sat_lon_max)}・${e.sat_alt_km_max.toFixed(0)} km`;
+  if (kind === 'ground' && e.sun_alt_max != null) pos = t('高度 {v}°', { v: e.sun_alt_max.toFixed(0) }) + sep() + azName(e.sun_az_max);
+  if (kind === 'space' && e.sat_lat_max != null) pos = fmtLatLon(e.sat_lat_max, e.sat_lon_max) + sep() + km(e.sat_alt_km_max.toFixed(0));
   return [
     el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
     el('td', { class: 'num' }, scale), el('td', { class: 'num' }, obs), el('td', { class: 'num' }, dur),
@@ -985,14 +1079,14 @@ async function openSavedFile(file) {
   try {
     data = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
   } catch (_) {
-    setStatus(st, `「${file.name}」は JSON ファイルとして読めません`, 'err');
+    setStatus(st, t('「{name}」は JSON ファイルとして読めません', { name: file.name }), 'err');
     return;
   }
   try {
     if (data && data.event && data.event.max) openSavedEvent(data, file.name);
     else if (data && (Array.isArray(data.events) || Array.isArray(data.groups))) openSavedResult(data, file.name);
-    else if (data && data.dry_run) throw new Error('このファイルは解釈の確認（--dry-run）の出力で、計算結果を含みません');
-    else throw new Error(`「${file.name}」は日食計算機で保存した結果ではありません（「結果を保存」で保存した JSON、詳細の「JSON をダウンロード」、cli.py の --format json の出力を開けます）`);
+    else if (data && data.dry_run) throw new Error(t('このファイルは解釈の確認（--dry-run）の出力で、計算結果を含みません'));
+    else throw new Error(t('「{name}」は日食計算機で保存した結果ではありません（「結果を保存」で保存した JSON、詳細の「JSON をダウンロード」、cli.py の --format json の出力を開けます）', { name: file.name }));
   } catch (err) {
     setStatus(st, err.message, 'err');
   }
@@ -1027,7 +1121,7 @@ function openSavedResult(data, name) {
     state.result = r; state.sweep = null; state.filters = new Set();
     renderResults();
   }
-  setStatus($('#status'), `「${name}」を開きました`);
+  setStatus($('#status'), t('「{name}」を開きました', { name }));
 }
 /* One event saved from the detail view ("JSON をダウンロード"): shown as saved; the map and
    other places are computed from the request saved with it. */
@@ -1048,14 +1142,14 @@ function openSavedEvent(data, name) {
   $('#backBtn').hidden = true;
   renderDetailAll(true);
   if (d.kind === 'global' && !state.local) loadGeLocal(d);
-  setStatus($('#status'), `「${name}」を開きました（保存した現象）`);
+  setStatus($('#status'), t('「{name}」を開きました（保存した現象）', { name }));
 }
 function savedNote() {
   const s = state.saved;
   if (!s) return '';
-  const when = s.savedAt ? `・${fmtDT(s.savedAt)} ${tzLabel(s.savedAt)} に保存` : '';
-  const how = s.request ? '詳細は保存した計算条件で再計算します。' : 'このファイルには計算条件がないため、詳細は表示できません。';
-  return `<div class="saved-note">保存した結果を表示しています（${esc(s.name)}${when}）。${how}</div>`;
+  const when = s.savedAt ? sep() + t('{when} に保存', { when: `${fmtDT(s.savedAt)} ${tzLabel(s.savedAt)}` }) : '';
+  const how = s.request ? t('詳細は保存した計算条件で再計算します。') : t('このファイルには計算条件がないため、詳細は表示できません。');
+  return `<div class="saved-note">${esc(sentences([t('保存した結果を表示しています（{name}{when}）。', { name: s.name, when }), how]))}</div>`;
 }
 /* The server's id of an event: an event of a saved result is computed again (once) from the
    saved request; the server forgets it when restarted, then it is computed again. */
@@ -1065,7 +1159,7 @@ async function liveDetail(id) {
   if (s.serverId) {
     try { return await api('/api/event/' + s.serverId); } catch (_) { s.serverId = null; }
   }
-  if (!state.saved.request) throw new Error('このファイルには計算条件（request）がないため、詳細を計算できません');
+  if (!state.saved.request) throw new Error(t('このファイルには計算条件（request）がないため、詳細を計算できません'));
   const event = Object.fromEntries(['body', 'kind', 'jd_max', 'jd_c1', 'jd_c4', 'm_deg'].filter((k) => s[k] != null).map((k) => [k, s[k]]));
   const d = await api('/api/restore', { request: state.saved.request, event });
   s.serverId = d.id;
@@ -1129,7 +1223,7 @@ function applyRequestToForm(req) {
 async function openDetail(id, { root = false, push = false } = {}) {
   const st = $('#status');
   const saved = state.saved && state.saved.events.get(id);
-  setStatus(st, saved && !saved.serverId ? '保存した計算条件で詳細を計算中…' : '詳細を計算中…', 'busy');
+  setStatus(st, saved && !saved.serverId ? t('保存した計算条件で詳細を計算中…') : t('詳細を計算中…'), 'busy');
   try {
     const d = await liveDetail(id);
     if (push && state.detail) state.stack.push(state.detail.id);
@@ -1150,7 +1244,7 @@ async function openDetail(id, { root = false, push = false } = {}) {
 }
 async function loadGeLocal(d) {
   try {
-    const r = await api('/api/local', { event_id: await liveId(d.id), lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: '最大食の地点' });
+    const r = await api('/api/local', { event_id: await liveId(d.id), lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: t('最大食の地点') });
     if (state.detail !== d || !r.found) return;
     state.local = r;
     renderOverview();
@@ -1181,10 +1275,8 @@ function renderDetailAll(reset) {
   const d = state.detail;
   if (!d) return;
   const obs = d.kind === 'global' ? null : d.observer;
-  const title = d.kind === 'global' ? `${fmtDate(d.max)} の${d.type_ja || CAT[catOf(d)].label}`
-    : `${fmtDate(d.max)} の${d.type_ja}`;
-  $('#detailTitle').textContent = title;
-  $('#detailSub').textContent = d.kind === 'global' ? '地球全体での状況' : `観測者: ${observerText(obs)}`;
+  $('#detailTitle').textContent = t('{date} の{type}', { date: fmtDate(d.max), type: typeLabel(d) });
+  $('#detailSub').textContent = d.kind === 'global' ? t('地球全体での状況') : t('観測者: {obs}', { obs: observerText(obs) });
   renderOverview();
   setupViewer(reset);
   if (reset) {
@@ -1198,48 +1290,63 @@ function renderDetailAll(reset) {
 }
 
 function leadText(d) {
-  const L = state.local;
   const moon = d.body === 'moon';
+  const out = [];
   if (d.kind === 'global') {
     if (d.body !== 'moon') return '';
-    let s = `<b>${fmtDate(d.max)}</b> の${esc(d.type_ja)}です。`;
-    s += `食が最も大きくなる「最大食」は <b>${fmtTime(d.max)} ${tzLabel(d.max)}</b> に <b>${fmtLatLon(d.ge_lat, d.ge_lon)}</b> で起こり、太陽高度は ${d.sun_alt.toFixed(0)}° です。`;
+    out.push(t('<b>{date}</b> の{type}です。', { date: fmtDate(d.max), type: esc(typeLabel(d)) }));
+    out.push(t('食が最も大きくなる「最大食」は <b>{time}</b> に <b>{place}</b> で起こり、太陽高度は {alt}° です。',
+      { time: `${fmtTime(d.max)} ${tzLabel(d.max)}`, place: fmtLatLon(d.ge_lat, d.ge_lon), alt: d.sun_alt.toFixed(0) }));
     if (d.type !== 'partial') {
-      s += `中心食の継続時間は最大 <b>${fmtDur(d.central_duration_s, true)}</b>`;
-      if (d.path_width_km) s += `、${d.type === 'annular' ? '金環' : '皆既'}帯の幅は約 <b>${d.path_width_km.toFixed(0)} km</b>`;
-      s += 'です。';
-    } else s += `最大食分は ${f3(d.magnitude)} の部分日食で、皆既・金環になる場所はありません。`;
-    if (d.p1 && d.p4) s += `地球上のどこかで部分食が見られるのは ${fmtDT(d.p1)} 〜 ${fmtDT(d.p4)}（${tzLabel(d.p1)}）です。`;
-    return s;
+      const v = { dur: fmtDur(d.central_duration_s, true), width: d.path_width_km ? d.path_width_km.toFixed(0) : '' };
+      if (!d.path_width_km) out.push(t('中心食の継続時間は最大 <b>{dur}</b> です。', v));
+      else if (d.type === 'annular') out.push(t('中心食の継続時間は最大 <b>{dur}</b>、金環帯の幅は約 <b>{width} km</b> です。', v));
+      else out.push(t('中心食の継続時間は最大 <b>{dur}</b>、皆既帯の幅は約 <b>{width} km</b> です。', v));
+    } else out.push(t('最大食分は {mag} の部分日食で、皆既・金環になる場所はありません。', { mag: f3(d.magnitude) }));
+    if (d.p1 && d.p4) out.push(t('地球上のどこかで部分食が見られるのは {start} 〜 {end}（{tz}）です。', { start: fmtDT(d.p1), end: fmtDT(d.p4), tz: tzLabel(d.p1) }));
+    return sentences(out);
   }
   const kind = d.observer_kind;
-  const who = kind === 'ground' ? `${esc(d.observer.name)}では` : kind === 'space' ? `${esc(d.observer.name)}から見ると` : '地球中心から見ると';
+  const name = esc(d.observer.name);
+  const who = kind === 'ground' ? t('{name}では', { name }) : kind === 'space' ? t('{name}から見ると', { name }) : t('地球中心から見ると');
   const c = Object.fromEntries(d.contacts.map((x) => [x.label, x]));
   const c2 = d.contacts.find((x) => x.label === 'C2');
   const c3 = [...d.contacts].reverse().find((x) => x.label === 'C3');
-  let s;
+  const v = { who, date: fmtDate(d.max), c1: fmtTime(d.c1), max: fmtTime(d.max), c4: fmtTime(d.c4), tz: tzLabel(d.max) };
   if (moon) {
-    s = `${who}、<b>${fmtDate(d.max)}</b> の <b>${fmtTime(d.c1)}</b> に太陽が欠け始め、<b>${fmtTime(d.max)}</b> に最大（食分 <b>${f3(d.magnitude)}</b>、太陽の面積の <b>${pct(d.obscuration)}</b> が隠れる）となり、<b>${fmtTime(d.c4)}</b> に終わります（${tzLabel(d.max)}）。`;
+    out.push(t('{who}、<b>{date}</b> の <b>{c1}</b> に太陽が欠け始め、<b>{max}</b> に最大（食分 <b>{mag}</b>、太陽の面積の <b>{obs}</b> が隠れる）となり、<b>{c4}</b> に終わります（{tz}）。',
+      { ...v, mag: f3(d.magnitude), obs: pct(d.obscuration) }));
     if (d.type === 'total' || d.type === 'annular') {
-      s += `${fmtTime(c2.time)} から ${fmtTime(c3.time)} までの <b>${fmtDur(d.central_duration_s, true)}</b> 間は${d.type === 'total' ? '<b>皆既日食</b>（太陽が完全に隠れる）' : '<b>金環日食</b>（太陽がリング状に見える）'}です。`;
-      if (d.n_internal > 1) s += `（衛星の運動により ${d.n_internal} 回に分かれます）`;
+      const w = { start: fmtTime(c2.time), end: fmtTime(c3.time), dur: fmtDur(d.central_duration_s, true) };
+      out.push(d.type === 'total' ? t('{start} から {end} までの <b>{dur}</b> 間は<b>皆既日食</b>（太陽が完全に隠れる）です。', w)
+        : t('{start} から {end} までの <b>{dur}</b> 間は<b>金環日食</b>（太陽がリング状に見える）です。', w));
+      if (d.n_internal > 1) out.push(t('（衛星の運動により {n} 回に分かれます）', { n: d.n_internal }));
     }
   } else {
-    s = `${who}、<b>${fmtDate(d.max)}</b> の <b>${fmtTime(d.c1)}</b> に${bodyJa(d.body)}が太陽の縁にかかり始め、<b>${fmtTime(d.max)}</b> に太陽の中心に最も近づき（中心間 ${f1(d.min_sep_arcsec)}″）、<b>${fmtTime(d.c4)}</b> に太陽面から離れます（${tzLabel(d.max)}）。経過時間は ${fmtDur(d.duration_s)} です。`;
-    if (d.type === 'transit_grazing') s += `${bodyJa(d.body)}が太陽の縁をかすめるだけで、全体が太陽面に入ることはありません。`;
+    out.push(t('{who}、<b>{date}</b> の <b>{c1}</b> に{body}が太陽の縁にかかり始め、<b>{max}</b> に太陽の中心に最も近づき（中心間 {sep}″）、<b>{c4}</b> に太陽面から離れます（{tz}）。',
+      { ...v, body: bodyJa(d.body), sep: f1(d.min_sep_arcsec) }));
+    out.push(t('経過時間は {dur} です。', { dur: fmtDur(d.duration_s) }));
+    if (d.type === 'transit_grazing') out.push(t('{body}が太陽の縁をかすめるだけで、全体が太陽面に入ることはありません。', { body: bodyJa(d.body) }));
   }
   if (kind === 'ground' || kind === 'space') {
     const f = d.vis_fraction;
-    if (f >= 0.999) s += kind === 'ground' ? ` 全経過で太陽は地平線の上にあり、最大時の太陽高度は <b>${c.MAX.sun_alt.toFixed(0)}°</b>（${azName(c.MAX.sun_az)}の空）です。` : ' 全経過で太陽は地球に隠されません。';
-    else if (f > 0) {
-      const iv = d.visible_intervals.map(([a, b]) => `${fmtTime(a)}〜${fmtTime(b)}`).join('、');
-      s += ` ただし見られるのは <b>${iv}</b> の間だけです（${kind === 'ground' ? '太陽が地平線の下にある時間を除く' : '衛星から見て太陽が地球に隠される時間を除く'}）。`;
-      if (d.visible_max && moon) s += `見える範囲での最大食分は ${f3(d.visible_max.magnitude)} です。`;
-    } else s += kind === 'ground' ? ' <b>この現象は太陽が地平線の下にあるため見られません。</b>' : ' <b>この間、太陽は地球に隠されていて見えません。</b>';
-    if (kind === 'space' && c.MAX.sat_lat != null) s += ` 最大時の衛星は ${fmtLatLon(c.MAX.sat_lat, c.MAX.sat_lon)} の上空 ${c.MAX.sat_alt_km.toFixed(0)} km にいます。`;
+    if (f >= 0.999) {
+      out.push(kind === 'ground' ? t('全経過で太陽は地平線の上にあり、最大時の太陽高度は <b>{alt}°</b>（{az}の空）です。', { alt: c.MAX.sun_alt.toFixed(0), az: azName(c.MAX.sun_az) })
+        : t('全経過で太陽は地球に隠されません。'));
+    } else if (f > 0) {
+      const iv = d.visible_intervals.map(([a, b]) => `${fmtTime(a)}–${fmtTime(b)}`).join(listSep());
+      out.push(kind === 'ground' ? t('ただし見られるのは <b>{iv}</b> の間だけです（太陽が地平線の下にある時間を除く）。', { iv })
+        : t('ただし見られるのは <b>{iv}</b> の間だけです（衛星から見て太陽が地球に隠される時間を除く）。', { iv }));
+      if (d.visible_max && moon) out.push(t('見える範囲での最大食分は {mag} です。', { mag: f3(d.visible_max.magnitude) }));
+    } else {
+      out.push(kind === 'ground' ? t('<b>この現象は太陽が地平線の下にあるため見られません。</b>') : t('<b>この間、太陽は地球に隠されていて見えません。</b>'));
+    }
+    if (kind === 'space' && c.MAX.sat_lat != null) {
+      out.push(t('最大時の衛星は {pos} の上空 {alt} km にいます。', { pos: fmtLatLon(c.MAX.sat_lat, c.MAX.sat_lon), alt: c.MAX.sat_alt_km.toFixed(0) }));
+    }
   }
-  if (kind === 'geocenter') s += ' これは地球中心から見た標準値で、地上の各地点では視差により数分ずれます。地図タブで地点をクリックすると、その場所での時刻を計算できます。';
-  return s;
+  if (kind === 'geocenter') out.push(t('これは地球中心から見た標準値で、地上の各地点では視差により数分ずれます。地図タブで地点をクリックすると、その場所での時刻を計算できます。'));
+  return sentences(out);
 }
 
 function metric(k, v, s = '') { return el('div', { class: 'metric' }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v), el('div', { class: 's' }, s)); }
@@ -1252,27 +1359,29 @@ function renderOverview() {
   if (d.kind === 'global') {
     box.append(el('div', { class: 'lead', html: leadText(d) }));
     box.append(el('div', { class: 'metrics' },
-      metric(d.type === 'partial' ? '最大食分' : '食分（視直径比）', f4(d.magnitude), d.type === 'partial' ? '太陽の直径が隠れる割合' : '月と太陽の見かけの大きさの比'),
-      metric('γ（ガンマ）', (d.gamma >= 0 ? '+' : '') + f4(d.gamma), '影の軸と地球中心の最接近距離'),
-      metric('中心食の継続時間', d.type === 'partial' ? '—' : fmtDur(d.central_duration_s, true), '最大食の地点で'),
-      metric('中心食帯の幅', d.path_width_km ? d.path_width_km.toFixed(1) + ' km' : '—', '最大食の地点で'),
-      metric('サロス番号', d.saros ?? '—', '約18年周期の系列'),
+      d.type === 'partial' ? metric(t('最大食分'), f4(d.magnitude), t('太陽の直径が隠れる割合'))
+        : metric(t('食分（視直径比）'), f4(d.magnitude), t('月と太陽の見かけの大きさの比')),
+      metric(t('γ（ガンマ）'), (d.gamma >= 0 ? '+' : '') + f4(d.gamma), t('影の軸と地球中心の最接近距離')),
+      metric(t('中心食の継続時間'), d.type === 'partial' ? '—' : fmtDur(d.central_duration_s, true), t('最大食の地点で')),
+      metric(t('中心食帯の幅'), d.path_width_km ? km(d.path_width_km.toFixed(1)) : '—', t('最大食の地点で')),
+      metric(t('サロス番号'), d.saros ?? '—', t('約18年周期の系列')),
     ));
-    box.append(el('div', { class: 'section-title' }, '地球全体での経過'));
-    const rows = [['部分食の始まり（P1）', d.p1], [d.type !== 'partial' ? '中心食の始まり' : null, d.c_begin], ['最大食', d.max],
-      [d.type !== 'partial' ? '中心食の終わり' : null, d.c_end], ['部分食の終わり（P4）', d.p4]].filter((r) => r[0] && r[1]);
+    box.append(el('div', { class: 'section-title' }, t('地球全体での経過')));
+    const central = d.type !== 'partial';
+    const rows = [[t('部分食の始まり（P1）'), d.p1], [central && t('中心食の始まり'), d.c_begin], [t('最大食'), d.max, true],
+      [central && t('中心食の終わり'), d.c_end], [t('部分食の終わり（P4）'), d.p4]].filter((r) => r[0] && r[1]);
     box.append(el('div', { class: 'table-scroll' }, el('table', { class: 'contacts' },
-      el('thead', {}, el('tr', {}, el('th', {}, '段階'), el('th', {}, `日時（${tzLabel(d.max)}）`), el('th', {}, 'UTC'))),
-      el('tbody', {}, rows.map(([k, t]) => el('tr', { class: k === '最大食' ? 'max' : '' }, el('td', { class: 'lbl' }, k), el('td', {}, fmtDT(t, 1)), el('td', { class: 'muted' }, t.replace('T', ' ').replace('Z', '')))))
+      el('thead', {}, el('tr', {}, el('th', {}, t('段階')), el('th', {}, t('日時（{tz}）', { tz: tzLabel(d.max) })), el('th', {}, 'UTC'))),
+      el('tbody', {}, rows.map(([k, tm, max]) => el('tr', { class: max ? 'max' : '' }, el('td', { class: 'lbl' }, k), el('td', {}, fmtDT(tm, 1)), el('td', { class: 'muted' }, tm.replace('T', ' ').replace('Z', '')))))
     )));
     const kv = el('dl', { class: 'kv' },
-      el('dt', {}, '最大食の地点'), el('dd', {}, `${fmtLatLon(d.ge_lat, d.ge_lon)}（太陽高度 ${d.sun_alt.toFixed(1)}°）`),
-      el('dt', {}, 'ΔT'), el('dd', {}, `${d.delta_t_s.toFixed(2)} 秒`));
-    box.append(el('div', { class: 'section-title' }, 'その他'), kv);
-    box.append(el('div', { class: 'section-title' }, '最大食の地点での見え方'));
+      el('dt', {}, t('最大食の地点')), el('dd', {}, fmtLatLon(d.ge_lat, d.ge_lon) + paren(t('太陽高度 {v}°', { v: d.sun_alt.toFixed(1) }))),
+      el('dt', {}, 'ΔT'), el('dd', {}, t('{v} 秒', { v: d.delta_t_s.toFixed(2) })));
+    box.append(el('div', { class: 'section-title' }, t('その他')), kv);
+    box.append(el('div', { class: 'section-title' }, t('最大食の地点での見え方')));
     if (state.local) box.append(contactTable(state.local));
-    else box.append(el('p', { class: 'muted' }, el('span', { class: 'spinner' }), '計算中…'));
-    box.append(el('p', { class: 'note' }, '「地図」タブで地図上の好きな地点をクリックすると、その地点での見え方（時刻・食分）を計算できます。'));
+    else box.append(el('p', { class: 'muted' }, el('span', { class: 'spinner' }), t('計算中…')));
+    box.append(el('p', { class: 'note' }, t('「地図」タブで地図上の好きな地点をクリックすると、その地点での見え方（時刻・食分）を計算できます。')));
     return;
   }
   box.append(el('div', { class: 'lead', html: leadText(d) }));
@@ -1281,53 +1390,59 @@ function renderOverview() {
   const cmax = d.contacts.find((c) => c.label === 'MAX');
   const ms = [];
   if (moon) {
-    ms.push(metric('最大食分', f4(d.magnitude), '太陽の直径が隠れる割合'));
-    ms.push(metric('食面積率', pct(d.obscuration, 2), '太陽の面積が隠れる割合'));
-    if (d.type === 'total' || d.type === 'annular') ms.push(metric(d.type === 'total' ? '皆既の継続時間' : '金環の継続時間', fmtDur(d.central_duration_s, true), d.n_internal > 1 ? `最長区間（${d.n_internal}回）` : '第2〜第3接触'));
-    ms.push(metric('食の継続時間', fmtDur(d.duration_s), '第1〜第4接触'));
-    ms.push(metric('視直径比（月/太陽）', f4(d.ratio), d.ratio > 1 ? '月の方が大きい' : '月の方が小さい'));
+    ms.push(metric(t('最大食分'), f4(d.magnitude), t('太陽の直径が隠れる割合')));
+    ms.push(metric(t('食面積率'), pct(d.obscuration, 2), t('太陽の面積が隠れる割合')));
+    if (d.type === 'total' || d.type === 'annular') {
+      ms.push(metric(d.type === 'total' ? t('皆既の継続時間') : t('金環の継続時間'), fmtDur(d.central_duration_s, true),
+        d.n_internal > 1 ? t('最長区間（{n}回）', { n: d.n_internal }) : t('第2〜第3接触')));
+    }
+    ms.push(metric(t('食の継続時間'), fmtDur(d.duration_s), t('第1〜第4接触')));
+    ms.push(metric(t('視直径比（月/太陽）'), f4(d.ratio), d.ratio > 1 ? t('月の方が大きい') : t('月の方が小さい')));
   } else {
-    ms.push(metric('太陽中心との最小距離', f1(d.min_sep_arcsec) + '″', `太陽の半径は ${f1(d.sun_diameter_arcsec / 2)}″`));
-    ms.push(metric(`${bodyJa(d.body)}の視直径`, f1(d.body_diameter_arcsec) + '″', `太陽の約 1/${Math.round(d.sun_diameter_arcsec / d.body_diameter_arcsec)}`));
-    ms.push(metric('経過時間', fmtDur(d.duration_s), '第1〜第4接触'));
-    if (d.central_duration_s > 0) ms.push(metric('内接している時間', fmtDur(d.central_duration_s), '第2〜第3接触'));
+    ms.push(metric(t('太陽中心との最小距離'), f1(d.min_sep_arcsec) + '″', t('太陽の半径は {v}″', { v: f1(d.sun_diameter_arcsec / 2) })));
+    ms.push(metric(t('{body}の視直径', { body: bodyJa(d.body) }), f1(d.body_diameter_arcsec) + '″', t('太陽の約 1/{n}', { n: Math.round(d.sun_diameter_arcsec / d.body_diameter_arcsec) })));
+    ms.push(metric(t('経過時間'), fmtDur(d.duration_s), t('第1〜第4接触')));
+    if (d.central_duration_s > 0) ms.push(metric(t('内接している時間'), fmtDur(d.central_duration_s), t('第2〜第3接触')));
   }
-  if (d.observer_kind === 'ground') ms.push(metric('最大時の太陽高度', `${cmax.sun_alt.toFixed(1)}°`, `方位 ${cmax.sun_az.toFixed(0)}°（${azName(cmax.sun_az)}）`));
-  if (d.observer_kind === 'space') ms.push(metric('見える時間の割合', pct(d.vis_fraction, 0), '太陽が地球に隠されない時間'));
+  if (d.observer_kind === 'ground') ms.push(metric(t('最大時の太陽高度'), `${cmax.sun_alt.toFixed(1)}°`, t('方位 {v}°', { v: cmax.sun_az.toFixed(0) }) + paren(azName(cmax.sun_az))));
+  if (d.observer_kind === 'space') ms.push(metric(t('見える時間の割合'), pct(d.vis_fraction, 0), t('太陽が地球に隠されない時間')));
   box.append(el('div', { class: 'metrics' }, ms));
-  box.append(el('div', { class: 'section-title' }, '接触時刻と状況'));
+  box.append(el('div', { class: 'section-title' }, t('接触時刻と状況')));
   box.append(contactTable(d));
   const p = d.params;
   const kv = el('dl', { class: 'kv' },
-    el('dt', {}, '暦'), el('dd', {}, d.ephemeris),
-    el('dt', {}, 'ΔT（TT−UT）'), el('dd', {}, `${d.delta_t_s.toFixed(2)} 秒`),
-    el('dt', {}, '太陽の視直径（最大時）'), el('dd', {}, `${f1(d.sun_diameter_arcsec)}″`),
-    el('dt', {}, `${bodyJa(d.body)}の視直径（最大時）`), el('dd', {}, `${f1(d.body_diameter_arcsec)}″`),
-    moon && el('dt', {}, 'サロス番号'), moon && el('dd', {}, d.saros),
-    el('dt', {}, '計算モデル'), el('dd', {}, `太陽半径 ${p.sun_radius_km.toFixed(0)} km・` + (moon ? `月半径 ${p.moon_radius_ext_km.toFixed(2)} / ${p.moon_radius_int_km.toFixed(2)} km（外接/内接）` : `${bodyJa(d.body)}半径 ${(d.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1)} km`)),
+    el('dt', {}, t('暦')), el('dd', {}, d.ephemeris),
+    el('dt', {}, t('ΔT（TT−UT）')), el('dd', {}, t('{v} 秒', { v: d.delta_t_s.toFixed(2) })),
+    el('dt', {}, t('太陽の視直径（最大時）')), el('dd', {}, `${f1(d.sun_diameter_arcsec)}″`),
+    el('dt', {}, t('{body}の視直径（最大時）', { body: bodyJa(d.body) })), el('dd', {}, `${f1(d.body_diameter_arcsec)}″`),
+    moon && el('dt', {}, t('サロス番号')), moon && el('dd', {}, d.saros),
+    el('dt', {}, t('計算モデル')), el('dd', {}, t('太陽半径 {v} km', { v: p.sun_radius_km.toFixed(0) }) + sep() + (moon
+      ? t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) })
+      : t('{body}半径 {v} km', { body: bodyJa(d.body), v: (d.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) }))),
   );
-  box.append(el('div', { class: 'section-title' }, '計算条件'), kv);
-  if (d.c1_cut || d.c4_cut) box.append(el('p', { class: 'note' }, '※ 計算期間の端にかかっているため、一部の接触時刻は期間の端の値です。'));
+  box.append(el('div', { class: 'section-title' }, t('計算条件')), kv);
+  if (d.c1_cut || d.c4_cut) box.append(el('p', { class: 'note' }, t('※ 計算期間の端にかかっているため、一部の接触時刻は期間の端の値です。')));
 }
 
 function contactTable(d) {
   const kind = d.observer_kind;
-  const head = ['接触', `時刻（${tzLabel(d.max)}）`];
-  if (kind === 'ground') head.push('太陽高度', '方位');
-  if (kind === 'space') head.push('衛星直下点', '高度', '地球の縁からの太陽の離角');
-  head.push('位置角 P');
-  if (kind === 'ground') head.push('天頂角 V');
-  head.push(d.body === 'moon' ? '食分' : '中心間距離', '観測');
+  const head = [t('接触'), t('時刻（{tz}）', { tz: tzLabel(d.max) })];
+  if (kind === 'ground') head.push(t('太陽高度'), t('方位'));
+  if (kind === 'space') head.push(t('衛星直下点'), t('高度'), t('地球の縁からの太陽の離角'));
+  head.push(t('位置角 P'));
+  if (kind === 'ground') head.push(t('天頂角 V'));
+  head.push(d.body === 'moon' ? t('食分') : t('中心間距離'), t('観測'));
   const rows = d.contacts.map((c) => {
     const [n, sub] = contactName(c.label, d);
     const cells = [el('td', { class: 'lbl' }, n, sub && el('span', { class: 'sub' }, sub)),
       el('td', {}, fmtTime(c.time, 1), dayDiff(c.time, d.max) ? el('span', { class: 'sub' }, fmtDateShort(c.time)) : null)];
-    if (kind === 'ground') cells.push(el('td', {}, `${c.sun_alt.toFixed(1)}°`), el('td', {}, `${c.sun_az.toFixed(1)}°（${azName(c.sun_az)}）`));
-    if (kind === 'space') cells.push(el('td', {}, fmtLatLon(c.sat_lat, c.sat_lon)), el('td', {}, `${c.sat_alt_km.toFixed(0)} km`), el('td', {}, `${c.vis.toFixed(1)}°`));
+    if (kind === 'ground') cells.push(el('td', {}, `${c.sun_alt.toFixed(1)}°`), el('td', {}, `${c.sun_az.toFixed(1)}°` + paren(azName(c.sun_az))));
+    if (kind === 'space') cells.push(el('td', {}, fmtLatLon(c.sat_lat, c.sat_lon)), el('td', {}, km(c.sat_alt_km.toFixed(0))), el('td', {}, `${c.vis.toFixed(1)}°`));
     cells.push(el('td', {}, `${c.pa.toFixed(1)}°`));
     if (kind === 'ground') cells.push(el('td', {}, `${c.v_angle.toFixed(1)}°`));
     cells.push(el('td', {}, d.body === 'moon' ? f4(c.magnitude) : `${f1(c.sep_arcsec)}″`));
-    const visTxt = kind === 'geocenter' ? '—' : c.visible ? el('span', { class: 'pill ok' }, '見える') : el('span', { class: 'pill no' }, kind === 'ground' ? '地平線下' : '地球に隠れる');
+    const visTxt = kind === 'geocenter' ? '—' : c.visible ? el('span', { class: 'pill ok' }, t('見える'))
+      : el('span', { class: 'pill no' }, kind === 'ground' ? t('地平線下') : t('地球に隠れる'));
     cells.push(el('td', {}, visTxt));
     return el('tr', { class: c.label === 'MAX' ? 'max' : '' }, cells);
   });
@@ -1338,9 +1453,13 @@ function contactTable(d) {
 /* disk viewer                                                         */
 /* ------------------------------------------------------------------ */
 const SPEEDS = [[1, '実時間'], [10, '10倍速'], [60, '60倍速（1秒=1分）'], [300, '300倍速（1秒=5分）'], [900, '900倍速（1秒=15分）'], [3600, '3600倍速（1秒=1時間）']];
+function fillSpeedOptions() {
+  const sp = $('#speed'), cur = sp.value;
+  sp.replaceChildren(...SPEEDS.map(([v, l]) => el('option', { value: v }, t(l))));
+  if (cur) sp.value = cur;
+}
 function initViewer() {
-  const sp = $('#speed');
-  SPEEDS.forEach(([v, l]) => sp.append(el('option', { value: v }, l)));
+  fillSpeedOptions();
   $('#playBtn').addEventListener('click', () => { state.playing ? pause() : play(); });
   $('#timeSlider').addEventListener('input', () => {
     const ts = state.series; if (!ts) return;
@@ -1374,9 +1493,9 @@ function setupViewer(reset = true) {
   const kind = L.observer_kind;
   const prev = o.value;
   o.innerHTML = '';
-  if (kind === 'ground') o.append(el('option', { value: 'zenith' }, '天頂が上（見たままの向き）'));
-  o.append(el('option', { value: 'north' }, '天の北が上（天文図の向き）'));
-  if (kind === 'space') o.append(el('option', { value: 'earth' }, '地球の方向が下'));
+  if (kind === 'ground') o.append(el('option', { value: 'zenith' }, t('天頂が上（見たままの向き）')));
+  o.append(el('option', { value: 'north' }, t('天の北が上（天文図の向き）')));
+  if (kind === 'space') o.append(el('option', { value: 'earth' }, t('地球の方向が下')));
   if ([...o.options].some((x) => x.value === prev) && !reset) o.value = prev;
   // contact jump buttons
   const jb = $('#jumpBtns');
@@ -1393,8 +1512,8 @@ function setupViewer(reset = true) {
   $('#speed').value = best;
   const cmax = L.contacts.find((c) => c.label === 'MAX');
   state.t = (new Date(cmax.time).getTime() - t0) / 1000;
-  $('#viewNote').textContent = kind === 'ground' ? '空を見上げたときの見え方です（大きさは太陽が基準）。地平線は緑で表示します。'
-    : kind === 'space' ? '衛星から太陽方向を見た様子です。紺色の大きな円弧は地球の縁です。' : '地球中心から見た様子です。';
+  $('#viewNote').textContent = kind === 'ground' ? t('空を見上げたときの見え方です（大きさは太陽が基準）。地平線は緑で表示します。')
+    : kind === 'space' ? t('衛星から太陽方向を見た様子です。紺色の大きな円弧は地球の縁です。') : t('地球中心から見た様子です。');
   syncSlider();
   if (currentTab() === 'view') { resizeCanvas(); drawDisk(); }
 }
@@ -1467,7 +1586,7 @@ function drawDisk() {
   if (!s || !L) {
     g.fillStyle = '#0b0f19'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#9aa4b8'; g.font = `${Math.round(W / 30)}px sans-serif`; g.textAlign = 'center';
-    g.fillText(state.detail && state.detail.kind === 'global' ? '最大食の地点での見え方を計算中…' : '', cx, cy);
+    g.fillText(state.detail && state.detail.kind === 'global' ? t('最大食の地点での見え方を計算中…') : '', cx, cy);
     $('#readout').innerHTML = '';
     return;
   }
@@ -1566,46 +1685,46 @@ function drawDisk() {
       g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
       g.fillText(label, cx - (r2 + fs) * Math.sin(sig), cy - (r2 + fs) * Math.cos(sig));
     };
-    arrow(0, '北', 'rgba(255,255,255,.75)');
-    arrow(90, '東', 'rgba(255,255,255,.55)');
-    if (kind === 'ground' && f.parallactic != null) arrow(f.parallactic, '天頂', 'rgba(160,255,190,.9)');
-    if (kind === 'space' && f.earth_pa != null) arrow(f.earth_pa, '地球', 'rgba(140,190,255,.95)');
+    arrow(0, t('北'), 'rgba(255,255,255,.75)');
+    arrow(90, t('東'), 'rgba(255,255,255,.55)');
+    if (kind === 'ground' && f.parallactic != null) arrow(f.parallactic, t('天頂'), 'rgba(160,255,190,.9)');
+    if (kind === 'space' && f.earth_pa != null) arrow(f.earth_pa, t('地球'), 'rgba(140,190,255,.95)');
   }
   // scale bar text
   g.font = `${Math.round(W / 40)}px sans-serif`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   g.fillStyle = 'rgba(255,255,255,.7)';
-  g.fillText(`太陽の視直径 ${(2 * f.rho_s / 60).toFixed(2)}′`, W * 0.03, H * 0.965);
+  g.fillText(t('太陽の視直径 {v}′', { v: (2 * f.rho_s / 60).toFixed(2) }), W * 0.03, H * 0.965);
   updateReadout(f, totalPhase);
 }
 function phaseLabel(f, L) {
   if (L.body === 'moon') {
-    if (f.magnitude <= 0) return '食なし';
-    if (f.rho_b_int > f.rho_s && f.sep_arcsec < f.rho_b_int - f.rho_s) return '皆既中';
-    if (f.rho_b_int < f.rho_s && f.sep_arcsec < f.rho_s - f.rho_b_int) return '金環中';
-    return '部分食中';
+    if (f.magnitude <= 0) return t('食なし');
+    if (f.rho_b_int > f.rho_s && f.sep_arcsec < f.rho_b_int - f.rho_s) return t('皆既中');
+    if (f.rho_b_int < f.rho_s && f.sep_arcsec < f.rho_s - f.rho_b_int) return t('金環中');
+    return t('部分食中');
   }
-  if (f.sep_arcsec > f.rho_s + f.rho_b) return '通過前後';
-  if (f.sep_arcsec < f.rho_s - f.rho_b) return '太陽面を通過中';
-  return '太陽の縁にかかっている';
+  if (f.sep_arcsec > f.rho_s + f.rho_b) return t('通過前後');
+  if (f.sep_arcsec < f.rho_s - f.rho_b) return t('太陽面を通過中');
+  return t('太陽の縁にかかっている');
 }
 function updateReadout(f, total) {
   const s = state.series, L = state.local;
-  const t = new Date(s.t0ms + state.t * 1000);
+  const now = new Date(s.t0ms + state.t * 1000);
   const kind = L.observer_kind;
   const visible = kind === 'geocenter' || f.vis > 0;
   const rows = [];
   if (L.body === 'moon') {
-    rows.push(['食分', f.magnitude > 0 ? f.magnitude.toFixed(4) : '0'], ['食面積率', pct(Math.max(0, f.obscuration), 2)]);
-  } else rows.push(['太陽中心からの距離', `${f.sep_arcsec.toFixed(1)}″`]);
-  if (kind === 'ground') rows.push(['太陽の高度・方位', `${f.sun_alt.toFixed(1)}°・${f.sun_az.toFixed(0)}°（${azName(f.sun_az)}）`]);
+    rows.push([t('食分'), f.magnitude > 0 ? f.magnitude.toFixed(4) : '0'], [t('食面積率'), pct(Math.max(0, f.obscuration), 2)]);
+  } else rows.push([t('太陽中心からの距離'), `${f.sep_arcsec.toFixed(1)}″`]);
+  if (kind === 'ground') rows.push([t('太陽の高度・方位'), `${f.sun_alt.toFixed(1)}°${sep()}${f.sun_az.toFixed(0)}°` + paren(azName(f.sun_az))]);
   if (kind === 'space') {
-    rows.push(['衛星直下点', `${fmtLat(f.sat_lat)} ${fmtLon(f.sat_lon)}`], ['衛星の高度', `${f.sat_alt_km.toFixed(0)} km`]);
-    rows.push(['地球の縁からの太陽', `${f.vis.toFixed(2)}°`]);
+    rows.push([t('衛星直下点'), `${fmtLat(f.sat_lat)} ${fmtLon(f.sat_lon)}`], [t('衛星の高度'), km(f.sat_alt_km.toFixed(0))]);
+    rows.push([t('地球の縁からの太陽'), `${f.vis.toFixed(2)}°`]);
   }
-  rows.push(['見えるか', kind === 'geocenter' ? '—' : visible ? '見える' : (kind === 'ground' ? '地平線の下' : '地球に隠れている')]);
-  $('#readout').innerHTML = `<div class="t">${fmtTime(t.toISOString(), 1)} <small class="muted">${tzLabel(t)}</small></div>` +
-    `<div class="muted" style="font-size:12px">${fmtDate(t.toISOString())}</div>` +
-    `<span class="phase">${phaseLabel(f, L)}</span><table>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>`;
+  rows.push([t('見えるか'), kind === 'geocenter' ? '—' : visible ? t('見える') : (kind === 'ground' ? t('地平線の下') : t('地球に隠れている'))]);
+  $('#readout').innerHTML = `<div class="t">${fmtTime(now.toISOString(), 1)} <small class="muted">${tzLabel(now)}</small></div>` +
+    `<div class="muted" style="font-size:12px">${fmtDate(now.toISOString())}</div>` +
+    `<span class="phase">${esc(phaseLabel(f, L))}</span><table>${rows.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</table>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1666,10 +1785,10 @@ function lineChart(box, cfg) {
   }
   // contacts
   for (const c of state.local.contacts) {
-    const t = (new Date(c.time).getTime() - s.t0ms) / 1000;
-    root.append(svg('line', { x1: X(t), x2: X(t), y1: pt, y2: H - pb, stroke: c.label === 'MAX' ? '#e8850c' : '#b8c0cf', 'stroke-dasharray': '3 3' }));
-    const tx = svg('text', { x: X(t) + 3, y: pt + 11, 'font-size': 10, fill: '#7a8396' });
-    tx.textContent = c.label === 'MAX' ? '最大' : c.label; root.append(tx);
+    const tc = (new Date(c.time).getTime() - s.t0ms) / 1000;
+    root.append(svg('line', { x1: X(tc), x2: X(tc), y1: pt, y2: H - pb, stroke: c.label === 'MAX' ? '#e8850c' : '#b8c0cf', 'stroke-dasharray': '3 3' }));
+    const tx = svg('text', { x: X(tc) + 3, y: pt + 11, 'font-size': 10, fill: '#7a8396' });
+    tx.textContent = c.label === 'MAX' ? t('最大') : c.label; root.append(tx);
   }
   for (const ser of cfg.series) {
     let dstr = '';
@@ -1686,7 +1805,7 @@ function lineChart(box, cfg) {
     root.append(svg('rect', { x: lx, y: pt + 18, width: 14, height: 3, fill: ser.color }));
     const tx = svg('text', { x: lx + 18, y: pt + 23, 'font-size': 11, fill: '#4a5468' });
     tx.textContent = ser.label; root.append(tx);
-    lx += 30 + ser.label.length * 11;
+    lx += 30 + ser.label.length * (wideScript() ? 11 : 6.5);
   }
   const cur = svg('line', { x1: X(state.t), x2: X(state.t), y1: pt, y2: H - pb, stroke: '#d62828', 'stroke-width': 1.5, class: 'cursor' });
   root.append(cur);
@@ -1703,34 +1822,34 @@ function lineChart(box, cfg) {
 function renderCharts() {
   const s = state.series, L = state.local;
   const c1 = $('#chart1'), c2 = $('#chart2');
-  if (!s || !L) { c1.innerHTML = '<p class="muted">計算中…</p>'; c2.innerHTML = ''; return; }
+  if (!s || !L) { c1.innerHTML = `<p class="muted">${esc(t('計算中…'))}</p>`; c2.innerHTML = ''; return; }
   const kind = L.observer_kind;
   const notVis = (i) => kind !== 'geocenter' && s.vis[i] <= 0;
   if (L.body === 'moon') {
     const ymax = Math.max(1, ...s.magnitude) * 1.02;
     lineChart(c1, {
-      title: '食分と食面積率の変化', yRange: [0, ymax], shade: notVis, yFmt: (v) => v.toFixed(1),
-      series: [{ y: s.magnitude, color: '#e8850c', label: '食分' }, { y: s.obscuration, color: '#2463c9', label: '食面積率' }],
+      title: t('食分と食面積率の変化'), yRange: [0, ymax], shade: notVis, yFmt: (v) => v.toFixed(1),
+      series: [{ y: s.magnitude, color: '#e8850c', label: t('食分') }, { y: s.obscuration, color: '#2463c9', label: t('食面積率') }],
     });
   } else {
     const rs = s.rho_s[0], rb = s.rho_b[0];
     lineChart(c1, {
-      title: `${bodyJa(L.body)}の中心と太陽の中心の距離（″）`, yRange: [0, Math.max(...s.sep_arcsec) * 1.05], shade: notVis, yFmt: (v) => v.toFixed(0),
-      series: [{ y: s.sep_arcsec, color: '#2463c9', label: '中心間距離' }],
-      hlines: [{ v: rs + rb, color: '#e8850c', label: '外接' }, { v: rs - rb, color: '#19875f', label: '内接' }],
+      title: t('{body}の中心と太陽の中心の距離（″）', { body: bodyJa(L.body) }), yRange: [0, Math.max(...s.sep_arcsec) * 1.05], shade: notVis, yFmt: (v) => v.toFixed(0),
+      series: [{ y: s.sep_arcsec, color: '#2463c9', label: t('中心間距離') }],
+      hlines: [{ v: rs + rb, color: '#e8850c', label: t('外接') }, { v: rs - rb, color: '#19875f', label: t('内接') }],
     });
   }
   if (kind === 'ground') {
     const lo = Math.min(-5, ...s.sun_alt), hi = Math.max(10, ...s.sun_alt);
     lineChart(c2, {
-      title: '太陽の高度（°）', yRange: [Math.floor(lo / 5) * 5, Math.ceil(hi / 5) * 5], shade: notVis, yFmt: (v) => v.toFixed(0),
-      series: [{ y: s.sun_alt, color: '#c9a227', label: '太陽高度' }], hlines: [{ v: 0, color: '#19875f', label: '地平線' }],
+      title: t('太陽の高度（°）'), yRange: [Math.floor(lo / 5) * 5, Math.ceil(hi / 5) * 5], shade: notVis, yFmt: (v) => v.toFixed(0),
+      series: [{ y: s.sun_alt, color: '#c9a227', label: t('太陽高度') }], hlines: [{ v: 0, color: '#19875f', label: t('地平線') }],
     });
   } else if (kind === 'space') {
     const lo = Math.min(-2, ...s.vis), hi = Math.max(2, ...s.vis);
     lineChart(c2, {
-      title: '地球の縁から太陽までの角度（°）— 0 未満は地球に隠される', yRange: [lo, hi], shade: notVis, yFmt: (v) => v.toFixed(0),
-      series: [{ y: s.vis, color: '#2463c9', label: '地球の縁からの離角' }], hlines: [{ v: 0, color: '#c0392b', label: '地球の縁' }],
+      title: t('地球の縁から太陽までの角度（°）— 0 未満は地球に隠される'), yRange: [lo, hi], shade: notVis, yFmt: (v) => v.toFixed(0),
+      series: [{ y: s.vis, color: '#2463c9', label: t('地球の縁からの離角') }], hlines: [{ v: 0, color: '#c0392b', label: t('地球の縁') }],
     });
   } else c2.innerHTML = '';
 }
@@ -1745,7 +1864,7 @@ function updateCursor() {
 /* map                                                                 */
 /* ------------------------------------------------------------------ */
 let _worldGeo = null;
-function baseLayers(m, small = false) {
+function baseLayers(m) {
   const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18, attribution: '&copy; OpenStreetMap contributors',
   });
@@ -1769,8 +1888,15 @@ function baseLayers(m, small = false) {
   if (_worldGeo) addWorld(_worldGeo);
   else fetch('/static/vendor/world_110m.geojson').then((r) => r.json()).then((g) => { _worldGeo = g; addWorld(g); }).catch(() => {});
   simple.addTo(m);
-  L.control.layers({ 'シンプル地図（オフライン）': simple, '詳細地図（OpenStreetMap）': osm }, null, { position: small ? 'topright' : 'topright' }).addTo(m);
+  const lc = { m, simple, osm };
+  relabelLayerControl(lc);
+  state.layerControls.push(lc);
   return { simple, osm };
+}
+/* (Re)create the switch between the base maps with names in the language of the page. */
+function relabelLayerControl(lc) {
+  if (lc.ctl) lc.ctl.remove();
+  lc.ctl = L.control.layers({ [t('シンプル地図（オフライン）')]: lc.simple, [t('詳細地図（OpenStreetMap）')]: lc.osm }, null, { position: 'topright' }).addTo(lc.m);
 }
 function ensureMap() {
   if (state.map) return state.map;
@@ -1789,7 +1915,7 @@ async function loadMap(force = false) {
   const st = $('#mapStatus');
   if (state.mapData[d.id] && !force) { drawMap(d, state.mapData[d.id]); return; }
   if (state.mapData[d.id] === undefined || force || state.mapData[d.id] === null) {
-    setStatus(st, '地図データを計算中…（数秒かかります）', 'busy');
+    setStatus(st, t('地図データを計算中…（数秒かかります）'), 'busy');
     try {
       const md = await api(`/api/event/${await liveId(d.id)}/map`);
       state.mapData[d.id] = md;
@@ -1883,19 +2009,19 @@ function drawMap(d, md) {
   legend.innerHTML = '';
   const bounds = L.latLngBounds([]);
   if (!md.exists) {
-    legend.append(el('span', {}, 'この現象は地上からは見られない（地球上に食が生じない）ため、食の地図はありません。'));
+    legend.append(el('span', {}, t('この現象は地上からは見られない（地球上に食が生じない）ため、食の地図はありません。')));
   } else if (md.map_kind === 'eclipse') {
     const grid = md.grid;
     layers.addLayer(gridOverlay(grid, (v) => (v <= 0.0005 ? null : [...magColor(v), 150])));
     for (const c of grid.contours) {
       for (const ln of c.lines) {
         addCopies(layers, ln, (pts) => L.polyline(pts, { color: c.level < 0.01 ? '#7a3b00' : '#8a4b10', weight: c.level < 0.01 ? 1.6 : 1, opacity: 0.8, dashArray: c.level < 0.01 ? null : '4 4' })
-          .bindTooltip(c.level < 0.01 ? '部分食が見える範囲の境界（太陽が地平線上）' : `最大食分 ${c.level}`, { sticky: true, className: 'map-tip' }));
+          .bindTooltip(c.level < 0.01 ? t('部分食が見える範囲の境界（太陽が地平線上）') : t('最大食分 {v}', { v: c.level }), { sticky: true, className: 'map-tip' }));
       }
     }
     if (md.penumbra_limits) {
       for (const side of ['N', 'S']) for (const seg of md.penumbra_limits[side] || []) {
-        addCopies(layers, seg.map((p) => [p[0], p[1]]), (pts) => L.polyline(pts, { color: '#6b4fbb', weight: 1.5, dashArray: '6 4' }).bindTooltip(`部分食の${side === 'N' ? '北' : '南'}限界線`, { sticky: true }));
+        addCopies(layers, seg.map((p) => [p[0], p[1]]), (pts) => L.polyline(pts, { color: '#6b4fbb', weight: 1.5, dashArray: '6 4' }).bindTooltip(side === 'N' ? t('部分食の北限界線') : t('部分食の南限界線'), { sticky: true }));
       }
     }
     if (md.umbra_limits) {
@@ -1906,26 +2032,29 @@ function drawMap(d, md) {
         addCopies(layers, n0.concat(s0.slice().reverse()), (pts) => L.polygon(pts, { stroke: false, fillColor: '#111', fillOpacity: 0.35, interactive: false }));
       }
       const typ = md.event.type;
+      const limit = typ === 'annular' ? { N: t('金環帯の北限界線'), S: t('金環帯の南限界線') }
+        : typ === 'total' ? { N: t('皆既帯の北限界線'), S: t('皆既帯の南限界線') } : { N: t('中心食帯の北限界線'), S: t('中心食帯の南限界線') };
       for (const [side, arr] of [['N', N], ['S', S]]) for (const seg of arr) {
         const pts = seg.map((p) => [p[0], p[1]]);
-        addCopies(layers, pts, (q) => L.polyline(q, { color: '#111', weight: 1.8 }).bindTooltip(`${typ === 'annular' ? '金環' : typ === 'total' ? '皆既' : '中心食'}帯の${side === 'N' ? '北' : '南'}限界線`, { sticky: true }));
+        addCopies(layers, pts, (q) => L.polyline(q, { color: '#111', weight: 1.8 }).bindTooltip(limit[side], { sticky: true }));
       }
     }
     for (const seg of md.central_line || []) {
       const pts = seg.map((p) => [p[0], p[1]]);
-      addCopies(layers, pts, (q) => L.polyline(q, { color: '#d62828', weight: 2 }).bindTooltip('中心線', { sticky: true }));
+      addCopies(layers, pts, (q) => L.polyline(q, { color: '#d62828', weight: 2 }).bindTooltip(t('中心線'), { sticky: true }));
       pts.forEach((p) => bounds.extend(p));
     }
     for (const o of md.umbra_outlines || []) {
-      for (const seg of o.lines) addCopies(layers, seg, (q) => L.polyline(q, { color: '#000', weight: 1, opacity: 0.7 }).bindTooltip(`${fmtTime(o.time)} ${tzLabel(o.time)} の本影`, { sticky: true }));
+      for (const seg of o.lines) addCopies(layers, seg, (q) => L.polyline(q, { color: '#000', weight: 1, opacity: 0.7 }).bindTooltip(t('{time} の本影', { time: `${fmtTime(o.time)} ${tzLabel(o.time)}` }), { sticky: true }));
     }
     for (const p of md.central_points || []) {
       addCopies(layers, [[p.lat, p.lon]], (q) => L.circleMarker(q[0], { radius: 3, color: '#d62828', weight: 1, fillOpacity: 0.6 })
-        .bindTooltip(`${fmtDT(p.time)} ${tzLabel(p.time)}<br>中心食の継続 ${fmtDur(p.duration_s, true)}<br>太陽高度 ${p.sun_alt.toFixed(0)}°`));
+        .bindTooltip(`${fmtDT(p.time)} ${tzLabel(p.time)}<br>` + esc(t('中心食の継続 {v}', { v: fmtDur(p.duration_s, true) })) + '<br>' +
+          esc(t('太陽高度 {v}°', { v: p.sun_alt.toFixed(0) }))));
     }
     const ev = md.event;
     const ge = L.circleMarker([ev.ge_lat, ev.ge_lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#d62828', fillOpacity: 1 });
-    ge.bindTooltip(`最大食 ${fmtDT(ev.max)} ${tzLabel(ev.max)}<br>${fmtLatLon(ev.ge_lat, ev.ge_lon)}`);
+    ge.bindTooltip(esc(t('最大食 {time}', { time: `${fmtDT(ev.max)} ${tzLabel(ev.max)}` })) + `<br>${fmtLatLon(ev.ge_lat, ev.ge_lon)}`);
     layers.addLayer(ge);
     if (!bounds.isValid()) {
       // fit to the area where the partial eclipse is visible
@@ -1936,40 +2065,43 @@ function drawMap(d, md) {
       }
     }
     legend.append(
-      el('span', {}, '最大食分', el('span', { class: 'grad', style: `background:linear-gradient(90deg,${[0.05, 0.2, 0.4, 0.6, 0.8, 0.95, 1].map((v) => `rgb(${magColor(v).join(',')})`).join(',')})` }), '0 → 1'),
-      el('span', {}, el('span', { class: 'ln', style: 'border-color:#d62828' }), '中心線'),
-      ev.type !== 'partial' && el('span', {}, el('span', { class: 'sw', style: 'background:rgba(17,17,17,.4)' }), `${ev.type === 'annular' ? '金環' : '皆既'}帯（黒線は限界線・10分ごとの本影）`),
-      el('span', {}, el('span', { class: 'ln', style: 'border-color:#6b4fbb;border-top-style:dashed' }), '部分食の限界線'),
-      el('span', { class: 'muted' }, '色は太陽が地平線上にある時間帯での最大食分。地図をクリックすると、その地点での見え方を計算します。'),
+      el('span', {}, t('最大食分'), el('span', { class: 'grad', style: `background:linear-gradient(90deg,${[0.05, 0.2, 0.4, 0.6, 0.8, 0.95, 1].map((v) => `rgb(${magColor(v).join(',')})`).join(',')})` }), '0 → 1'),
+      el('span', {}, el('span', { class: 'ln', style: 'border-color:#d62828' }), t('中心線')),
+      ev.type !== 'partial' && el('span', {}, el('span', { class: 'sw', style: 'background:rgba(17,17,17,.4)' }),
+        ev.type === 'annular' ? t('金環帯（黒線は限界線・10分ごとの本影）') : t('皆既帯（黒線は限界線・10分ごとの本影）')),
+      el('span', {}, el('span', { class: 'ln', style: 'border-color:#6b4fbb;border-top-style:dashed' }), t('部分食の限界線')),
+      el('span', { class: 'muted' }, t('色は太陽が地平線上にある時間帯での最大食分。地図をクリックすると、その地点での見え方を計算します。')),
     );
   } else if (md.map_kind === 'transit') {
     layers.addLayer(gridOverlay(md.grid, (v) => (TRANSIT_CODES[v] ? [...hexRgb(TRANSIT_CODES[v][0]), 120] : null)));
     for (const sp of md.subsolar) {
-      const lbl = { C1: '第1接触', MAX: '最大', C4: '第4接触' }[sp.label];
-      layers.addLayer(L.circleMarker([sp.lat, sp.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#f39b1d', fillOpacity: 1 }).bindTooltip(`${lbl}の時刻に太陽が真上にある地点`));
+      const lbl = { C1: t('第1接触'), MAX: t('最大'), C4: t('第4接触') }[sp.label];
+      layers.addLayer(L.circleMarker([sp.lat, sp.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#f39b1d', fillOpacity: 1 })
+        .bindTooltip(esc(t('{label}の時刻に太陽が真上にある地点', { label: lbl }))));
     }
-    legend.append(...Object.values(TRANSIT_CODES).map(([c, l]) => el('span', {}, el('span', { class: 'sw', style: `background:${c}` }), l)));
-    legend.append(el('span', { class: 'muted' }, `地心の接触時刻（${fmtTime(md.geocentric.c1)}〜${fmtTime(md.geocentric.c4)} ${tzLabel(md.geocentric.c1)}）にもとづく概略図。地図をクリックすると、その地点での正確な時刻を計算します。`));
+    legend.append(...Object.values(TRANSIT_CODES).map(([c, l]) => el('span', {}, el('span', { class: 'sw', style: `background:${c}` }), t(l))));
+    legend.append(el('span', { class: 'muted' }, t('地心の接触時刻（{start}〜{end} {tz}）にもとづく概略図。地図をクリックすると、その地点での正確な時刻を計算します。',
+      { start: fmtTime(md.geocentric.c1), end: fmtTime(md.geocentric.c4), tz: tzLabel(md.geocentric.c1) })));
     bounds.extend([[-60, -180], [70, 180]]);
   }
   // observer
   const Lc = state.local;
   if (d.kind !== 'global' && d.observer_kind === 'ground') {
     const o = d.observer;
-    layers.addLayer(L.marker([o.lat, o.lon]).bindTooltip(`観測地: ${esc(o.name)}`, { permanent: false }));
+    layers.addLayer(L.marker([o.lat, o.lon]).bindTooltip(t('観測地: {name}', { name: esc(o.name) }), { permanent: false }));
     bounds.extend([o.lat, o.lon]);
   }
   if (d.kind !== 'global' && d.observer_kind === 'space' && Lc && Lc.timeseries) {
     const s = Lc.timeseries;
     const pts = unwrapTrack(s.sat_lat.map((la, i) => [la, s.sat_lon[i]]));
-    addCopies(layers, pts, (q) => L.polyline(q, { color: '#0aa5c9', weight: 3, opacity: 0.9 }).bindTooltip('現象中の衛星直下点の軌跡', { sticky: true }));
+    addCopies(layers, pts, (q) => L.polyline(q, { color: '#0aa5c9', weight: 3, opacity: 0.9 }).bindTooltip(t('現象中の衛星直下点の軌跡'), { sticky: true }));
     for (const c of Lc.contacts) {
       const [n] = contactName(c.label, Lc);
       layers.addLayer(L.circleMarker([c.sat_lat, c.sat_lon], { radius: c.label === 'MAX' ? 6 : 4, color: '#055a6e', weight: 1, fillColor: '#0aa5c9', fillOpacity: 1 })
-        .bindTooltip(`${n} ${fmtTime(c.time)}<br>衛星高度 ${c.sat_alt_km.toFixed(0)} km`));
+        .bindTooltip(`${esc(n)} ${fmtTime(c.time)}<br>` + esc(t('衛星高度 {v} km', { v: c.sat_alt_km.toFixed(0) }))));
     }
     pts.forEach((p) => bounds.extend(p));
-    legend.append(el('span', {}, el('span', { class: 'ln', style: 'border-color:#0aa5c9' }), '衛星直下点の軌跡'));
+    legend.append(el('span', {}, el('span', { class: 'ln', style: 'border-color:#0aa5c9' }), t('衛星直下点の軌跡')));
   }
   if (state.clickMarker) layers.addLayer(state.clickMarker);
   if (bounds.isValid()) m.fitBounds(bounds.pad(0.15), { maxZoom: 6 });
@@ -1981,20 +2113,23 @@ async function onMapClick(ev) {
   if (!md || !md.exists) return;
   const ll = ev.latlng.wrap();
   const base = state.rootId || d.id;
-  const popup = L.popup().setLatLng(ev.latlng).setContent('<span class="spinner"></span>この地点での見え方を計算中…').openOn(state.map);
+  const popup = L.popup().setLatLng(ev.latlng).setContent('<span class="spinner"></span>' + esc(t('この地点での見え方を計算中…'))).openOn(state.map);
   try {
-    const r = await api('/api/local', { event_id: await liveId(base), lat: ll.lat, lon: ll.lng, elevation_m: 0, name: `地図上の地点 ${fmtLatLon(ll.lat, ll.lng)}` });
-    if (!r.found) { popup.setContent(`${fmtLatLon(ll.lat, ll.lng)}<br>この地点では${d.body === 'moon' || d.kind === 'global' ? '食は起こりません' : '見られません'}。`); return; }
+    const r = await api('/api/local', { event_id: await liveId(base), lat: ll.lat, lon: ll.lng, elevation_m: 0, name: t('地図上の地点 {pos}', { pos: fmtLatLon(ll.lat, ll.lng) }) });
+    if (!r.found) {
+      popup.setContent(`${fmtLatLon(ll.lat, ll.lng)}<br>` + esc(d.body === 'moon' || d.kind === 'global' ? t('この地点では食は起こりません。') : t('この地点では見られません。')));
+      return;
+    }
     const moon = r.body === 'moon';
-    const vis = r.vis_fraction >= 0.999 ? '全経過が見える' : r.vis_fraction > 0 ? `一部が見える（${Math.round(r.vis_fraction * 100)}%）` : '太陽が地平線の下で見えない';
+    const vis = r.vis_fraction >= 0.999 ? t('全経過が見える') : r.vis_fraction > 0 ? t('一部が見える（{p}%）', { p: Math.round(r.vis_fraction * 100) }) : t('太陽が地平線の下で見えない');
     const rows = [
-      ['種類', r.type_ja], ['始まり', `${fmtTime(r.c1)}`], ['最大', `${fmtTime(r.max)}${moon ? `（食分 ${f3(r.magnitude)}）` : ''}`], ['終わり', fmtTime(r.c4)],
-      moon && r.central_duration_s > 0 ? [r.type === 'total' ? '皆既' : '金環', fmtDur(r.central_duration_s, true)] : null,
-      ['太陽高度(最大時)', `${r.contacts.find((c) => c.label === 'MAX').sun_alt.toFixed(0)}°`], ['見え方', vis],
+      [t('種類'), typeLabel(r)], [t('始まり'), `${fmtTime(r.c1)}`], [t('最大'), `${fmtTime(r.max)}${moon ? paren(t('食分 {v}', { v: f3(r.magnitude) })) : ''}`], [t('終わり'), fmtTime(r.c4)],
+      moon && r.central_duration_s > 0 ? [r.type === 'total' ? t('皆既') : t('金環'), fmtDur(r.central_duration_s, true)] : null,
+      [t('太陽高度(最大時)'), `${r.contacts.find((c) => c.label === 'MAX').sun_alt.toFixed(0)}°`], [t('見え方'), vis],
     ].filter(Boolean);
-    const btn = el('button', { class: 'popup-btn', type: 'button' }, 'この地点の詳細を表示');
+    const btn = el('button', { class: 'popup-btn', type: 'button' }, t('この地点の詳細を表示'));
     btn.addEventListener('click', () => { state.map.closePopup(); openDetail(r.id, { push: true }); });
-    const div = el('div', {}, el('b', {}, fmtLatLon(ll.lat, ll.lng)), el('div', { class: 'muted', style: 'font-size:11px' }, `${fmtDate(r.max)}・${tzLabel(r.max)}`),
+    const div = el('div', {}, el('b', {}, fmtLatLon(ll.lat, ll.lng)), el('div', { class: 'muted', style: 'font-size:11px' }, fmtDate(r.max) + sep() + tzLabel(r.max)),
       el('table', {}, rows.map(([a, b]) => el('tr', {}, el('td', { class: 'muted' }, a), el('td', {}, b)))), btn);
     popup.setContent(div);
   } catch (err) { popup.setContent(esc(err.message)); }
@@ -2008,20 +2143,22 @@ function textSummary() {
   if (!d) return '';
   const lines = [];
   if (d.kind === 'global') {
-    lines.push(`${fmtDate(d.max)} ${d.type_ja}（地球全体）`);
-    lines.push(`最大食: ${fmtDT(d.max, 1)} ${tzLabel(d.max)}  ${fmtLatLon(d.ge_lat, d.ge_lon)}  太陽高度 ${d.sun_alt.toFixed(1)}°`);
-    lines.push(`食分 ${f4(d.magnitude)}  γ ${f4(d.gamma)}  中心食継続 ${fmtDur(d.central_duration_s, true)}  幅 ${d.path_width_km ? d.path_width_km.toFixed(1) + ' km' : '—'}  サロス ${d.saros}`);
+    lines.push(`${fmtDate(d.max)} ${typeLabel(d)}` + paren(t('地球全体')));
+    lines.push(`${t('最大食 {time}', { time: `${fmtDT(d.max, 1)} ${tzLabel(d.max)}` })}  ${fmtLatLon(d.ge_lat, d.ge_lon)}  ${t('太陽高度 {v}°', { v: d.sun_alt.toFixed(1) })}`);
+    lines.push([t('食分 {v}', { v: f4(d.magnitude) }), `γ ${f4(d.gamma)}`, t('中心食の継続 {v}', { v: fmtDur(d.central_duration_s, true) }),
+      t('幅 {v}', { v: d.path_width_km ? km(d.path_width_km.toFixed(1)) : '—' }), t('サロス {v}', { v: d.saros })].join('  '));
     lines.push(`P1 ${fmtDT(d.p1, 1)}  P4 ${fmtDT(d.p4, 1)}  ΔT ${d.delta_t_s.toFixed(2)} s`);
-    if (L) lines.push('', '最大食の地点での接触時刻:');
-  } else lines.push(`${fmtDate(d.max)} ${d.type_ja}  観測者: ${observerText(d.observer)}`);
+    if (L) lines.push('', t('最大食の地点での接触時刻:'));
+  } else lines.push(`${fmtDate(d.max)} ${typeLabel(d)}  ${t('観測者: {obs}', { obs: observerText(d.observer) })}`);
   const src = d.kind === 'global' ? L : d;
   if (src) {
     for (const c of src.contacts) {
       const [n, sub] = contactName(c.label, src);
-      let s = `${(n + (sub ? `（${sub}）` : '')).padEnd(18, '　')} ${fmtDT(c.time, 1)} ${tzLabel(c.time)}  P=${c.pa.toFixed(1)}°`;
-      if (c.sun_alt != null) s += `  高度 ${c.sun_alt.toFixed(1)}° 方位 ${c.sun_az.toFixed(1)}°`;
-      if (c.sat_lat != null) s += `  衛星 ${fmtLatLon(c.sat_lat, c.sat_lon)} ${c.sat_alt_km.toFixed(0)}km`;
-      if (src.body === 'moon') s += `  食分 ${f4(c.magnitude)}`;
+      const name = n + (sub ? paren(sub) : '');
+      let s = `${LANG === 'ja' || LANG === 'zh' ? name.padEnd(18, '　') : name.padEnd(36)} ${fmtDT(c.time, 1)} ${tzLabel(c.time)}  P=${c.pa.toFixed(1)}°`;
+      if (c.sun_alt != null) s += '  ' + t('高度 {alt}° 方位 {az}°', { alt: c.sun_alt.toFixed(1), az: c.sun_az.toFixed(1) });
+      if (c.sat_lat != null) s += '  ' + t('衛星 {pos} {alt} km', { pos: fmtLatLon(c.sat_lat, c.sat_lon), alt: c.sat_alt_km.toFixed(0) });
+      if (src.body === 'moon') s += '  ' + t('食分 {v}', { v: f4(c.magnitude) });
       lines.push(s);
     }
   }
@@ -2031,7 +2168,7 @@ function renderData() {
   const d = state.detail;
   if (!d) return;
   const copy = JSON.parse(JSON.stringify(d));
-  if (copy.timeseries) copy.timeseries = `（${copy.timeseries.dt_s.length} 点の時系列 — CSV でダウンロードできます）`;
+  if (copy.timeseries) copy.timeseries = t('（{n} 点の時系列 — CSV でダウンロードできます）', { n: copy.timeseries.dt_s.length });
   $('#dataText').textContent = textSummary() + '\n\n' + JSON.stringify(copy, null, 2);
 }
 function downloadJson() {
@@ -2053,9 +2190,9 @@ function downloadSeriesCsv() {
   saveFile(`eclipse_timeseries_${L.max.slice(0, 10)}.csv`, toCsv(rows), 'text/csv');
 }
 async function copyText() {
-  try { await navigator.clipboard.writeText(textSummary()); $('#copyText').textContent = 'コピーしました'; }
-  catch (_) { $('#copyText').textContent = 'コピーできませんでした'; }
-  setTimeout(() => { $('#copyText').textContent = '結果をテキストでコピー'; }, 1800);
+  try { await navigator.clipboard.writeText(textSummary()); $('#copyText').textContent = t('コピーしました'); }
+  catch (_) { $('#copyText').textContent = t('コピーできませんでした'); }
+  setTimeout(() => { $('#copyText').textContent = t('結果をテキストでコピー'); }, 1800);
 }
 
 init();

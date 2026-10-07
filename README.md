@@ -128,6 +128,8 @@ python tools/build_bundles.py --target macos --sign <署名用フォルダ>/sign
 
 表示時刻のタイムゾーンは右上で切り替えられます（計算は UTC/TT で行い、表示のみ変換）。
 
+画面の言語は右上の 🌐 で、日本語・English・Français・Русский・Español・中文・हिन्दी から選べます（初回はブラウザの言語に合わせ、選んだ言語は次回も使います）。エラーや注意のメッセージも選んだ言語で表示します。`cli.py` の出力と文書は日本語です。
+
 ### 打ち上げ前の衛星
 
 日食が起きる日は何年も前から決まっていますが、衛星から見た時刻や欠け方は「その瞬間に衛星が軌道上のどこにいるか」で大きく変わり、これは打ち上げて軌道が決まるまで分かりません。
@@ -203,7 +205,9 @@ eclipsecalc/
   global_eclipse.py         地球全体の日食探索
   eclipse_map.py            中心線・限界線・食分分布・通過可視図
   server.py                 Web API（FastAPI）
+  i18n.py                   Web API のエラー・注意の翻訳
 static/                     画面（HTML/CSS/JavaScript、Leaflet、Natural Earth 地図）
+  i18n.js                   画面の翻訳（日本語の文言をキーに 6 言語）
 tests/test_validation.py    NASA 公表値との比較テスト
 tests/test_hinode.py        「ひので」の予報・観測報告との比較テスト
 tests/test_orbit_planning.py  太陽同期軌道・昇交点地方時・位相の一括計算のテスト

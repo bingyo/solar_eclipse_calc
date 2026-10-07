@@ -5,6 +5,8 @@ from pathlib import Path
 
 from skyfield.api import Loader
 
+from .i18n import tr
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BUNDLED_DATA_DIR = ROOT_DIR / 'data'
 # Downloads and caches go here.  The macOS app keeps the tool inside its signed (read-only)
@@ -60,7 +62,7 @@ class Context:
     def __init__(self, ephemeris=DEFAULT_EPHEMERIS, delta_t=None):
         path = _ephemeris_path(ephemeris)
         if path is None:
-            raise ValueError(f'暦ファイル {ephemeris} が {DATA_DIR} にありません')
+            raise ValueError(tr('暦ファイル {ephemeris} が {dir} にありません', ephemeris=ephemeris, dir=DATA_DIR))
         loader = Loader(str(path.parent), verbose=False)
         self.ephemeris_name = ephemeris
         self.eph = loader(ephemeris)

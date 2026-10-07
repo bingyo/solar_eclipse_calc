@@ -32,6 +32,7 @@ from .constants import (AU_KM, DAY_S, MERCURY_RADIUS, MOON_K_EXTERNAL, MOON_K_IN
                         RAD2ARCSEC, SUN_RADIUS_IAU2015, VENUS_RADIUS, WGS84_A, WGS84_B)
 from .conjunctions import BODY_MIN_DISTANCE_KM, find_conjunctions, geocentric_min_separation
 from .geometry import angle_between, magnitude, norm, obscuration
+from .i18n import tr
 from .observers import HorizonsObserver, ObserverError, SSCWebObserver
 from .saros import saros_number
 from .timeutil import iso_utc
@@ -333,10 +334,10 @@ class LocalSearch:
                 a2 = max(self.jd_a, ca + pad + margin)
                 b2 = min(self.jd_b, cb - pad - margin)
                 if b2 <= a2:
-                    raise ObserverError('指定期間には JPL Horizons の軌道データがありません')
-                self.warnings.append('JPL Horizons の軌道データがある期間（'
-                                     f'{iso_utc(self.ctx.ts.tt_jd(a2))[:10]}〜{iso_utc(self.ctx.ts.tt_jd(b2))[:10]}）'
-                                     'に限定して計算しました')
+                    raise ObserverError(tr('指定期間には JPL Horizons の軌道データがありません'))
+                self.warnings.append(tr('JPL Horizons の軌道データがある期間（{start}〜{end}）に限定して計算しました',
+                                        start=iso_utc(self.ctx.ts.tt_jd(a2))[:10],
+                                        end=iso_utc(self.ctx.ts.tt_jd(b2))[:10]))
                 self.jd_a, self.jd_b = a2, b2
             self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
         elif isinstance(self.observer, SSCWebObserver):
@@ -347,8 +348,8 @@ class LocalSearch:
                 period = (f'{iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10]}〜'
                           f'{iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10]}')
                 if b2 <= a2:
-                    raise ObserverError(f'指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）')
-                self.warnings.append(f'NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました')
+                    raise ObserverError(tr('指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）', period=period))
+                self.warnings.append(tr('NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました', period=period))
                 self.jd_a, self.jd_b = a2, b2
             if not self.observer.surveyed:
                 self.observer.survey(self.jd_a, self.jd_b)
@@ -381,7 +382,7 @@ class LocalSearch:
             if inside and c1 is not None:
                 events.append(dict(x1=c1, x4=windows[k][1], c1_cut=c1_cut, c4_cut=True))
         if len(events) > max_events:
-            self.warnings.append(f'現象が多すぎるため最初の {max_events} 件のみ処理しました')
+            self.warnings.append(tr('現象が多すぎるため最初の {n} 件のみ処理しました', n=max_events))
             events = events[:max_events]
         if not events:
             return []

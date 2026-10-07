@@ -2,6 +2,8 @@
 import os
 import urllib.request
 
+from .i18n import tr
+
 
 def ssl_context():
     """Verify TLS with the operating system's certificate store when the
@@ -37,5 +39,5 @@ def download_file(url, path, log=print):
                 next_report += 0.1
     if total and os.path.getsize(part) != total:
         os.remove(part)
-        raise IOError(f'ダウンロードが途中で切れました（{done} / {total} バイト）')
+        raise IOError(tr('ダウンロードが途中で切れました（{done} / {total} バイト）', done=done, total=total))
     os.replace(part, path)

@@ -26,6 +26,11 @@
   color: var(--ink);
   background: var(--bg);
 }
+/* Fonts for the other languages of the page (i18n.js sets <html lang>) */
+:root:lang(zh) { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif; }
+:root:not(:lang(ja)):not(:lang(zh)) {
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Nirmala UI", "Noto Sans Devanagari", sans-serif;
+}
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); font-size: 14px; line-height: 1.55; }
 h1, h2, h3 { margin: 0; font-weight: 700; }
@@ -42,8 +47,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand .logo { width: 38px; height: 38px; flex: none; }
 .brand h1 { font-size: 18px; letter-spacing: .02em; }
 .brand p { margin: 0; font-size: 12px; color: #b8c1d6; }
-.top-controls { display: flex; align-items: center; gap: 12px; }
-.top-controls .tz { font-size: 12px; color: #b8c1d6; display: flex; align-items: center; gap: 8px; }
+.top-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 12px; }
+.top-controls .tz { font-size: 12px; color: #b8c1d6; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.topbar .ghost { white-space: nowrap; }
 .top-controls select { background: #2b3446; color: #fff; border: 1px solid #3d4860; border-radius: 8px; padding: 5px 8px; }
 .topbar .ghost { color: #fff; border-color: #3d4860; }
 
@@ -59,6 +65,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .layout { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .settings { position: static; max-height: none; }
   .brand p { display: none; }
+  .topbar { flex-wrap: wrap; }
 }
 
 .card {

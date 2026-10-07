@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__
+from . import __version__, i18n
 from .constants import (MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MOON_K_INTERNAL,
                         MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, VENUS_RADIUS,
                         VENUS_RADIUS_NASA, WGS84_A)
@@ -23,6 +23,7 @@ from .context import (DEFAULT_EPHEMERIS, DOWNLOADABLE, ROOT_DIR, available_ephem
                       ensure_ephemeris, get_context)
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
+from .i18n import tr
 from .local import LocalSearch, Params
 from .observers import (GeocenterObserver, GroundObserver, ObserverError, SSCWebObserver,
                         TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
@@ -34,6 +35,16 @@ APP_MODE = os.environ.get('ECLIPSECALC_APP') == '1'  # started by the macOS app 
 
 app = FastAPI(title='日食・太陽面通過 精密計算機', version=__version__)
 app.mount('/static', StaticFiles(directory=str(STATIC_DIR)), name='static')
+
+
+@app.middleware('http')
+async def _language(request: Request, call_next):
+    '''Errors and warnings in the language of the page (X-Lang header, see i18n.py).'''
+    token = i18n.set_lang(request.headers.get('x-lang'))
+    try:
+        return await call_next(request)
+    finally:
+        i18n.reset_lang(token)
 
 _compute_lock = threading.Lock()
 _download_lock = threading.Lock()
@@ -60,7 +71,7 @@ def _put(obj):
 def _get(eid):
     obj = _store.get(eid)
     if obj is None:
-        raise HTTPException(404, '指定された現象が見つかりません（サーバー再起動後は再計算してください）')
+        raise HTTPException(404, tr('指定された現象が見つかりません（サーバー再起動後は再計算してください）'))
     return obj
 
 
@@ -173,12 +184,12 @@ def _downloadable_ephemerides():
 def ephemeris_download(name: str):
     """Download a JPL ephemeris into data/ (so that DE440 can be added from the UI)."""
     if name not in DOWNLOADABLE:
-        raise HTTPException(400, f'{name} は自動ダウンロードに対応していません')
+        raise HTTPException(400, tr('{name} は自動ダウンロードに対応していません', name=name))
     with _download_lock:
         try:
             ensure_ephemeris(name, log=lambda m: print(m, flush=True))
         except Exception as exc:
-            raise HTTPException(502, f'JPL 暦をダウンロードできませんでした: {exc}')
+            raise HTTPException(502, tr('JPL 暦をダウンロードできませんでした: {exc}', exc=exc))
     return {'ephemerides': available_ephemerides(), 'downloadable_ephemerides': _downloadable_ephemerides()}
 
 
@@ -264,7 +275,7 @@ def tle(norad: int):
     except ObserverError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(502, f'CelesTrak に接続できませんでした: {exc}')
+        raise HTTPException(502, tr('CelesTrak に接続できませんでした: {exc}', exc=exc))
     obs = TLEObserver(get_context(), l1, l2, name)
     d = obs.describe()
     d['epoch'] = iso_from_jd(get_context(), obs.epoch_jd)
@@ -288,15 +299,16 @@ def _parse_request(req):
     except ObserverError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(400, f'入力値を解釈できません: {exc}')
+        raise HTTPException(400, tr('入力値を解釈できません: {exc}', exc=exc))
     if jd_b <= jd_a:
-        raise HTTPException(400, '終了日は開始日より後にしてください')
+        raise HTTPException(400, tr('終了日は開始日より後にしてください'))
     cov_a, cov_b = ctx.coverage_utc()
     if jd_a < ctx.jd_min or jd_b > ctx.jd_max:
-        raise HTTPException(400, f'期間が暦 {ctx.ephemeris_name} の範囲（{cov_a}〜{cov_b}）を超えています')
+        raise HTTPException(400, tr('期間が暦 {name} の範囲（{start}〜{end}）を超えています',
+                                     name=ctx.ephemeris_name, start=cov_a, end=cov_b))
     phen = [p for p in req.phenomena if p in ('moon', 'mercury', 'venus')]
     if not phen:
-        raise HTTPException(400, '計算する現象を 1 つ以上選んでください')
+        raise HTTPException(400, tr('計算する現象を 1 つ以上選んでください'))
     return ctx, params, jd_a, jd_b, phen
 
 
@@ -311,7 +323,7 @@ def search(req: SearchRequest):
         try:
             if spec.get('type') == 'global':
                 observer = GeocenterObserver()
-                obs_desc = {'kind': 'global', 'name': '地球全体'}
+                obs_desc = {'kind': 'global', 'name': tr('地球全体')}
             else:
                 observer = build_observer(ctx, spec, parse_time=lambda s: parse_utc(ctx, s))
                 obs_desc = observer.describe()
@@ -319,7 +331,7 @@ def search(req: SearchRequest):
                     obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
             saved = _saved_request(req, spec, observer)
             if observer.kind == 'space' and years > 20:
-                raise ObserverError('人工衛星の観測者では期間を 20 年以内にしてください')
+                raise ObserverError(tr('人工衛星の観測者では期間を 20 年以内にしてください'))
             events = []
             for body in phen:
                 if spec.get('type') == 'global' and body == 'moon':
@@ -350,7 +362,7 @@ def search(req: SearchRequest):
             raise
         except Exception as exc:
             traceback.print_exc()
-            raise HTTPException(500, f'計算中にエラーが発生しました: {exc}')
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
     events.sort(key=lambda e: e['jd_max'])
     # One summary warning per kind (e.g. the largest TLE age) instead of one per event.
     worst = max((e for e in events if e.get('warnings')),
@@ -399,12 +411,12 @@ def phase_sweep(req: SweepRequest):
     ctx, params, jd_a, jd_b, phen = _parse_request(req)
     spec = dict(req.observer)
     if spec.get('type') not in ('kepler', 'tle'):
-        raise HTTPException(400, '位相を変えた一括計算は「軌道要素」または TLE で指定した衛星だけで使えます')
+        raise HTTPException(400, tr('位相を変えた一括計算は「軌道要素」または TLE で指定した衛星だけで使えます'))
     step = float(req.step_deg)
     if not 5.0 <= step <= 90.0:
-        raise HTTPException(400, '位相の刻みは 5〜90° で指定してください')
+        raise HTTPException(400, tr('位相の刻みは 5〜90° で指定してください'))
     if jd_b - jd_a > SWEEP_MAX_DAYS:
-        raise HTTPException(400, '位相を変えた一括計算では期間を 1 年以内にしてください')
+        raise HTTPException(400, tr('位相を変えた一括計算では期間を 1 年以内にしてください'))
     phases = [float(m) for m in np.arange(0.0, 360.0 - 1e-9, step)]
     conj = {b: find_conjunctions(ctx, b, jd_a - 2.0, jd_b + 2.0) for b in phen}
     groups = {}
@@ -443,7 +455,7 @@ def phase_sweep(req: SweepRequest):
             raise
         except Exception as exc:
             traceback.print_exc()
-            raise HTTPException(500, f'計算中にエラーが発生しました: {exc}')
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
     out = []
     for g in sorted(groups.values(), key=lambda g: g['jd_conj']):
         rows = []
@@ -491,7 +503,7 @@ def restore(req: RestoreRequest):
     timeseries, map) are computed again from the saved request around the saved time.'''
     r, ev = req.request, req.event
     if not isinstance(r.get('observer'), dict) or ev.get('jd_max') is None:
-        raise HTTPException(400, '保存したファイルに計算条件または現象の時刻がありません')
+        raise HTTPException(400, tr('保存したファイルに計算条件または現象の時刻がありません'))
     body = ev.get('body') or 'moon'
     try:
         ctx, params = _settings(r.get('settings') or {})
@@ -506,7 +518,7 @@ def restore(req: RestoreRequest):
     except ObserverError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(400, f'保存した計算条件を解釈できません: {exc}')
+        raise HTTPException(400, tr('保存した計算条件を解釈できません: {exc}', exc=exc))
     spec = dict(r['observer'])
     if ev.get('m_deg') is not None:
         spec['m_deg'] = ev['m_deg']
@@ -525,10 +537,10 @@ def restore(req: RestoreRequest):
             raise HTTPException(400, str(exc))
         except Exception as exc:
             traceback.print_exc()
-            raise HTTPException(500, f'計算中にエラーが発生しました: {exc}')
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
     hit = [e for e in found if abs(e['jd_max'] - jd) < 0.1]
     if not hit:
-        raise HTTPException(404, 'この現象を保存した計算条件で再計算できませんでした')
+        raise HTTPException(404, tr('この現象を保存した計算条件で再計算できませんでした'))
     obj['event'] = min(hit, key=lambda e: abs(e['jd_max'] - jd))
     obj['request'] = {'phenomena': [body], 'observer': spec, 'start': r.get('start'),
                       'end': r.get('end'), 'settings': r.get('settings') or {}}
@@ -546,7 +558,7 @@ def _local_detail(obj):
     d['timeseries'] = ts
     d['observer'] = obj['observer'].describe()
     if obj.get('global_obs'):
-        d['observer'] = {'kind': 'global', 'name': '地心（地球中心）'}
+        d['observer'] = {'kind': 'global', 'name': tr('地心（地球中心）')}
         d['observer_kind'] = 'geocenter'
     d['warnings'] = obj['observer'].warnings_for(obj['ctx'], ev['jd_max'])
     d['params'] = obj['params'].as_dict()
@@ -598,7 +610,7 @@ def event_map(eid: str, grid: float = 1.0):
                 m['map_kind'] = 'transit'
         except Exception as exc:
             traceback.print_exc()
-            raise HTTPException(500, f'地図データの計算に失敗しました: {exc}')
+            raise HTTPException(500, tr('地図データの計算に失敗しました: {exc}', exc=exc))
     return _clean(m)
 
 
@@ -638,4 +650,4 @@ def local_at(req: LocalRequest):
 @app.exception_handler(Exception)
 async def _unhandled(request, exc):  # pragma: no cover
     traceback.print_exc()
-    return JSONResponse({'detail': f'サーバーエラー: {exc}'}, status_code=500)
+    return JSONResponse({'detail': tr('サーバーエラー: {exc}', exc=exc)}, status_code=500)
