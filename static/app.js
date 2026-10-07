@@ -22,7 +22,7 @@ function el(tag, attrs = {}, ...children) {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  info: null, obsTab: 'ground', satMode: 'celestrak', fetchedTle: null, sscSats: null,
+  info: null, obsTab: 'ground', satMode: 'celestrak', kInput: 'plan', fetchedTle: null, sscSats: null,
   sweep: null, sweepGroup: 0,
   result: null, filters: new Set(), selectedId: null,
   detail: null, local: null, stack: [], rootId: null,
@@ -221,7 +221,8 @@ async function init() {
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
   $('#fetchTle').addEventListener('click', fetchTle);
   $('#sscId').addEventListener('change', () => showSscInfo(true));
-  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo'].forEach((q) => {
+  $$('#kInput button').forEach((b) => b.addEventListener('click', () => setKeplerInput(b.dataset.kin)));
+  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE'].forEach((q) => {
     $(q).addEventListener('change', updateKeplerForm);
     $(q).addEventListener('input', updateKeplerForm);
   });
@@ -358,19 +359,49 @@ function applySatSpec(spec) {
   else if (spec.type === 'kepler') {
     setSatMode('kepler');
     let peri = spec.perigee_alt_km, apo = spec.apogee_alt_km;
-    if (spec.a_km) { peri = spec.a_km * (1 - spec.e) - 6378.137; apo = spec.a_km * (1 + spec.e) - 6378.137; }
+    if (spec.a_km) {
+      const e = spec.e ?? 0;
+      peri = spec.a_km * (1 - e) - R_EARTH; apo = spec.a_km * (1 + e) - R_EARTH;
+      $('#kA').value = spec.a_km; $('#kE').value = e;
+    }
     $('#kPeri').value = peri.toFixed(1); $('#kApo').value = apo.toFixed(1);
     $('#kSso').checked = !!spec.sso;
     if (spec.i_deg != null) $('#kInc').value = spec.i_deg;
     if (spec.ltan_h != null) { $('#kPlane').value = 'ltan'; $('#kLtan').value = fmtLtan(spec.ltan_h); }
     else { $('#kPlane').value = 'raan'; $('#kRaan').value = spec.raan_deg ?? 0; }
     $('#kArgp').value = spec.argp_deg ?? 0; $('#kM').value = spec.m_deg ?? 0;
-    updateKeplerForm();
+    setKeplerInput(spec.a_km ? 'elements' : 'plan', false);
   }
 }
+/* "plan": perigee/apogee altitudes with sun-synchronous / LTAN shortcuts;
+   "elements": the six classical elements as given (a, e, i, RAAN, argp, M).
+   Switching converts the size and shape so that the same orbit is kept. */
+function setKeplerInput(mode, convert = true) {
+  if (convert && mode !== state.kInput) {
+    if (mode === 'elements') {
+      const p = num('#kPeri', NaN), q = num('#kApo', NaN);
+      if (isFinite(p) && isFinite(q)) {
+        const a = R_EARTH + 0.5 * (p + q);
+        $('#kA').value = +a.toFixed(3); $('#kE').value = +((q - p) / (2 * a)).toFixed(7);
+      }
+    } else {
+      const a = num('#kA', NaN), e = num('#kE', NaN);
+      if (a > 0 && e >= 0 && e < 1) {
+        $('#kPeri').value = +(a * (1 - e) - R_EARTH).toFixed(3); $('#kApo').value = +(a * (1 + e) - R_EARTH).toFixed(3);
+      }
+      // keep the entered inclination and node instead of the SSO / LTAN shortcuts
+      $('#kSso').checked = false; $('#kPlane').value = 'raan';
+    }
+  }
+  state.kInput = mode;
+  $$('#kInput button').forEach((b) => b.classList.toggle('active', b.dataset.kin === mode));
+  $$('[data-kin-pane]').forEach((p) => { p.hidden = p.dataset.kinPane !== mode; });
+  updateKeplerForm();
+}
 /* Sun-synchronous inclination for the secular J2 model used by the server. */
+const R_EARTH = 6378.137;
 function ssoInclination(periKm, apoKm) {
-  const R = 6378.137, MU = 398600.4418, J2 = 1.08262668e-3;
+  const R = R_EARTH, MU = 398600.4418, J2 = 1.08262668e-3;
   const a = R + 0.5 * (periKm + apoKm), e = (apoKm - periKm) / (2 * a);
   if (!(a > R) || !(e >= 0 && e < 1)) return null;
   const target = 2 * Math.PI / (365.24219 * 86400);
@@ -394,7 +425,8 @@ function fmtLtan(h) {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 function updateKeplerForm() {
-  const sso = $('#kSso').checked;
+  const elements = state.kInput === 'elements';
+  const sso = !elements && $('#kSso').checked;
   $('#kInc').disabled = sso;
   const note = $('#kIncNote');
   if (sso) {
@@ -402,12 +434,16 @@ function updateKeplerForm() {
     if (i == null) { note.textContent = 'この高度では太陽同期軌道になりません'; }
     else { $('#kInc').value = i.toFixed(3); note.textContent = '太陽同期になるよう自動で決めた値'; }
   } else note.textContent = '';
-  const ltan = $('#kPlane').value === 'ltan';
+  const ltan = !elements && $('#kPlane').value === 'ltan';
   $('#kLtanWrap').hidden = !ltan;
   $('#kRaanWrap').hidden = ltan;
   const sweep = $('#kSweep').checked;
   $('#kM').disabled = sweep;
   $('#kSweepWrap').hidden = !sweep;
+  const a = num('#kA', NaN), e = num('#kE', NaN);
+  $('#kANote').textContent = a > 0 && e >= 0 && e < 1
+    ? `高度 ${(a * (1 - e) - R_EARTH).toFixed(0)}〜${(a * (1 + e) - R_EARTH).toFixed(0)} km・周期 ${(2 * Math.PI * Math.sqrt(a ** 3 / 398600.4418) / 60).toFixed(1)} 分`
+    : '';
 }
 async function fetchTle() {
   const box = $('#satInfo');
@@ -488,11 +524,19 @@ function buildRequest() {
       const ep = $('#kEpoch').value;
       if (!ep) throw new Error('軌道要素の元期を入力してください');
       observer = {
-        type: 'kepler', epoch: ep.length === 16 ? ep + ':00' : ep, perigee_alt_km: num('#kPeri'), apogee_alt_km: num('#kApo'),
+        type: 'kepler', epoch: ep.length === 16 ? ep + ':00' : ep,
         argp_deg: num('#kArgp'), m_deg: num('#kM'), j2: $('#kJ2').checked, name,
       };
-      if ($('#kSso').checked) observer.sso = true; else observer.i_deg = num('#kInc');
-      if ($('#kPlane').value === 'ltan') observer.ltan_h = ltanHours(); else observer.raan_deg = num('#kRaan');
+      if (state.kInput === 'elements') {
+        const a = num('#kA', NaN), e = num('#kE', NaN);
+        if (!(a > 0)) throw new Error('軌道長半径を入力してください');
+        if (!(e >= 0 && e < 1)) throw new Error('軌道離心率は 0 以上 1 未満で入力してください');
+        Object.assign(observer, { a_km: a, e, i_deg: num('#kInc'), raan_deg: num('#kRaan') });
+      } else {
+        Object.assign(observer, { perigee_alt_km: num('#kPeri'), apogee_alt_km: num('#kApo') });
+        if ($('#kSso').checked) observer.sso = true; else observer.i_deg = num('#kInc');
+        if ($('#kPlane').value === 'ltan') observer.ltan_h = ltanHours(); else observer.raan_deg = num('#kRaan');
+      }
     } else if (m === 'geo') {
       observer = { type: 'geo', lon: num('#geoLon'), name };
     } else if (m === 'sscweb') {
@@ -612,6 +656,7 @@ function observerText(o) {
   if (o.model === 'fixed') s += `・${fmtLon(o.lon)}・高度 ${o.height_km.toFixed(0)} km`;
   if (o.model === 'kepler') {
     s += `・傾斜角 ${o.i_deg.toFixed(2)}°`;
+    if (o.raan_deg != null && !o.sso) s += `・昇交点赤経 ${o.raan_deg.toFixed(2)}°`;
     if (o.ltan_h != null) s += `・昇交点の地方時 ${fmtLtan(o.ltan_h)}`;
     if (o.sso) s += '・太陽同期';
   }

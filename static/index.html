@@ -93,16 +93,26 @@
               <textarea id="tleText" rows="3" spellcheck="false" placeholder="ISS (ZARYA)&#10;1 25544U 98067A   ...&#10;2 25544  51.64 ..."></textarea></label>
           </div>
           <div class="sat-pane" data-sat="kepler" hidden>
-            <label class="field">元期 (UTC)<input id="kEpoch" type="datetime-local" step="1">
+            <div class="seg small" id="kInput">
+              <button type="button" data-kin="plan" class="active">高度・太陽同期で指定</button>
+              <button type="button" data-kin="elements">軌道6要素を入力</button>
+            </div>
+            <label class="field">元期（軌道情報の日時, UTC）<input id="kEpoch" type="datetime-local" step="1">
               <small>この時刻での軌道です（打ち上げ前なら軌道投入の予定日など）</small></label>
-            <div class="grid2">
+            <div class="grid2" data-kin-pane="plan">
               <label class="field">近地点高度 (km)<input id="kPeri" type="number" step="any" value="700"></label>
               <label class="field">遠地点高度 (km)<input id="kApo" type="number" step="any" value="700"></label>
             </div>
-            <label class="check"><input type="checkbox" id="kSso" checked> 太陽同期軌道（傾斜角を高度から自動で決める）</label>
+            <div class="grid2" data-kin-pane="elements" hidden>
+              <label class="field">軌道長半径 (km)<input id="kA" type="number" step="any" min="0" value="7078.137">
+                <small id="kANote"></small></label>
+              <label class="field">軌道離心率<input id="kE" type="number" step="any" min="0" max="0.999999" value="0">
+                <small>0 で円軌道（0 以上 1 未満）</small></label>
+            </div>
+            <label class="check" data-kin-pane="plan"><input type="checkbox" id="kSso" checked> 太陽同期軌道（傾斜角を高度から自動で決める）</label>
             <div class="grid2">
               <label class="field">軌道傾斜角 (°)<input id="kInc" type="number" step="any" value="98.19"><small id="kIncNote"></small></label>
-              <label class="field">軌道面の指定<select id="kPlane"><option value="ltan">昇交点の地方時</option><option value="raan">昇交点赤経</option></select></label>
+              <label class="field" data-kin-pane="plan">軌道面の指定<select id="kPlane"><option value="ltan">昇交点の地方時</option><option value="raan">昇交点赤経</option></select></label>
               <label class="field" id="kLtanWrap">昇交点の地方時<input id="kLtan" type="time" step="60" value="18:00">
                 <small>平均太陽時。18:00 は夕方側で北上</small></label>
               <label class="field" id="kRaanWrap" hidden>昇交点赤経 (°)<input id="kRaan" type="number" step="any" value="0"></label>
@@ -121,7 +131,8 @@
                 <option value="45">45°（8 通り）</option>
               </select>
               <small>衛星が軌道上のどこにいても起こりうる結果の範囲を、現象ごとにまとめます（期間は 1 年以内）。</small></label>
-            <p class="hint">GCRS（J2000赤道）基準の平均要素。計画中・仮想の衛星の検討向けです。</p>
+            <p class="hint">GCRS（J2000赤道）基準の平均要素。計画中・仮想の衛星の検討向けです。
+              <span data-kin-pane="elements" hidden>TLE の要素は SGP4 専用の平均要素（TEME 基準）なので、「TLE貼付」から入力してください。</span></p>
           </div>
           <div class="sat-pane" data-sat="geo" hidden>
             <label class="field">静止位置の経度 (°)<input id="geoLon" type="number" step="any" value="140.7">
