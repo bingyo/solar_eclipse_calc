@@ -65,6 +65,29 @@ python run.py
 DE440 は `python tools/download_ephemeris.py de440` でも追加できます。
 `start.bat` / `start.command` で準備した Python（`.runtime/venv/`）でテストやツールを実行することもできます（例: Windows は `.runtime\venv\Scripts\python tests\test_validation.py`、Mac・Linux は `.runtime/venv/bin/python tests/test_validation.py`）。
 
+### コマンドラインでの計算（軌道6要素の衛星）
+
+軌道6要素で指定した衛星から見える日食・太陽面通過は、画面を開かずに `cli.py` でも計算できます（画面の「軌道要素 → 軌道6要素を入力」と同じ計算です）。
+
+```bash
+python cli.py --epoch 2027-07-30T12:00:00 --a 7058.1 --e 0.0012 --i 98.13 --raan 220.5 --argp 90 --m 45 --start 2027-07-25 --end 2027-08-10 --tz 9
+```
+
+| 引数 | 内容 |
+|---|---|
+| `--epoch` | 元期（軌道情報の日時, UTC） |
+| `--a` `--e` `--i` `--raan` `--argp` `--m` | 軌道長半径 (km)・軌道離心率・軌道傾斜角・昇交点赤経・近地点引数・平均近点角 (°)。GCRS（J2000 赤道）基準の平均要素 |
+| `--start` `--end` | 期間（UTC の日付） |
+| `--phenomena` | 計算する現象（`moon`, `mercury`, `venus` をカンマ区切り。既定はすべて） |
+| `--sweep 10` | 平均近点角を 10° ずつ変えて一括計算（打ち上げ前の検討。期間は 1 年以内） |
+| `--format` | `table`（既定）・`csv`（画面の「一覧をCSV保存」と同じ列＋最大時の衛星直下点）・`json` |
+| `--tz 9` | 表の時刻を UTC+9（日本時間）で表示（CSV・JSON は常に UTC） |
+| `-o` | ファイルに保存（CSV は Excel で開ける UTF-8 BOM 付き） |
+
+ほかの引数（暦、ΔT、地球大気の遮蔽高度など）は `python cli.py --help` で確認できます。
+Python をインストールしていない場合は、Windows の配布用パッケージなら `.runtime\python-windows-x86_64\python.exe -E -s cli.py …`、ソース一式を `start.bat` / `start.command` で準備した場合は `.runtime/venv/` の Python で実行します。
+Git Bash などで日本語が文字化けするときは、環境変数 `PYTHONIOENCODING=utf-8` を付けて実行してください。
+
 ### 配布用パッケージの作り方
 
 ```bash

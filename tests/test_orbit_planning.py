@@ -5,14 +5,17 @@ and the search over all positions along the orbit (mean-anomaly sweep).
 Run with  python tests/test_orbit_planning.py  (test_hinode_ltan needs
 internet on the first run).
 """
+import json
 import math
 import os
 import sys
+import tempfile
 
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import cli  # noqa: E402
 from eclipsecalc import server  # noqa: E402
 from eclipsecalc.constants import WGS84_A  # noqa: E402
 from eclipsecalc.context import get_context  # noqa: E402
@@ -82,6 +85,27 @@ def test_phase_sweep_total_eclipse_2027():
     e = max(s['events'], key=lambda e: e['magnitude'])
     assert e['type'] == best['type'] and abs(e['magnitude'] - best['magnitude']) < 1e-9
     assert e['max'] == best['max']
+
+
+def test_cli_six_elements():
+    # The planned orbit typed in as six elements on the command line (cli.py)
+    # must give the same events as the altitude / LTAN input of the web UI.
+    plan = dict(PLAN, epoch='2027-08-02T00:00:00', m_deg=40)
+    kw = dict(phenomena=['moon'], start='2027-08-02', end='2027-08-03', settings={})
+    ref = server.search(server.SearchRequest(observer=plan, **kw))
+    o = ref['observer']
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, 'r.json')
+        assert cli.main(['--epoch', plan['epoch'], '--a', repr(o['a_km']), '--e', repr(o['e']),
+                         '--i', repr(o['i_deg']), '--raan', repr(o['raan_deg']), '--argp', '0',
+                         '--m', '40', '--start', kw['start'], '--end', kw['end'],
+                         '--phenomena', 'moon', '--format', 'json', '-o', out]) == 0
+        with open(out, encoding='utf-8') as f:
+            got = json.load(f)
+    assert len(got['events']) == len(ref['events']) >= 2
+    for a, b in zip(got['events'], ref['events']):
+        assert a['type'] == b['type'] and a['max'] == b['max']
+        assert abs(a['magnitude'] - b['magnitude']) < 1e-9
 
 
 if __name__ == '__main__':
