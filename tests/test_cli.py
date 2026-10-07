@@ -1,8 +1,12 @@
 """Checks of the command-line tool (cli.py): for every kind of observer it
-must give the same events as the web UI's search with the same input.
+must give the same events as the web UI's search with the same input, and
+the JSON interface used by AI agents (request echo/replay, dry run, errors
+and exit codes) must keep its shape.
 
 Run with  python tests/test_cli.py  (no internet needed).
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -87,6 +91,80 @@ def test_ground_settings():
     _same_events(got, ref, 1)
     assert got['params']['min_sun_alt_deg'] == 5.0 and got['params']['refraction'] is False
 
+
+
+def test_planned_orbit_flags():
+    # --alt --sso --ltan are the web UI's "高度・太陽同期で指定"
+    plan = dict(PLAN, epoch='2027-08-02T00:00:00', m_deg=40)
+    kw = dict(phenomena=['moon'], start='2027-08-02', end='2027-08-03', settings={})
+    ref = server.search(server.SearchRequest(observer=plan, **kw))
+    got = _run_cli(['--epoch', plan['epoch'], '--alt', '680', '--sso', '--ltan', '18:00', '--m', '40',
+                    '--start', kw['start'], '--end', kw['end'], '--phenomena', 'moon'])
+    _same_events(got, ref, 2)
+    assert got['observer']['sso'] and abs(got['observer']['ltan_h'] - 18.0) < 1e-9
+
+
+def test_geostationary_and_global():
+    kw = dict(phenomena=['moon'], start='2026-01-01', end='2027-01-01', settings={})
+    ref = server.search(server.SearchRequest(observer={'type': 'geo', 'lon': 140.7}, **kw))
+    got = _run_cli(['--geo-lon', '140.7', '--start', kw['start'], '--end', kw['end'], '--phenomena', 'moon'])
+    _same_events(got, ref, 3)
+    kw = dict(phenomena=['moon'], start='2027-01-01', end='2028-01-01', settings={})
+    ref = server.search(server.SearchRequest(observer={'type': 'global'}, **kw))
+    got = _run_cli(['--global', '--start', kw['start'], '--end', kw['end'], '--phenomena', 'moon'])
+    assert [e['max'] for e in got['events']] == [e['max'] for e in ref['events']]
+    e = next(e for e in got['events'] if e['type'] == 'total')
+    r = next(r for r in ref['events'] if r['max'] == e['max'])
+    assert e['max'].startswith('2027-08-02') and abs(e['gamma'] - r['gamma']) < 1e-12
+
+
+def test_request_replay_and_detail():
+    # The "request" echoed in the JSON output reproduces the calculation with --request.
+    first = _run_cli(['--city', 'ルクソール', '--start', '2027-08-01', '--end', '2027-08-03',
+                      '--phenomena', 'moon', '--detail'])
+    assert first['ok'] and 'id' not in first['events'][0]
+    labels = [c['label'] for c in first['events'][0]['contacts']]
+    assert labels == ['C1', 'C2', 'MAX', 'C3', 'C4'], labels
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'req.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(first['request'], f, ensure_ascii=False)
+        again = _run_cli(['--request', path])
+    assert again['request'] == first['request']
+    _same_events(again, first, 1)
+
+
+def _cli_json(argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        code = cli.main(argv + ['--format', 'json'])
+    return code, json.loads(out.getvalue())
+
+
+def test_dry_run():
+    code, d = _cli_json(['--epoch', '2027-01-01', '--alt', '500', '--sso', '--ltan', '10:30',
+                         '--start', '2027-01-01', '--end', '2027-02-01', '--dry-run'])
+    o = d['observer']
+    assert code == 0 and d['ok'] and d['dry_run'] and 'events' not in d
+    assert abs(o['period_min'] - 94.6) < 0.2 and abs(o['i_deg'] - 97.4) < 0.05 and abs(o['ltan_h'] - 10.5) < 1e-6
+
+
+def test_errors_and_exit_codes():
+    # wrong options -> 2, input that cannot be calculated -> 1; always JSON with --format json
+    code, d = _cli_json(['--city', '東京', '--start', '2027-01-01'])
+    assert code == 2 and d == {'ok': False, 'error': d['error'], 'exit_code': 2} and '--end' in d['error']
+    code, d = _cli_json(['--city', '東京', '--lat', '35', '--start', '2027-01-01', '--end', '2027-02-01'])
+    assert code == 2
+    code, d = _cli_json(['--epoch', '2027-01-01', '--a', '6000', '--e', '0', '--i', '98', '--raan', '0',
+                         '--start', '2027-01-01', '--end', '2027-02-01'])
+    assert code == 1 and '近地点' in d['error']
+    code, d = _cli_json(['--epoch', '2027-13-01', '--a', '7000', '--e', '0', '--i', '98', '--raan', '0',
+                         '--start', '2027-01-01', '--end', '2027-02-01'])
+    assert code == 1 and '元期' in d['error']
+    code, d = _cli_json(['--city', '東京', '--start', '2027-02-29', '--end', '2027-03-01'])
+    assert code == 1 and '開始日' in d['error']
+    code, d = _cli_json(['--city', '東京', '--start', '2027-02-01', '--end', '2027-01-01'])
+    assert code == 1 and not d['ok']
 
 if __name__ == '__main__':
     failed = 0
