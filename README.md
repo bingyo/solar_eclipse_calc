@@ -89,9 +89,10 @@ python cli.py --city 東京 --start 2026-01-01 --end 2056-01-01 --phenomena moon
 
 期間は `--start` `--end`（UTC の日付）、現象は `--phenomena`（`moon`, `mercury`, `venus`。既定はすべて）で指定します。
 出力は `--format table`（既定。`--tz 9` で日本時間）、`csv`（画面の「一覧をCSV保存」と同じ列）、`json`（計算条件 `request` つき。生成 AI 向け）から選べ、`--detail` で接触ごとの時刻・太陽高度・位置角なども出力します。`--dry-run` は計算せずに入力の解釈（衛星の周期・高度など）だけを出力します。
+表示の言語は `--lang`（`ja`, `en`, `fr`, `ru`, `es`, `zh`, `hi`）で選べます（既定は環境の言語）。
 ほかの引数は `python cli.py --help` で確認できます。
 Python をインストールしていない場合は、Windows の配布用パッケージなら `.runtime\python-windows-x86_64\python.exe -E -s cli.py …`、ソース一式を `start.bat` / `start.command` で準備した場合は `.runtime/venv/` の Python で実行します。
-Git Bash などで日本語が文字化けするときは、環境変数 `PYTHONIOENCODING=utf-8` を付けて実行してください。
+ファイルやパイプへの出力は UTF-8 です。Windows PowerShell 5.1 で出力を受け取って文字化けするときは、`-o ファイル` で保存してください。
 
 ### 配布用パッケージの作り方
 
@@ -128,7 +129,7 @@ python tools/build_bundles.py --target macos --sign <署名用フォルダ>/sign
 
 表示時刻のタイムゾーンは右上で切り替えられます（計算は UTC/TT で行い、表示のみ変換）。
 
-画面の言語は右上の 🌐 で、日本語・English・Français・Русский・Español・中文・हिन्दी から選べます（初回はブラウザの言語に合わせ、選んだ言語は次回も使います）。エラーや注意のメッセージも選んだ言語で表示します。`cli.py` の出力と文書は日本語です。
+画面の言語は右上の 🌐 で、日本語・English・Français・Русский・Español・中文・हिन्दी から選べます（初回はブラウザの言語に合わせ、選んだ言語は次回も使います）。エラーや注意のメッセージも選んだ言語で表示します。`cli.py` の出力も `--lang` で同じ言語から選べます。文書は日本語です。
 
 ### 打ち上げ前の衛星
 

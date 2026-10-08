@@ -21,14 +21,15 @@ python cli.py --help
 
 - 作業フォルダはリポジトリ（`cli.py` のあるフォルダ）にしてください。
 - 初回に暦（`data/de440s.bsp`、約 32 MB）がなければ自動でダウンロードします。
-- Git Bash などで日本語が文字化けするときは `PYTHONIOENCODING=utf-8` を付けます。JSON の出力は UTF-8 で読んでください。
+- ファイルやパイプへの出力（標準出力・標準エラー出力）は UTF-8 です（コンソールにはそのまま表示します）。Windows PowerShell 5.1 で出力を受け取って文字化けするときは、`-o ファイル`（常に UTF-8）で保存して読むか、先に `[Console]::OutputEncoding = [Text.Encoding]::UTF8` を実行します。環境変数 `PYTHONIOENCODING` を指定すると、その文字コードで出力します。
+- 表示の言語は `--lang`（`ja` 日本語、`en` 英語、`fr` フランス語、`ru` ロシア語、`es` スペイン語、`zh` 中国語、`hi` ヒンディー語）で選びます。指定しなければ環境変数 `ECLIPSECALC_LANG`、なければ環境の言語（`LANG` などの環境変数、Windows の表示言語）、それもなければ英語です。ヘルプ・表・CSV の種類の列・経過の表示・エラー・`warnings` がその言語になります。JSON の項目名と、`type`・`body` などの値は言語によらず同じです（`type_ja` は常に日本語）。
 - インターネットが必要なのは `--norad`（CelesTrak）、`--horizons`（JPL Horizons）、`--sscweb` と `--list-sscweb`（NASA SSCWeb）だけです。ほかの計算はオフラインでできます。
 
 ## 生成 AI が計算するときの手順
 
 1. **観測者を決める**（下の表）。人から受け取った情報をなるべくそのままの形で渡し、AI が別の形式に換算しないようにします（換算の誤りを避けるため）。
 2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。
-3. **計算する**: `--format json` で実行し、終了コードと `ok` を確認します。`warnings` があれば必ず人に伝えます（例: TLE の元期から日数が経っていて誤差が大きい）。接触時刻まで必要なら `--detail` を付けます。
+3. **計算する**: `--format json` で実行し、終了コードと `ok` を確認します。人の言語に合わせて `--lang`（例 `--lang en`）を付けると、`warnings` や `error` をそのまま伝えられます。`warnings` があれば必ず人に伝えます（例: TLE の元期から日数が経っていて誤差が大きい）。接触時刻まで必要なら `--detail` を付けます。
    TLE の元期から何週間も先の現象は、衛星が軌道上のどこにいるかがほとんど分からなくなるため（大気の抵抗や軌道変更）、`--sweep 10` も実行して、位置による結果の幅（時刻・回数・食分の範囲）を一緒に伝えてください。
 4. **報告する**: 時刻は UTC で返るので、人の地域の時刻に直して伝えます（日本時間 = UTC+9）。表で見せるときは `--format table --tz 9` が便利です。計算条件（出力の `request`）を残しておくと、`--request` で同じ計算を再現できます。
 
@@ -46,7 +47,7 @@ python cli.py --help
 | 探査機・宇宙望遠鏡（JWST、SOHO など） | `--horizons -170`（JPL Horizons の ID。地球近傍の衛星は `--horizons-step 1`〜`2`） |
 | 科学衛星が過去に見た現象（ひので など） | `--sscweb hinode`（ID は `--list-sscweb` で確認） |
 | 地上の地点（緯度・経度・標高） | `--lat --lon --elev`（地名しかなければ AI が緯度経度を調べ、出典とともに人に確認） |
-| よく使う都市（東京、ルクソールなど） | `--city 東京`（一覧は `--list-cities`） |
+| よく使う都市（東京、ルクソールなど） | `--city 東京`（7 言語のどの名前でも可。`--city Tokyo` など。一覧は `--list-cities`） |
 | 「世界のどこで見られるか」 | `--global` |
 
 期間は `--start` `--end`（UTC の日付）、現象は `--phenomena moon,mercury,venus`（既定はすべて。`moon` が日食）で指定します。
@@ -70,7 +71,7 @@ python cli.py --help
 
 ## JSON での指定（`--request`）
 
-Web API（`POST /api/search`、`/api/phase_sweep`）と同じ形です。ファイル、または `-`（標準入力）で渡します。
+Web API（`POST /api/search`、`/api/phase_sweep`）と同じ形です。ファイル、または `-`（標準入力）で渡します。`--format json` の出力（や画面の「結果を保存」のファイル）をそのまま渡すと、その中の `request` を使います。
 
 ```json
 {
@@ -110,6 +111,7 @@ python cli.py --request request.json --format json
 | 項目 | 内容 |
 |---|---|
 | `ok` | `true` |
+| `lang` | メッセージ（`warnings`、既定の観測者名など）の言語（`--lang`） |
 | `request` | 計算に使った条件（`--request` にそのまま渡せる） |
 | `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準） |
 | `events` | 現象の一覧（最大の時刻順。下の表） |
@@ -119,7 +121,7 @@ python cli.py --request request.json --format json
 
 この出力は、画面（`run.py`）の右上の「保存した結果を開く」で開くと、画面で一覧・詳細・地図を見られます（画面の「結果を保存」も同じ形のファイルを保存します）。人に結果を見せるときに使えます。
 
-失敗したとき: `{"ok": false, "error": "日本語のメッセージ", "exit_code": 1 または 2}`。終了コード 1 は入力を計算できなかった（地表より低い軌道、暦の範囲外、通信の失敗など）、2 は引数の誤りです。
+失敗したとき: `{"ok": false, "error": "メッセージ（--lang の言語）", "exit_code": 1 または 2}`。終了コード 1 は入力を計算できなかった（地表より低い軌道、暦の範囲外、通信の失敗など）、2 は引数の誤りです。
 
 ### `events` の項目（地上の地点・人工衛星）
 
@@ -128,7 +130,7 @@ python cli.py --request request.json --format json
 | 項目 | 内容 |
 |---|---|
 | `body` | `moon`（日食）、`mercury`、`venus` |
-| `type` / `type_ja` | `partial` 部分日食、`total` 皆既日食、`annular` 金環日食、`hybrid` 金環皆既日食、`transit` 太陽面通過、`transit_grazing` 外接のみの太陽面通過 |
+| `type` / `type_ja` | `type_ja` は常に日本語。`partial` 部分日食、`total` 皆既日食、`annular` 金環日食、`hybrid` 金環皆既日食、`transit` 太陽面通過、`transit_grazing` 外接のみの太陽面通過 |
 | `c1`、`max`、`c4` | 第1接触（欠け始め）、最大、第4接触（欠け終わり） |
 | `magnitude` | 食分（太陽の直径のうち隠された割合。皆既日食では 1 以上） |
 | `obscuration` | 食面積率（太陽の面積のうち隠された割合、0〜1） |

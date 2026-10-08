@@ -43,12 +43,13 @@ def ensure_ephemeris(name=DEFAULT_EPHEMERIS, log=print):
         return found
     path = DATA_DIR / name
     if name not in DOWNLOADABLE:
-        raise ValueError(f'{name} は自動ダウンロードに対応していません（対応: {", ".join(DOWNLOADABLE)}）')
+        raise ValueError(tr('{name} は自動ダウンロードに対応していません（対応: {names}）',
+                            name=name, names=', '.join(DOWNLOADABLE)))
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     url = JPL_EPHEMERIS_URL + name
-    log(f'JPL 暦 {name}（{DOWNLOADABLE[name]}）をダウンロードしています: {url}')
+    log(tr('JPL 暦 {name}（{desc}）をダウンロードしています: {url}', name=name, desc=tr(DOWNLOADABLE[name]), url=url))
     download_file(url, path, log)
-    log(f'保存しました: {path}')
+    log(tr('保存しました: {path}', path=path))
     return path
 
 

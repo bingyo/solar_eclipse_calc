@@ -1,21 +1,23 @@
 """Checks of the command-line tool (cli.py): for every kind of observer it
 must give the same events as the web UI's search with the same input, and
 the JSON interface used by AI agents (request echo/replay, dry run, errors
-and exit codes) must keep its shape.
+and exit codes) must keep its shape, and every language must work.
 
 Run with  python tests/test_cli.py  (no internet needed).
 """
+import ast
 import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import cli  # noqa: E402
-from eclipsecalc import server  # noqa: E402
+from eclipsecalc import i18n, server  # noqa: E402
 from eclipsecalc.observers import tle_with_mean_anomaly  # noqa: E402
 
 PLAN = {'type': 'kepler', 'perigee_alt_km': 680, 'apogee_alt_km': 680, 'sso': True,
@@ -29,7 +31,7 @@ ISS_TLE = ('ISS (ZARYA)\n'
 def _run_cli(argv):
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, 'r.json')
-        assert cli.main(argv + ['--format', 'json', '-o', out]) == 0
+        assert cli.main(argv + ['--format', 'json', '-o', out, '--lang', 'ja']) == 0
         with open(out, encoding='utf-8') as f:
             return json.load(f)
 
@@ -131,14 +133,17 @@ def test_request_replay_and_detail():
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(first['request'], f, ensure_ascii=False)
         again = _run_cli(['--request', path])
-    assert again['request'] == first['request']
+        with open(path, 'w', encoding='utf-8') as f:       # the whole output works as well
+            json.dump(first, f, ensure_ascii=False)
+        whole = _run_cli(['--request', path])
+    assert again['request'] == first['request'] == whole['request']
     _same_events(again, first, 1)
 
 
 def _cli_json(argv):
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-        code = cli.main(argv + ['--format', 'json'])
+        code = cli.main(argv + ['--format', 'json'] + ([] if '--lang' in argv else ['--lang', 'ja']))
     return code, json.loads(out.getvalue())
 
 
@@ -222,6 +227,114 @@ def test_tle_sweep():
 def _strip(rows):
     return cli._strip_ids([x['best'] for x in rows])
 
+
+def _cli_text(argv, lang):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = cli.main(argv + ['--lang', lang])
+        except SystemExit as exc:       # --help
+            code = exc.code
+    return code, out.getvalue(), err.getvalue()
+
+
+JAPANESE = re.compile(r'[ぁ-ゖァ-ヺ一-鿿]')     # kana and kanji
+
+
+def test_languages():
+    # In every language the help, the tables (ground with contacts, whole Earth, satellite and
+    # sweep), CSV, dry run and errors work, and no Japanese is left outside ja and zh.
+    with tempfile.TemporaryDirectory() as tmp:
+        tle = os.path.join(tmp, 'iss.txt')
+        with open(tle, 'w', encoding='utf-8') as f:
+            f.write(ISS_TLE)
+        runs = [
+            ['--help'],
+            ['--city', 'ルクソール', '--start', '2027-08-01', '--end', '2027-08-03', '--detail', '--tz', '2'],
+            ['--global', '--start', '2027-01-01', '--end', '2028-01-01'],
+            ['--global', '--start', '2032-11-01', '--end', '2032-11-30', '--phenomena', 'mercury', '--format', 'csv'],
+            ['--tle', tle, '--sweep', '45', '--start', '2008-07-25', '--end', '2008-08-05', '--phenomena', 'moon'],
+            ['--tle', tle, '--start', '2008-07-25', '--end', '2008-08-05', '--phenomena', 'moon', '--detail'],
+            ['--epoch', '2027-01-01', '--alt', '500', '--sso', '--ltan', '10:30', '--start', '2027-01-01',
+             '--end', '2027-02-01', '--dry-run'],
+            ['--geo-lon', '140.7', '--start', '2026-01-01', '--end', '2027-01-01', '--phenomena', 'moon'],
+            ['--list-cities'],
+        ]
+        errors = [(['--city', 'Tokyo', '--start', '2027-01-01'], 2), (['--a', 'x'], 2),
+                  (['--city', 'Tokyo', '--format', 'xml'], 2),
+                  (['--city', 'Atlantis', '--start', '2027-01-01', '--end', '2027-02-01'], 1),
+                  (['--epoch', '2027-01-01', '--a', '6000', '--e', '0', '--i', '98', '--raan', '0',
+                    '--start', '2027-01-01', '--end', '2027-02-01'], 1)]
+        for lang in i18n.LANGUAGES:
+            for argv in runs:
+                code, out, err = _cli_text(argv, lang)
+                assert code == 0, (lang, argv, err)
+                if lang not in ('ja', 'zh'):
+                    assert not JAPANESE.search(out + err), (lang, argv, ''.join(JAPANESE.findall(out + err)))
+            for argv, want in errors:
+                code, out, err = _cli_text(argv, lang)
+                assert code == want, (lang, argv, err)
+                if lang not in ('ja', 'zh'):
+                    assert not JAPANESE.search(err), (lang, argv, err)
+    code, d = _cli_json(['--city', 'Tokyo', '--start', '2027-01-01', '--end', '2027-02-01', '--dry-run',
+                         '--lang', 'fr'])
+    assert code == 0 and d['lang'] == 'fr' and d['request']['observer']['name'] == 'Tokyo'
+    code, d = _cli_json(['--city', 'Tokyo', '--start', '2027-02-01', '--end', '2027-01-01', '--lang', 'en'])
+    assert code == 1 and d['error'] == 'The end date must be after the start date', d
+
+
+def test_city_in_any_language():
+    for name in ('東京', 'Tokyo', 'токио', '东京', 'टोक्यो', 'tok'):
+        assert cli._find_city(name)['name'] == '東京', name
+    for name in ('ルクソール', 'Luxor', 'Louxor (Égypte)', 'луксор'):
+        assert cli._find_city(name)['name'] == 'ルクソール (エジプト)', name
+
+
+def test_choose_lang():
+    names = (cli.LANG_ENV, 'LANGUAGE', 'LC_ALL', 'LC_MESSAGES', 'LANG')
+    saved = {k: os.environ.pop(k, None) for k in names}
+    try:
+        assert cli.choose_lang(['--lang', 'fr']) == 'fr' and cli.choose_lang(['--x', '--lang=hi']) == 'hi'
+        os.environ[cli.LANG_ENV] = 'ru'
+        assert cli.choose_lang([]) == 'ru' and cli.choose_lang(['--lang', 'es']) == 'es'
+        assert cli.choose_lang(['--lang', 'xx']) == 'ru'      # argparse then rejects it, in Russian
+        del os.environ[cli.LANG_ENV]
+        os.environ['LANG'] = 'zh_CN.UTF-8'
+        assert cli.choose_lang([]) == 'zh'
+        os.environ['LANGUAGE'] = 'de:fr'
+        assert cli.choose_lang([]) == 'fr'
+        os.environ['LANG'] = 'C.UTF-8'
+        assert cli.system_lang() is None
+    finally:
+        for k in names:
+            os.environ.pop(k, None)
+            if saved[k] is not None:
+                os.environ[k] = saved[k]
+
+
+def _cli_texts():
+    """The Japanese texts of cli.py (each is the key of a message), docstrings aside."""
+    tree = ast.parse(open(cli.__file__, encoding='utf-8').read())
+    docs = {id(n.body[0].value) for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body
+            and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+    return {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and id(n) not in docs and JAPANESE.search(n.value)}
+
+
+def test_translations_complete():
+    # Every message (of cli.py and of the web API) has all six translations with the same fields.
+    from eclipsecalc.presets import CITIES
+    fields = lambda s: sorted(re.findall(r'\{(\w*)', s))      # noqa: E731
+    missing = (_cli_texts() | {c[0] for c in CITIES}) - set(i18n.MESSAGES)
+    assert not missing, sorted(missing)
+    for k, tr in i18n.MESSAGES.items():
+        assert sorted(tr) == sorted(i18n.LANGUAGES[1:]), k
+        for lang, v in tr.items():
+            assert v and fields(v) == fields(k), (k, lang, v)
+    assert all(len(v) == 16 for v in i18n.COMPASS.values()) and sorted(i18n.COMPASS) == sorted(i18n.LANGUAGES)
+
+
 if __name__ == '__main__':
     failed = 0
     for name, fn in list(globals().items()):
@@ -229,7 +342,7 @@ if __name__ == '__main__':
             try:
                 fn()
                 print(f'PASS  {name}')
-            except AssertionError as exc:
+            except Exception as exc:
                 failed += 1
-                print(f'FAIL  {name}: {exc}')
+                print(f'FAIL  {name}: {exc!r}')
     sys.exit(1 if failed else 0)
