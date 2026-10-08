@@ -1580,6 +1580,7 @@ function setupViewer(reset = true) {
   const t0 = new Date(ts.t0).getTime();
   const s = { ...ts, t0ms: t0, dur: ts.dt_s[ts.dt_s.length - 1] };
   if (ts.parallactic) s.parallactic = unwrapDeg(ts.parallactic);
+  if (ts.sun_az) s.sun_az = unwrapDeg(ts.sun_az);      // no jump through 180° between 359° and 1°
   if (ts.earth_pa) s.earth_pa = unwrapDeg(ts.earth_pa);
   state.series = s;
   const o = $('#orient');
@@ -1809,7 +1810,7 @@ function updateReadout(f, total) {
   if (L.body === 'moon') {
     rows.push([t('食分'), f.magnitude > 0 ? f.magnitude.toFixed(4) : '0'], [t('食面積率'), pct(Math.max(0, f.obscuration), 2)]);
   } else rows.push([t('太陽中心からの距離'), `${f.sep_arcsec.toFixed(1)}″`]);
-  if (kind === 'ground') rows.push([t('太陽の高度・方位'), `${f.sun_alt.toFixed(1)}°${sep()}${f.sun_az.toFixed(0)}°` + paren(azName(f.sun_az))]);
+  if (kind === 'ground') rows.push([t('太陽の高度・方位'), `${f.sun_alt.toFixed(1)}°${sep()}${(((f.sun_az % 360) + 360) % 360).toFixed(0)}°` + paren(azName(f.sun_az))]);
   if (kind === 'space') {
     rows.push([t('衛星直下点'), `${fmtLat(f.sat_lat)} ${fmtLon(f.sat_lon)}`], [t('衛星の高度'), km(f.sat_alt_km.toFixed(0))]);
     rows.push([t('地球の縁からの太陽'), `${f.vis.toFixed(2)}°`]);

@@ -34,10 +34,21 @@ def _port_free(host, port):
             return False
 
 
+def _local(host):
+    """The address to open (and to check) for the address the server listens on:
+    0.0.0.0 / :: (every interface) cannot be opened in a browser."""
+    return {'0.0.0.0': '127.0.0.1', '': '127.0.0.1', '::': '::1'}.get(host, host)
+
+
+def _url(host, port):
+    h = _local(host)
+    return f'http://[{h}]:{port}/' if ':' in h else f'http://{h}:{port}/'
+
+
 def _is_running_here(host, port):
     """True if this calculator already answers on host:port."""
     try:
-        with urllib.request.urlopen(f'http://{host}:{port}/api/info', timeout=2) as r:
+        with urllib.request.urlopen(_url(host, port) + 'api/info', timeout=2) as r:
             info = json.loads(r.read().decode('utf-8'))
         return 'ephemerides' in info and 'version' in info
     except Exception:
@@ -49,7 +60,7 @@ def _open_when_ready(host, port, url, timeout=30.0):
         t_end = time.time() + timeout
         while time.time() < t_end:
             try:
-                with socket.create_connection((host, port), timeout=0.5):
+                with socket.create_connection((_local(host), port), timeout=0.5):
                     break
             except OSError:
                 time.sleep(0.3)
@@ -100,7 +111,7 @@ def _run(args, fail):
     host, port = args.host, args.port
     if not _port_free(host, port):
         if _is_running_here(host, port):
-            url = f'http://{host}:{port}/'
+            url = _url(host, port)
             print(f'日食・太陽面通過 精密計算機はすでに {url} で起動しています。', flush=True)
             if not args.no_browser:
                 print('ブラウザで開きます。', flush=True)
@@ -123,7 +134,7 @@ def _run(args, fail):
              f'インターネット接続を確認するか、de440s.bsp を手動で {DATA_DIR} に置いてください。')
         return 1
 
-    url = f'http://{host}:{port}/'
+    url = _url(host, port)
     if args.no_browser:
         how_to_quit = 'Ctrl+C で終了'
     else:

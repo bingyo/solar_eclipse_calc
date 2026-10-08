@@ -260,6 +260,30 @@ def test_tle_decay_and_checksum():
     assert code == 0 and any('チェックサム' in w for w in d['warnings']), d
 
 
+def test_unreachable_service():
+    # A service that cannot be reached is named in the message (502, exit status 1), not reported
+    # as "an error occurred during the computation" (500).
+    import urllib.error
+    from eclipsecalc import observers
+
+    def offline(*args, **kw):
+        raise urllib.error.URLError('offline (test)')
+    saved, observers._urlopen = observers._urlopen, offline
+    try:
+        for obs, service in (({'type': 'horizons', 'command': 'test-offline', 'step_min': 60}, 'JPL Horizons'),
+                             ({'type': 'celestrak', 'norad': 25544}, 'CelesTrak')):
+            try:
+                server.search(server.SearchRequest(observer=obs, phenomena=['moon'], start='2027-01-01',
+                                                   end='2027-02-01'))
+                assert False, obs
+            except server.HTTPException as exc:
+                assert exc.status_code == 502 and service in exc.detail, (exc.status_code, exc.detail)
+        code, d = _cli_json(['--horizons', 'test-offline', '--start', '2027-01-01', '--end', '2027-02-01'])
+        assert code == 1 and 'JPL Horizons' in d['error'], d
+    finally:
+        observers._urlopen = saved
+
+
 def test_tle_with_mean_anomaly():
     line2 = ISS_TLE.splitlines()[2]
     assert tle_with_mean_anomaly(line2, 325.0288) == line2          # same checksum as the original

@@ -78,6 +78,14 @@ MESSAGES = {
         'zh': '无法下载 JPL 历表：{exc}',
         'hi': 'JPL एफ़ेमेरिस डाउनलोड नहीं हो सका: {exc}',
     },
+    '{service} に接続できませんでした: {exc}': {
+        'en': 'Could not connect to {service}: {exc}',
+        'fr': 'Connexion à {service} impossible : {exc}',
+        'ru': 'Не удалось подключиться к {service}: {exc}',
+        'es': 'No se pudo conectar con {service}: {exc}',
+        'zh': '无法连接 {service}：{exc}',
+        'hi': '{service} से कनेक्ट नहीं हो सका: {exc}',
+    },
     'CelesTrak に接続できませんでした: {exc}': {
         'en': 'Could not connect to CelesTrak: {exc}',
         'fr': 'Connexion à CelesTrak impossible : {exc}',

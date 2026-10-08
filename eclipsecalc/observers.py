@@ -13,6 +13,7 @@ Supported observers:
   * HorizonsObserver - any spacecraft with a JPL Horizons ephemeris
   * SSCWebObserver   - historical orbit of a satellite from NASA SSCWeb
 """
+import http.client
 import json
 import math
 import time
@@ -35,6 +36,22 @@ AU_PER_DAY_PER_KM_S = DAY_S / AU_KM
 
 class ObserverError(ValueError):
     pass
+
+
+class NetworkError(ObserverError):
+    """An online service (CelesTrak, JPL Horizons, NASA SSCWeb) could not be reached."""
+
+
+# no connection, timeouts, cut or broken answers (URLError and its HTTPError are OSErrors)
+_NET_ERRORS = (OSError, http.client.HTTPException)
+
+
+def _get_json(service, url, timeout, headers=None):
+    try:
+        with _urlopen(url, timeout, headers) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except _NET_ERRORS + (ValueError,) as exc:      # ValueError: an answer that is not JSON
+        raise NetworkError(tr('{service} に接続できませんでした: {exc}', service=service, exc=exc))
 
 
 class _ZeroVector(VectorFunction):
@@ -373,9 +390,7 @@ def _horizons_request(command, jd_start_tdb, jd_stop_tdb, step_min):
         'VEC_LABELS': 'NO',
         'TIME_TYPE': 'TDB',
     }
-    url = HORIZONS_URL + '?' + urllib.parse.urlencode(params)
-    with _urlopen(url, 90) as resp:
-        payload = json.loads(resp.read().decode('utf-8'))
+    payload = _get_json('JPL Horizons', HORIZONS_URL + '?' + urllib.parse.urlencode(params), 90)
     text = payload.get('result', '')
     if '$$SOE' not in text:
         msg = payload.get('error') or text.strip().splitlines()[-12:]
@@ -533,8 +548,7 @@ def _ssc_request(sat, utc_a, utc_b):
     two datetimes (UTC). Returns (list of ISO UTC strings, (3, N) array)."""
     url = SSC_URL.format(sat=urllib.parse.quote(sat), a=utc_a.strftime('%Y%m%dT%H%M%SZ'),
                          b=utc_b.strftime('%Y%m%dT%H%M%SZ'))
-    with _urlopen(url, 120, {'Accept': 'application/json'}) as resp:
-        payload = json.loads(resp.read().decode('utf-8'))
+    payload = _get_json('NASA SSCWeb', url, 120, {'Accept': 'application/json'})
     # SSCWeb's JSON wraps every object as ["java.class.Name", {...}].
     result = payload[1]['Result'][1]
     if result.get('StatusCode') != 'SUCCESS':
@@ -770,8 +784,10 @@ def fetch_tle_celestrak(norad_id):
             text = resp.read().decode('utf-8', 'replace')
     except urllib.error.HTTPError as exc:     # 404 "No GP data found": unknown or decayed
         if exc.code != 404:
-            raise
+            raise NetworkError(tr('{service} に接続できませんでした: {exc}', service='CelesTrak', exc=exc))
         text = ''
+    except _NET_ERRORS as exc:
+        raise NetworkError(tr('{service} に接続できませんでした: {exc}', service='CelesTrak', exc=exc))
     lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
     if len(lines) < 2 or 'No GP data' in text:
         raise ObserverError(tr('CelesTrak に NORAD {norad} の軌道要素が見つかりません', norad=norad_id))

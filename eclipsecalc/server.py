@@ -28,7 +28,7 @@ from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
 from .i18n import tr
 from .local import LocalSearch, Params
-from .observers import (GeocenterObserver, GroundObserver, ObserverError, SSCWebObserver,
+from .observers import (GeocenterObserver, GroundObserver, NetworkError, ObserverError, SSCWebObserver,
                         TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
 from .presets import SATELLITES, cities
 from .timeutil import iso_from_jd, parse_utc
@@ -73,6 +73,11 @@ TYPE_JA = {
     ('mercury', 'transit'): '水星の太陽面通過', ('mercury', 'transit_grazing'): '水星の太陽面通過（外接のみ）',
     ('venus', 'transit'): '金星の太陽面通過', ('venus', 'transit_grazing'): '金星の太陽面通過（外接のみ）',
 }
+
+
+def _bad_input(exc):
+    """An ObserverError as the answer: 502 if an online service could not be reached, else 400."""
+    return HTTPException(502 if isinstance(exc, NetworkError) else 400, str(exc))
 
 
 def _put(obj):
@@ -291,13 +296,13 @@ def tle(norad: int):
     try:
         name, l1, l2 = fetch_tle_celestrak(norad)
     except ObserverError as exc:
-        raise HTTPException(400, str(exc))
+        raise _bad_input(exc)
     except Exception as exc:
         raise HTTPException(502, tr('CelesTrak に接続できませんでした: {exc}', exc=exc))
     try:
         obs = TLEObserver(get_context(), l1, l2, name)
     except ObserverError as exc:        # e.g. a TLE whose perigee is inside the Earth (re-entered)
-        raise HTTPException(400, str(exc))
+        raise _bad_input(exc)
     d = obs.describe()
     d['epoch'] = iso_from_jd(get_context(), obs.epoch_jd)
     return d
@@ -318,7 +323,7 @@ def _parse_request(req):
         jd_a = parse_utc(ctx, req.start)
         jd_b = parse_utc(ctx, req.end)
     except ObserverError as exc:
-        raise HTTPException(400, str(exc))
+        raise _bad_input(exc)
     except Exception as exc:
         raise HTTPException(400, tr('入力値を解釈できません: {exc}', exc=exc))
     if jd_b <= jd_a:
@@ -378,7 +383,7 @@ def search(req: SearchRequest):
             if isinstance(observer, SSCWebObserver):
                 obs_desc = observer.describe()       # orbit size is known after the search
         except ObserverError as exc:
-            raise HTTPException(400, str(exc))
+            raise _bad_input(exc)
         except HTTPException:
             raise
         except Exception as exc:
@@ -471,7 +476,7 @@ def phase_sweep(req: SweepRequest):
                             'by_phase': {}})
                         g['by_phase'].setdefault(m, []).append(s)
         except ObserverError as exc:
-            raise HTTPException(400, str(exc))
+            raise _bad_input(exc)
         except HTTPException:
             raise
         except Exception as exc:
@@ -537,7 +542,7 @@ def restore(req: RestoreRequest):
         if r.get('end'):
             b = min(b, parse_utc(ctx, r['end']))
     except ObserverError as exc:
-        raise HTTPException(400, str(exc))
+        raise _bad_input(exc)
     except Exception as exc:
         raise HTTPException(400, tr('保存した計算条件を解釈できません: {exc}', exc=exc))
     spec = dict(r['observer'])
@@ -555,7 +560,7 @@ def restore(req: RestoreRequest):
                 obj = {'kind': 'local', 'search': ls, 'ctx': ctx, 'params': params,
                        'observer': observer, 'global_obs': spec.get('type') == 'global'}
         except ObserverError as exc:
-            raise HTTPException(400, str(exc))
+            raise _bad_input(exc)
         except Exception as exc:
             traceback.print_exc()
             raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
@@ -645,7 +650,7 @@ def local_at(req: LocalRequest):
     try:
         observer = GroundObserver(req.lat, req.lon, req.elevation_m, req.name)
     except ObserverError as exc:
-        raise HTTPException(400, str(exc))
+        raise _bad_input(exc)
     a = ev.get('jd_p1') or ev.get('jd_c1') or ev['jd_max'] - 0.3
     b = ev.get('jd_p4') or ev.get('jd_c4') or ev['jd_max'] + 0.3
     p2 = Params.from_dict(dict(params.as_dict(), include_invisible=True))
