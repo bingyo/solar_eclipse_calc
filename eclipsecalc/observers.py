@@ -16,6 +16,7 @@ Supported observers:
 import json
 import math
 import time
+import urllib.error
 import urllib.parse
 
 import numpy as np
@@ -141,6 +142,11 @@ class TLEObserver(Observer):
         except Exception as exc:  # pragma: no cover - sgp4 raises various errors
             raise ObserverError(tr('TLE を解釈できません: {exc}', exc=exc))
         m = self.vf.model
+        if m.error or not m.no_kozai > 0:       # sgp4 does not raise on unreadable fields
+            raise ObserverError(tr('TLE を解釈できません: {exc}', exc=f'sgp4 error {m.error}'))
+        # lines whose checksum (last digit) does not match: probably mistyped
+        self.bad_lines = [k for k, ln in ((1, line1), (2, line2))
+                          if len(ln) >= 69 and ln[68].isdigit() and int(ln[68]) != _tle_checksum(ln)]
         self.line1, self.line2 = line1, line2
         self.name = name or f'NORAD {m.satnum}'
         n = m.no_kozai / 60.0                       # rad/s
@@ -159,13 +165,24 @@ class TLEObserver(Observer):
         return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
 
     def warnings_for(self, ctx, jd):
+        out = [tr('TLE の {n} 行目のチェックサムが合いません（写し間違いの可能性があります）', n=k) for k in self.bad_lines]
         age = abs(jd - self.epoch_jd)
         if age > 30:
-            return [tr('TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
-                       '結果は目安として扱ってください。', age=age)]
-        if age > 7:
-            return [tr('TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。', age=age)]
-        return []
+            out.append(tr('TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
+                          '結果は目安として扱ってください。', age=age))
+        elif age > 7:
+            out.append(tr('TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。', age=age))
+        return out
+
+    def decay_jd(self, jd_b, step=0.05):
+        """The first TT Julian date after the epoch (up to ``jd_b``) at which SGP4 reports an error
+        (6: decayed) or puts the satellite below 100 km; None if there is none."""
+        jd = np.arange(self.epoch_jd, jd_b + step, step)
+        if not jd.size:
+            return None
+        e, r, _ = self.vf.model.sgp4_array(np.floor(jd), jd - np.floor(jd))
+        k = np.flatnonzero((e != 0) | ~(np.linalg.norm(r, axis=1) > WGS84_A + 100.0))     # ~(>) catches NaN
+        return float(jd[k[0]]) if k.size else None
 
     def describe(self):
         m = self.vf.model
@@ -388,7 +405,13 @@ class _HorizonsVF(VectorFunction):
         self.jd, self.pos, self.vel = jd[keep], pos[:, keep], vel[:, keep]
 
     def covers(self, a, b):
-        return self.jd.size > 1 and self.jd[0] <= a and self.jd[-1] >= b
+        if self.jd.size < 2:
+            return False
+        i, j = np.searchsorted(self.jd, [a, b])
+        if i == 0 or j >= self.jd.size:
+            return False
+        # no gap between fetched chunks inside [a, b] (all chunks have the same step)
+        return float(np.max(np.diff(self.jd[i - 1:j + 1]))) <= 1.5 * float(np.median(np.diff(self.jd)))
 
     def _at(self, t):
         x = np.asarray(t.whole + t.tdb_fraction, float)
@@ -457,7 +480,7 @@ class HorizonsObserver(Observer):
         """Coarse fetch to learn the distance range (used for pre-filtering)."""
         span = jd_b - jd_a
         step = max(self.step_min, int(math.ceil(span * 1440 / 3000)))
-        jd, pos, vel = self._fetch(jd_a - 0.01, jd_b + 0.01, step)
+        jd, pos, vel = self._fetch(jd_a - 0.01, jd_b + 0.01 + step / 1440.0, step)
         self.coverage = (float(jd[0]), float(jd[-1]))
         r = norm(pos)
         v = norm(vel)
@@ -689,6 +712,7 @@ class SSCWebObserver(Observer):
                 jd2, pos2 = self._fetch(jd_a + 1.0, jd_a + extra)
                 jd, pos = np.concatenate([jd, jd2]), np.concatenate([pos, pos2], axis=1)
         self.vf.add(jd, pos)
+        jd, pos = self.vf.jd, self.vf.pos      # sorted, without the duplicated boundary sample (0/0 speed)
         r = norm(pos)
         v = norm(np.diff(pos, axis=1)) / (np.diff(jd) * DAY_S)
         self.r_range = (float(r.min()), float(r.max()))
@@ -731,8 +755,13 @@ class SSCWebObserver(Observer):
 def fetch_tle_celestrak(norad_id):
     norad_id = int(norad_id)
     url = f'https://celestrak.org/NORAD/elements/gp.php?CATNR={norad_id}&FORMAT=TLE'
-    with _urlopen(url, 30) as resp:
-        text = resp.read().decode('utf-8', 'replace')
+    try:
+        with _urlopen(url, 30) as resp:
+            text = resp.read().decode('utf-8', 'replace')
+    except urllib.error.HTTPError as exc:     # 404 "No GP data found": unknown or decayed
+        if exc.code != 404:
+            raise
+        text = ''
     lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
     if len(lines) < 2 or 'No GP data' in text:
         raise ObserverError(tr('CelesTrak に NORAD {norad} の軌道要素が見つかりません', norad=norad_id))

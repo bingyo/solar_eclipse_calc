@@ -69,6 +69,10 @@ def geocentric_min_separation(ctx, body, tc, half_span_days, n=25):
     return smin, rate
 
 
+# Lower bound of the geocentric Sun-body rate in ecliptic longitude at a conjunction
+# (rad/day; DE440s 1850-2150: moon 0.188, mercury 0.0265, venus 0.0275).
+BODY_MIN_RATE = {'moon': 0.15, 'mercury': 0.02, 'venus': 0.02}
+
 BODY_MIN_DISTANCE_KM = {
     'moon': 350_000.0,
     'mercury': 0.53 * AU_KM,

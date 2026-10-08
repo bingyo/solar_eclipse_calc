@@ -2,11 +2,13 @@
 import asyncio
 import itertools
 import os
+import secrets
 import signal
 import threading
 import time
 import traceback
 from collections import OrderedDict
+from urllib.parse import urlsplit
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
@@ -46,9 +48,21 @@ async def _language(request: Request, call_next):
     finally:
         i18n.reset_lang(token)
 
+
+@app.middleware('http')
+async def _same_origin(request: Request, call_next):
+    '''Refuse POSTs sent by other web pages: a form on any site could otherwise make the
+    calculator download an ephemeris or quit (the endpoints without a JSON body need no preflight).'''
+    origin = request.headers.get('origin')
+    if request.method == 'POST' and origin and urlsplit(origin).netloc != request.headers.get('host'):
+        return JSONResponse({'detail': 'Forbidden'}, status_code=403)
+    return await call_next(request)
+
+
 _compute_lock = threading.Lock()
 _download_lock = threading.Lock()
 _ids = itertools.count(1)
+_RUN = secrets.token_hex(3)     # ids of an earlier run (kept by an open page) are not found, instead of naming other events
 _store = OrderedDict()
 _STORE_MAX = 4000
 
@@ -61,7 +75,7 @@ TYPE_JA = {
 
 
 def _put(obj):
-    eid = f'e{next(_ids)}'
+    eid = f'e{_RUN}-{next(_ids)}'
     _store[eid] = obj
     while len(_store) > _STORE_MAX:
         _store.popitem(last=False)
@@ -123,6 +137,9 @@ def _settings(settings):
     dt = None if dt in (None, '', 'auto') else float(dt)
     ctx = get_context(eph, dt)
     params = Params.from_dict(settings)
+    if not (params.sun_radius_km > 0 and params.moon_radius_ext_km > 0 and params.moon_radius_int_km > 0
+            and params.mercury_radius_km > 0 and params.venus_radius_km > 0):
+        raise ObserverError(tr('太陽・月・惑星の半径は正の数（km）で指定してください'))
     return ctx, params
 
 
@@ -381,7 +398,7 @@ def search(req: SearchRequest):
     })
 
 
-SWEEP_MAX_DAYS = 366.0
+SWEEP_MAX_DAYS = 366.0 + 3 / 86400   # 1 year; the dates are TT, and leap seconds (2 in 1972) lengthen a UTC year
 CENTRAL_TYPES = ('total', 'annular', 'hybrid')
 
 
@@ -650,4 +667,8 @@ def local_at(req: LocalRequest):
 @app.exception_handler(Exception)
 async def _unhandled(request, exc):  # pragma: no cover
     traceback.print_exc()
-    return JSONResponse({'detail': tr('サーバーエラー: {exc}', exc=exc)}, status_code=500)
+    token = i18n.set_lang(request.headers.get('x-lang'))     # runs outside the _language middleware
+    try:
+        return JSONResponse({'detail': tr('サーバーエラー: {exc}', exc=exc)}, status_code=500)
+    finally:
+        i18n.reset_lang(token)

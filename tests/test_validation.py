@@ -23,7 +23,7 @@ from eclipsecalc.context import get_context  # noqa: E402
 from eclipsecalc.eclipse_map import solar_eclipse_map  # noqa: E402
 from eclipsecalc.global_eclipse import search_global  # noqa: E402
 from eclipsecalc.local import LocalSearch, Params  # noqa: E402
-from eclipsecalc.observers import GeocenterObserver, GroundObserver  # noqa: E402
+from eclipsecalc.observers import GeocenterObserver, GroundObserver, build_observer  # noqa: E402
 from eclipsecalc.timeutil import parse_utc  # noqa: E402
 
 CTX = get_context()
@@ -151,6 +151,22 @@ def test_saros_numbers():
         assert got[d] == s, (d, got[d], s)
 
 
+def test_saros_only_for_terrestrial_eclipses():
+    # A geostationary satellite also sees the Moon cross the Sun in months without an eclipse
+    # on the Earth; those belong to no Saros series.
+    obs = build_observer(CTX, {'type': 'geo', 'lon': 140.0})
+    ev = LocalSearch(CTX, obs, 'moon', Params(), parse_utc(CTX, '2024-01-01'), parse_utc(CTX, '2027-01-01')).run()
+    got = {e['max'][:10]: e['saros'] for e in ev}
+    assert got['2024-03-10'] is None and got['2026-08-12'] == 126, got
+
+
+def test_ut_before_1972():
+    # Before 1972 (no UTC with leap seconds) times are UT, as in the catalogues: 1900 May 28,
+    # greatest eclipse 14:53:56 TD with Delta T -2 s (NASA) is 14:53:58 UT.
+    e = next(e for e in _global('1900-05-01', '1900-06-30') if e['max'].startswith('1900-05-28'))
+    close_time(e['max'], '1900-05-28T14:53:58', 3)
+
+
 if __name__ == '__main__':
     failed = 0
     for name, fn in list(globals().items()):
@@ -158,7 +174,7 @@ if __name__ == '__main__':
             try:
                 fn()
                 print(f'PASS  {name}')
-            except AssertionError as exc:
+            except Exception as exc:     # an error fails this test only
                 failed += 1
-                print(f'FAIL  {name}: {exc}')
+                print(f'FAIL  {name}: {exc!r}')
     sys.exit(1 if failed else 0)

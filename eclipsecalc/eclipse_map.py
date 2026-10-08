@@ -3,6 +3,7 @@ import base64
 import math
 
 import numpy as np
+from skyfield.earthlib import refraction as _refraction_deg
 
 from .constants import DAY_S
 from .geometry import geodetic_normal, geodetic_to_itrs, itrs_to_geodetic, norm
@@ -91,7 +92,10 @@ def solar_eclipse_map(ctx, jd_near, params, grid_deg=1.0, min_alt_deg=0.0, refra
 
     # --- central line, umbral limits and outlines ----------------------------
     step = 30.0 / DAY_S
-    x = np.arange(p1, p4 + step, step)
+    # with the exact begin / end of the central line: the axis hit point moves very fast near the
+    # horizon, so the 30 s samples alone stop hundreds of km short of them
+    ends = [ev[k] + d for k, d in (('jd_c_begin', 1e-7), ('jd_c_end', -1e-7)) if ev.get(k) is not None]
+    x = np.sort(np.r_[np.arange(p1, p4 + step, step), ends])
     S, M, t = sun_moon_itrs(ctx, x)
     sh = Shadow(S, M, params)
     fund = sh.fundamental()
@@ -100,11 +104,25 @@ def solar_eclipse_map(ctx, jd_near, params, grid_deg=1.0, min_alt_deg=0.0, refra
         lat, lon, _ = itrs_to_geodetic(P)
         lat = np.where(hit, lat, np.nan)
         res['central_line'] = _polyline_segments(lat, lon, x)
-        # extend to the exact begin / end points of the central line
         umb = fund['m_umbral'] < 0.02
         xu = x[umb]
         if xu.size:
             env, _ = envelope(ctx, xu, params, 'umbra', n_theta=360)
+            # the times where a limit line begins or ends (between two samples), by bisection
+            extra = []
+            for side in ('N', 'S'):
+                has = np.array([side in e['points'] for e in env])
+                k = np.nonzero(has[:-1] != has[1:])[0]
+                if k.size:
+                    a, b, inside = xu[k], xu[k + 1], has[k + 1]
+                    for _ in range(18):
+                        mid = 0.5 * (a + b)
+                        ok = np.array([side in e['points'] for e in envelope(ctx, mid, params, 'umbra', n_theta=360)[0]])
+                        a, b = np.where(ok == inside, a, mid), np.where(ok == inside, mid, b)
+                    extra.append(np.where(inside, b, a))
+            if extra:
+                xu = np.sort(np.r_[xu, np.concatenate(extra)])
+                env, _ = envelope(ctx, xu, params, 'umbra', n_theta=360)
             limits = {'N': [], 'S': []}
             for xi, e in zip(xu, env):
                 for side in ('N', 'S'):
@@ -118,8 +136,10 @@ def solar_eclipse_map(ctx, jd_near, params, grid_deg=1.0, min_alt_deg=0.0, refra
                 side: _polyline_segments(np.array([p[0] for p in v]), np.array([p[1] for p in v]),
                                          np.array([p[2] for p in v]))
                 for side, v in limits.items()}
-            # shadow outlines every 10 minutes (on round minutes)
-            marks = np.arange(math.ceil(p1 * 144) / 144, p4, 1 / 144)
+            # shadow outlines every 10 minutes (on round minutes of UTC; the dates here are TT)
+            t1 = ctx.ts.tt_jd(p1)
+            off = float(t1.delta_t + t1.dut1) / DAY_S       # TT - UTC
+            marks = np.arange(math.ceil((p1 - off) * 144) / 144, p4 - off, 1 / 144) + off
             outl = []
             if marks.size:
                 env_m, _ = envelope(ctx, marks, params, 'umbra', n_theta=180)
@@ -178,6 +198,14 @@ def solar_eclipse_map(ctx, jd_near, params, grid_deg=1.0, min_alt_deg=0.0, refra
     return res
 
 
+def _geometric_alt_limit(min_alt_deg, refraction):
+    """The unrefracted Sun altitude whose apparent altitude is ``min_alt_deg``, with the refraction of
+    LocalSearch.visibility (Skyfield's altaz: 10 °C, 1010 mbar), not only the 0.57° of the horizon."""
+    if not refraction:
+        return min_alt_deg
+    return min_alt_deg - float(_refraction_deg(min_alt_deg, 10.0, 1010.0))
+
+
 def magnitude_grid(ctx, p1, p4, params, grid_deg=1.0, min_alt_deg=0.0, refraction=True):
     lats = np.arange(-85.0, 85.0 + 1e-9, grid_deg)
     lons = np.arange(-180.0, 180.0 + 1e-9, grid_deg)
@@ -188,7 +216,7 @@ def magnitude_grid(ctx, p1, p4, params, grid_deg=1.0, min_alt_deg=0.0, refractio
     step = 2.0 / 1440.0
     xs = np.arange(p1, p4 + step, step)
     S, M, _ = sun_moon_itrs(ctx, xs)
-    thr = min_alt_deg - (0.57 if refraction else 0.0)
+    thr = _geometric_alt_limit(min_alt_deg, refraction)
     sin_thr = math.sin(math.radians(thr))
     K = la.size
     best = np.zeros(K)
@@ -256,7 +284,7 @@ def transit_map(ctx, jd_c1, jd_c4, jd_max, grid_deg=1.0, min_alt_deg=0.0, refrac
     t = ctx.ts.tt_jd(xs)
     from skyfield.framelib import itrs
     S = ctx.earth.at(t).observe(ctx.sun).frame_xyz(itrs).km
-    thr = min_alt_deg - (0.57 if refraction else 0.0)
+    thr = _geometric_alt_limit(min_alt_deg, refraction)
     vS = S[:, None, :] - P[:, :, None]
     up = np.degrees(np.arcsin(np.sum(nrm[:, :, None] * vS, axis=0) / norm(vS))) > thr
     upm = up[:, :n]

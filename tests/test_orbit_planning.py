@@ -91,7 +91,7 @@ if __name__ == '__main__':
             try:
                 fn()
                 print(f'PASS  {name}')
-            except AssertionError as exc:
+            except Exception as exc:     # an error fails this test only
                 failed += 1
-                print(f'FAIL  {name}: {exc}')
+                print(f'FAIL  {name}: {exc!r}')
     sys.exit(1 if failed else 0)

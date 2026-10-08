@@ -225,7 +225,7 @@ def build_parser():
     o.add_argument('--geo-lon', type=float, metavar='DEG',
                    help=tr('理想静止衛星（高度 35,786 km）の経度 (°)。東経 +／西経 −'))
     o.add_argument('--horizons', metavar='ID', help=tr('JPL Horizons の天体 ID（例 -170 JWST、-21 SOHO、-125544 ISS）'))
-    o.add_argument('--horizons-step', type=int, default=60, metavar='MIN',
+    o.add_argument('--horizons-step', type=int, metavar='MIN',
                    help=tr('Horizons から取得する位置の刻み (分)（既定 60。地球近傍の衛星は 1〜2）'))
     o.add_argument('--sscweb', metavar='ID',
                    help=tr('NASA SSCWeb の衛星 ID（例 hinode, iris, iss）。過去の軌道。--list-sscweb で一覧'))
@@ -314,7 +314,15 @@ def _modes(args):
 
 
 def parse_args(argv):
+    argv = list(argv)
+    for k in range(len(argv) - 2, -1, -1):      # argparse takes "--tz -05:00" for two options
+        if argv[k] == '--tz' and re.fullmatch(r'-\d{1,2}:\d{2}', argv[k + 1]):
+            argv[k:k + 2] = ['--tz=' + argv[k + 1]]
     args = build_parser().parse_args(argv)
+    bad = next((k for k, v in vars(args).items() if isinstance(v, float) and not math.isfinite(v)), None)
+    if bad:     # float() takes nan and inf, which would give empty results or misleading errors
+        raise UsageError(tr('{arg} の値 {value} は数値ではありません',
+                            arg='--' + bad.replace('_', '-'), value=repr(str(getattr(args, bad)))))
     if args.list_cities or args.list_sscweb:
         return args
     args.tz_hours = _parse_tz(args.tz)
@@ -326,8 +334,9 @@ def parse_args(argv):
                          + (tr('（指定されたもの: {modes}）', modes=', '.join(modes)) if modes else ''))
     args.mode = modes[0]
     if args.mode == 'request':
-        clash = [k for k in ('name', 'start', 'end', 'phenomena', 'sweep', 'ephemeris', 'delta_t', 'sun_radius',
-                             'atm', 'min_sun_alt', 'no_refraction', 'include_invisible') if _given(args, k)]
+        clash = [k for k in ORBIT_ONLY + ('elev', 'horizons_step', 'name', 'start', 'end', 'phenomena', 'sweep',
+                                          'ephemeris', 'delta_t', 'sun_radius', 'atm', 'min_sun_alt',
+                                          'no_refraction', 'include_invisible') if _given(args, k)]
         if clash:
             raise UsageError(tr('--request と {opts} は併用できません（JSON の中で指定してください）',
                                 opts=' '.join('--' + k.replace('_', '-') for k in clash)))
@@ -338,6 +347,10 @@ def parse_args(argv):
         extra = [f'--{k.replace("_", "-")}' for k in ORBIT_ONLY if _given(args, k)]
         if extra:
             raise UsageError(tr('{opts} は軌道要素で指定した衛星だけで使えます', opts=' '.join(extra)))
+    if _given(args, 'elev') and args.mode != 'ground':
+        raise UsageError(tr('--elev は地上の地点（--lat --lon / --city）だけで使えます'))
+    if _given(args, 'horizons_step') and args.mode != 'horizons':
+        raise UsageError(tr('--horizons-step は JPL Horizons（--horizons）だけで使えます'))
     if _given(args, 'sweep') and args.mode not in ('kepler', 'tle'):
         raise UsageError(tr('--sweep は軌道要素または TLE で指定した衛星だけで使えます'))
     if args.mode == 'tle' and _given(args, 'tle') and _given(args, 'norad'):
@@ -443,10 +456,12 @@ def _parse_tle(text):
 
 
 def _celestrak(norad, name, log):
-    from eclipsecalc.observers import fetch_tle_celestrak
+    from eclipsecalc.observers import ObserverError, fetch_tle_celestrak
     log(tr('CelesTrak から NORAD {norad} の最新 TLE を取得しています…', norad=norad))
     try:
         nm, l1, l2 = fetch_tle_celestrak(norad)
+    except ObserverError as exc:        # e.g. no such (or a decayed) catalogue number
+        raise InputError(str(exc))
     except Exception as exc:
         raise InputError(tr('CelesTrak から NORAD {norad} の TLE を取得できませんでした: {exc}', norad=norad, exc=exc))
     return {'type': 'tle', 'line1': l1, 'line2': l2, 'name': name or nm, 'norad': int(norad)}
@@ -479,7 +494,8 @@ def observer_from_args(args, log):
     if args.mode == 'geo':
         return {'type': 'geo', 'lon': args.geo_lon, 'name': name}
     if args.mode == 'horizons':
-        return {'type': 'horizons', 'command': args.horizons, 'step_min': args.horizons_step, 'name': name}
+        return {'type': 'horizons', 'command': args.horizons,
+                'step_min': 60 if args.horizons_step is None else args.horizons_step, 'name': name}
     if args.mode == 'sscweb':
         return {'type': 'sscweb', 'id': args.sscweb, 'name': name}
     if args.mode == 'global':
@@ -518,14 +534,18 @@ def _settings_from_args(args):
     return s
 
 
+def _not_json(name):
+    raise ValueError(f'{name} is not a JSON value')
+
+
 def build_request(args, log):
     """-> the request in the web API's shape (also echoed in the JSON output)."""
     if args.mode == 'request':
         try:
-            req = json.loads(_read_text(args.request))
+            req = json.loads(_read_text(args.request), parse_constant=_not_json)
         except OSError as exc:
             raise InputError(tr('計算条件の JSON のファイルを読めません: {exc}', exc=exc))
-        except json.JSONDecodeError as exc:
+        except ValueError as exc:       # also NaN and Infinity (json.loads takes them, JSON does not)
             raise InputError(tr('計算条件の JSON を読めません: {exc}', exc=exc))
         if isinstance(req, dict) and isinstance(req.get('request'), dict):
             req = req['request']        # the whole output of --format json (or a result saved by the web UI)
@@ -718,6 +738,13 @@ def _time(iso, tz, fmt='%H:%M:%S'):
     return t.strftime(fmt)
 
 
+def _time_on(iso, day, tz, fmt='%H:%M:%S'):
+    """``_time`` with the month and day in front when ``iso`` falls on another day than ``day``."""
+    if iso and day and _time(iso, tz, '%Y%m%d') != _time(day, tz, '%Y%m%d'):
+        fmt = '%m-%d ' + fmt
+    return _time(iso, tz, fmt)
+
+
 def _tz_label(tz):
     if tz == 0:
         return 'UTC'
@@ -728,12 +755,12 @@ def _tz_label(tz):
 def _dur(s, precise=False):
     if s is None:
         return '—'
-    s = round(s, 1) if precise else round(s)       # round first: 59.6 s is "1 min 00 s", not "60 s"
-    if s < 60:
-        return tr('{s}秒', s=f'{s:.1f}' if precise else f'{s:.0f}')
-    if s < 3600:
-        m = int(s // 60)
-        return tr('{m}分{s}秒', m=m, s=f'{s - 60 * m:04.1f}' if precise else f'{round(s - 60 * m):02d}')
+    r = round(s, 1) if precise else round(s)       # round first: 59.6 s is "1 min 00 s", not "60 s"
+    if r < 60:
+        return tr('{s}秒', s=f'{r:.1f}' if precise else f'{r:.0f}')
+    if r < 3600:
+        m = int(r // 60)
+        return tr('{m}分{s}秒', m=m, s=f'{r - 60 * m:04.1f}' if precise else f'{round(r - 60 * m):02d}')
     h, m = divmod(round(s / 60), 60)
     return tr('{h}時間{m}分', h=h, m=f'{m:02d}')
 
@@ -780,6 +807,8 @@ def observer_text(o):
     kind, model = o.get('kind'), o.get('model')
     if kind == 'global':
         return tr('地球全体')
+    if kind == 'geocenter':     # {"type": "geocenter"} of the web API
+        return o['name']
     if kind == 'ground':
         return o['name'] + _paren(_latlon(o['lat'], o['lon'], 4) + _sep()
                                   + tr('標高 {v} m', v=round(o['elevation_m'])))
@@ -826,7 +855,7 @@ def _contacts_table(e, tz, ground):
     rows = []
     for c in e.get('contacts') or []:
         row = [tr(CONTACT_JA[c['label']]) if c['label'] in CONTACT_JA else c['label'],
-               _time(c['time'], tz, '%H:%M:%S.%f')[:-3],
+               _time_on(c['time'], e['max'], tz, '%H:%M:%S.%f')[:-3],
                _f(c.get('magnitude'), '.4f'), _f(c.get('sep_arcsec'), '.1f', '"'), _f(c.get('pa'), '.1f', '°')]
         if ground:
             row += [_f(c.get('v_angle'), '.1f', '°'), _f(c.get('sun_alt'), '.2f', '°'),
@@ -852,14 +881,15 @@ def search_table(res, args):
         for e in evs:
             if e.get('kind') == 'global':
                 rows.append([_time(e['max'], tz, '%Y-%m-%d'), _category(e) + (tr('（非中心）') if e.get('noncentral') else ''),
-                             _time(e.get('p1'), tz), _time(e['max'], tz), _time(e.get('p4'), tz),
+                             _time_on(e.get('p1'), e['max'], tz), _time(e['max'], tz),
+                             _time_on(e.get('p4'), e['max'], tz),
                              f'{e["magnitude"]:.4f}', f'{e["gamma"]:+.4f}',
                              '—' if e['type'] == 'partial' else _dur(e['central_duration_s'], True),
                              _f(e.get('path_width_km'), '.0f', ' km'), _latlon(e.get('ge_lat'), e.get('ge_lon')),
                              e.get('saros') or '—'])
             else:   # transits: contacts seen from the Earth's centre
-                rows.append([_time(e['max'], tz, '%Y-%m-%d'), _category(e, True), _time(e['c1'], tz),
-                             _time(e['max'], tz), _time(e['c4'], tz), f'{e["min_sep_arcsec"]:.1f}"', '—',
+                rows.append([_time(e['max'], tz, '%Y-%m-%d'), _category(e, True), _time_on(e['c1'], e['max'], tz),
+                             _time(e['max'], tz), _time_on(e['c4'], e['max'], tz), f'{e["min_sep_arcsec"]:.1f}"', '—',
                              _dur(e['duration_s']), '—', tr('（地球中心から見た値）'), '—'])
         lines += [''] + _table(head, rows, right={5, 6, 7, 8, 10})
         lines += ['', tr('日食の始まり・終わりは地球上のどこかで部分食が始まる・終わる時刻、'
@@ -877,7 +907,7 @@ def search_table(res, args):
             v = {'c': _dur(e['central_duration_s'], True), 'd': dur}
             dur = tr('皆既 {c}／全体 {d}', **v) if e['type'] == 'total' else tr('金環 {c}／全体 {d}', **v)
         row = [_time(e['max'], tz, '%Y-%m-%d'), _category(e, True),
-               _time(e['c1'], tz), _time(e['max'], tz), _time(e['c4'], tz),
+               _time_on(e['c1'], e['max'], tz), _time(e['max'], tz), _time_on(e['c4'], e['max'], tz),
                f'{e["magnitude"]:.3f}' if moon else f'{e["min_sep_arcsec"]:.1f}"',
                f'{100 * e["obscuration"]:.1f}%' if moon and e.get('obscuration') is not None else '—', dur]
         if ground:
@@ -918,9 +948,7 @@ def sweep_table(res, args):
         moon = g['body'] == 'moon'
         c = len(g['central_phases'])
         if g['time_first']:
-            same_day = _time(g['time_first'], tz, '%Y%m%d') == _time(g['time_last'], tz, '%Y%m%d')
-            last_fmt = '%H:%M:%S' if same_day else '%m-%d %H:%M:%S'
-            span = _span(_time(g['time_first'], tz, '%m-%d %H:%M:%S'), _time(g['time_last'], tz, last_fmt))
+            span = _span(_time(g['time_first'], tz, '%m-%d %H:%M:%S'), _time_on(g['time_last'], g['time_first'], tz))
         else:
             span = '—'
         rows.append([
@@ -1073,17 +1101,30 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     token = i18n.set_lang(choose_lang(argv))
     try:
-        return _main(argv)
+        code = _main(argv)
+        sys.stdout.flush()      # a closed pipe shows up here rather than at exit
+        return code
+    except BrokenPipeError:     # the reader stopped early (... | head): not an error of the calculation
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
     finally:
         i18n.reset_lang(token)
 
 
 def _main(argv):
     json_out = '--format=json' in argv or any(a == '--format' and b == 'json' for a, b in zip(argv, argv[1:]))
+    args = None
 
     def fail(message, code):
         if json_out:
-            sys.stdout.write(_json_text({'ok': False, 'error': message, 'exit_code': code}))
+            text = _json_text({'ok': False, 'error': message, 'exit_code': code})
+            sys.stdout.write(text)
+            if args is not None and args.output:       # do not leave an earlier result in the -o file
+                try:
+                    with open(args.output, 'w', encoding='utf-8') as f:
+                        f.write(text)
+                except OSError:
+                    pass
         print(('cli.py: ' if code == 2 else '') + tr('エラー: {message}', message=message), file=sys.stderr, flush=True)
         if code == 2:
             print(tr('使い方は python cli.py --help を見てください'), file=sys.stderr)
@@ -1097,6 +1138,8 @@ def _main(argv):
         return run(args)
     except InputError as exc:
         return fail(str(exc), 1)
+    except BrokenPipeError:
+        raise
     except Exception as exc:  # keep the promise of a JSON answer with --format json
         if os.environ.get('ECLIPSECALC_DEBUG') == '1':
             import traceback

@@ -26,6 +26,9 @@ PLAN = {'type': 'kepler', 'perigee_alt_km': 680, 'apogee_alt_km': 680, 'sso': Tr
 ISS_TLE = ('ISS (ZARYA)\n'
            '1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927\n'
            '2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537\n')
+# a 344 km orbit with strong drag: SGP4 has it re-enter in May 2025
+DECAY_TLE = ('1 99999U          24245.00000000  .00000000  00000-0  40000-3 0    02\n'
+             '2 99999  97.0000   0.0000 0001000  90.0000   0.0000 15.75223245    09\n')
 
 
 def _run_cli(argv):
@@ -171,6 +174,42 @@ def test_errors_and_exit_codes():
     assert code == 1 and '開始日' in d['error']
     code, d = _cli_json(['--city', '東京', '--start', '2027-02-01', '--end', '2027-01-01'])
     assert code == 1 and not d['ok']
+    for argv in (['--geo-lon', 'nan'], ['--city', '東京', '--min-sun-alt', 'inf'],      # not numbers
+                 ['--geo-lon', '140', '--elev', '5'], ['--city', '東京', '--horizons-step', '2']):  # do not apply
+        code, d = _cli_json(argv + ['--start', '2027-01-01', '--end', '2027-02-01', '--dry-run'])
+        assert code == 2, (argv, d)
+    code, d = _cli_json(['--city', '東京', '--tz', '-05:00', '--start', '2027-01-01', '--end', '2027-02-01',
+                         '--dry-run'])
+    assert code == 0, d
+    with tempfile.TemporaryDirectory() as tmp:
+        req, out = os.path.join(tmp, 'req.json'), os.path.join(tmp, 'out.json')
+        with open(req, 'w', encoding='utf-8') as f:
+            f.write('{"observer": {"type": "geo", "lon": NaN}, "start": "2027-01-01", "end": "2027-02-01"}')
+        code, d = _cli_json(['--request', req])
+        assert code == 1 and 'NaN' in d['error'], d
+        code, d = _cli_json(['--request', req, '--m', '10'])
+        assert code == 2, d
+        # a failed run does not leave an earlier result in the -o file
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert cli.main(['--city', '東京', '--start', '2027-01-01', '--end', '2027-02-01', '--dry-run',
+                             '--format', 'json', '-o', out]) == 0
+        assert _cli_json(['--city', '東京', '--start', '2027-02-01', '--end', '2027-01-01', '-o', out])[0] == 1
+        with open(out, encoding='utf-8') as f:
+            assert json.load(f)['ok'] is False
+
+
+def test_formatting():
+    # durations round to the nearest second (minute above an hour) without "60" carrying over
+    tok = i18n.set_lang('ja')
+    try:
+        assert [cli._dur(s) for s in (59.6, 119.6, 3599.6, 5430.2)] == ['1分00秒', '2分00秒', '1時間00分', '1時間31分']
+        assert cli._dur(59.96, True) == '1分00.0秒' and cli._dur(382.6, True) == '6分22.6秒'
+        # a time on another day than the maximum (local time) shows its date
+        assert cli._time_on('2027-08-02T08:40:18Z', '2027-08-02T10:05:18Z', -10) == '08-01 22:40:18'
+        assert cli._time_on('2027-08-02T11:26:33Z', '2027-08-02T10:05:18Z', -10) == '01:26:33'
+        assert cli.observer_text({'kind': 'geocenter', 'name': '地心'}) == '地心'
+    finally:
+        i18n.reset_lang(tok)
 
 
 def test_tle_dry_run():
@@ -190,6 +229,27 @@ def test_tle_dry_run():
         code, d = _cli_json(['--tle', path, '--start', '2008-09-20', '--end', '2009-12-20', '--sweep', '30',
                              '--dry-run'])
         assert code == 1 and '1 年以内' in d['error']
+
+
+def test_tle_decay_and_checksum():
+    l1, l2 = DECAY_TLE.splitlines()
+    obs = {'type': 'tle', 'line1': l1, 'line2': l2}
+    r = server.search(server.SearchRequest(observer=obs, phenomena=['moon'], start='2024-09-01', end='2025-09-01'))
+    assert any('2025-05' in w for w in r['warnings']), r['warnings']
+    assert r['events'] and all(e['max'] < '2025-05' for e in r['events'])
+    try:
+        server.search(server.SearchRequest(observer=obs, phenomena=['moon'], start='2025-08-01', end='2025-09-01'))
+        assert False, 'computed after the re-entry'
+    except server.HTTPException as exc:
+        assert exc.status_code == 400 and '2025-05' in exc.detail
+    # a mistyped TLE (the checksum does not match) is computed, with a warning
+    lines = ISS_TLE.splitlines()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'typo.txt')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join([lines[0], lines[1], lines[2][:19] + '8' + lines[2][20:]]))
+        code, d = _cli_json(['--tle', path, '--start', '2008-09-20', '--end', '2008-09-25', '--dry-run'])
+    assert code == 0 and any('チェックサム' in w for w in d['warnings']), d
 
 
 def test_tle_with_mean_anomaly():

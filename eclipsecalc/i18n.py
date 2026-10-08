@@ -28,6 +28,11 @@ def current():
     return _lang.get()
 
 
+def span(a, b):
+    """A period from ``a`` to ``b`` in the language of the request."""
+    return {'ja': f'{a}〜{b}', 'zh': f'{a}～{b}'}.get(_lang.get(), f'{a} – {b}')
+
+
 def tr(text, /, **kw):
     """``text`` (Japanese, with ``str.format`` fields) in the language of the request."""
     lang = _lang.get()
@@ -104,6 +109,14 @@ MESSAGES = {
         'es': 'El periodo excede el rango de la efeméride {name} ({start} – {end})',
         'zh': '时间范围超出了历表 {name} 的范围（{start}～{end}）',
         'hi': 'अवधि एफ़ेमेरिस {name} की सीमा ({start} – {end}) से बाहर है',
+    },
+    '太陽・月・惑星の半径は正の数（km）で指定してください': {
+        'en': 'The radii of the Sun, the Moon and the planets must be positive numbers (km)',
+        'fr': 'Les rayons du Soleil, de la Lune et des planètes doivent être des nombres positifs (km)',
+        'ru': 'Радиусы Солнца, Луны и планет должны быть положительными числами (км)',
+        'es': 'Los radios del Sol, la Luna y los planetas deben ser números positivos (km)',
+        'zh': '太阳、月球和行星的半径须为正数（km）',
+        'hi': 'सूर्य, चंद्रमा और ग्रहों की त्रिज्याएँ धनात्मक संख्याएँ (किमी) होनी चाहिए',
     },
     '計算する現象を 1 つ以上選んでください': {
         'en': 'Select at least one phenomenon to compute',
@@ -310,6 +323,30 @@ MESSAGES = {
         'es': 'A {age:.0f} días de la época del TLE (error de posición de unos pocos km a algunas decenas de km).',
         'zh': '距 TLE 历元 {age:.0f} 天（位置误差约数千米至数十千米）。',
         'hi': 'TLE युग से {age:.0f} दिन दूर (स्थिति त्रुटि कुछ किमी से कुछ दसियों किमी तक)।',
+    },
+    'TLE の {n} 行目のチェックサムが合いません（写し間違いの可能性があります）': {
+        'en': 'The checksum of line {n} of the TLE does not match (it may have been mistyped)',
+        'fr': 'La somme de contrôle de la ligne {n} du TLE ne correspond pas (erreur de copie possible)',
+        'ru': 'Контрольная сумма строки {n} TLE не совпадает (возможно, опечатка)',
+        'es': 'La suma de control de la línea {n} del TLE no coincide (puede haber un error de copia)',
+        'zh': 'TLE 第 {n} 行的校验和不符（可能抄写有误）',
+        'hi': 'TLE की पंक्ति {n} का चेकसम मेल नहीं खाता (शायद लिखने में गलती हुई है)',
+    },
+    'SGP4 ではこの衛星は {date} ごろに再突入するため、それ以降は計算していません': {
+        'en': 'SGP4 predicts that this satellite re-enters around {date}; nothing after that was computed',
+        'fr': 'Selon SGP4, ce satellite rentre dans l’atmosphère vers le {date} ; rien n’a été calculé après',
+        'ru': 'По SGP4 спутник войдёт в атмосферу около {date}; после этой даты расчёт не выполнялся',
+        'es': 'Según SGP4, este satélite reentra hacia el {date}; no se calculó nada después',
+        'zh': '按 SGP4，该卫星约在 {date} 再入大气层，之后未作计算',
+        'hi': 'SGP4 के अनुसार यह उपग्रह लगभग {date} को वायुमंडल में लौट आता है; उसके बाद की गणना नहीं की गई',
+    },
+    'SGP4 ではこの衛星は {date} ごろに再突入するため、指定期間は計算できません': {
+        'en': 'SGP4 predicts that this satellite re-enters around {date}; the requested period cannot be computed',
+        'fr': 'Selon SGP4, ce satellite rentre dans l’atmosphère vers le {date} ; la période demandée ne peut pas être calculée',
+        'ru': 'По SGP4 спутник войдёт в атмосферу около {date}; указанный период рассчитать нельзя',
+        'es': 'Según SGP4, este satélite reentra hacia el {date}; no se puede calcular el periodo indicado',
+        'zh': '按 SGP4，该卫星约在 {date} 再入大气层，无法计算指定期间',
+        'hi': 'SGP4 के अनुसार यह उपग्रह लगभग {date} को वायुमंडल में लौट आता है; दी गई अवधि की गणना नहीं हो सकती',
     },
     'TLE の 2 行目が短すぎます（69 文字の形式で指定してください）': {
         'en': 'Line 2 of the TLE is too short (it must be in the 69-character format)',
@@ -1549,6 +1586,22 @@ MESSAGES = {
         'es': '{opts}: solo para un satélite dado por elementos orbitales',
         'zh': '{opts} 仅适用于以轨道根数指定的卫星',
         'hi': '{opts} केवल कक्षीय तत्वों से दिए गए उपग्रह के लिए है',
+    },
+    '--elev は地上の地点（--lat --lon / --city）だけで使えます': {
+        'en': '--elev can be used only for a place on Earth (--lat --lon / --city)',
+        'fr': '--elev ne fonctionne que pour un lieu sur Terre (--lat --lon / --city)',
+        'ru': 'Параметр --elev доступен только для места на Земле (--lat --lon / --city)',
+        'es': '--elev solo funciona con un lugar de la Tierra (--lat --lon / --city)',
+        'zh': '--elev 仅适用于地面地点（--lat --lon / --city）',
+        'hi': '--elev केवल पृथ्वी पर किसी स्थान (--lat --lon / --city) के लिए है',
+    },
+    '--horizons-step は JPL Horizons（--horizons）だけで使えます': {
+        'en': '--horizons-step can be used only with JPL Horizons (--horizons)',
+        'fr': '--horizons-step ne fonctionne qu’avec JPL Horizons (--horizons)',
+        'ru': 'Параметр --horizons-step доступен только для JPL Horizons (--horizons)',
+        'es': '--horizons-step solo funciona con JPL Horizons (--horizons)',
+        'zh': '--horizons-step 仅适用于 JPL Horizons（--horizons）',
+        'hi': '--horizons-step केवल JPL Horizons (--horizons) के लिए है',
     },
     '--city と --lat/--lon はどちらか一方だけ指定してください': {
         'en': 'Give either --city or --lat/--lon, not both',

@@ -28,6 +28,8 @@ const state = {
   detail: null, local: null, stack: [], rootId: null, saved: null,
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
   tleInfo: null, downloadable: [], layerControls: [],
+  tleReq: 0, satAutoName: '',     // the latest TLE fetch; the satellite name the page filled in (not typed)
+  listSeq: 0, detailSeq: 0,       // bumped when another list / detail is shown, so that a late answer is dropped
 };
 
 /* ------------------------------------------------------------------ */
@@ -96,20 +98,22 @@ function dayDiff(isoA, isoB) {
 }
 function fmtDur(s, precise = false) {
   if (s == null || !isFinite(s)) return '—';
-  if (s < 60) return t('{s}秒', { s: s.toFixed(precise ? 1 : 0) });
-  if (s < 3600) {
-    const m = Math.floor(s / 60), r = s - 60 * m;
-    return t('{m}分{s}秒', { m, s: precise ? r.toFixed(1).padStart(4, '0') : String(Math.round(r)).padStart(2, '0') });
+  const r = precise ? Math.round(s * 10) / 10 : Math.round(s);   // round first: 59.6 s is "1 min 00 s", not "60 s"
+  if (r < 60) return t('{s}秒', { s: r.toFixed(precise ? 1 : 0) });
+  if (r < 3600) {
+    const m = Math.floor(r / 60), x = r - 60 * m;
+    return t('{m}分{s}秒', { m, s: precise ? x.toFixed(1).padStart(4, '0') : String(Math.round(x)).padStart(2, '0') });
   }
-  const h = Math.floor(s / 3600), m = Math.round((s - 3600 * h) / 60);
-  return m === 60 ? t('{h}時間{m}分', { h: h + 1, m: '00' }) : t('{h}時間{m}分', { h, m: String(m).padStart(2, '0') });
+  const m = Math.round(s / 60);
+  return t('{h}時間{m}分', { h: Math.floor(m / 60), m: String(m % 60).padStart(2, '0') });
 }
 const f1 = (v) => (v == null ? '—' : Number(v).toFixed(1));
 const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
 const f4 = (v) => (v == null ? '—' : Number(v).toFixed(4));
 const pct = (v, d = 1) => (v == null ? '—' : (100 * v).toFixed(d) + '%');
-function fmtLat(v) { return v == null ? '—' : v >= 0 ? t('北緯 {v}°', { v: Math.abs(v).toFixed(2) }) : t('南緯 {v}°', { v: Math.abs(v).toFixed(2) }); }
-function fmtLon(v) { return v == null ? '—' : v >= 0 ? t('東経 {v}°', { v: Math.abs(v).toFixed(2) }) : t('西経 {v}°', { v: Math.abs(v).toFixed(2) }); }
+// the sign is judged after rounding (no "南緯 0.00°" for -0.001), as cli.py
+function fmtLat(v) { if (v == null) return '—'; const a = Math.abs(v).toFixed(2); return v >= 0 || +a === 0 ? t('北緯 {v}°', { v: a }) : t('南緯 {v}°', { v: a }); }
+function fmtLon(v) { if (v == null) return '—'; const a = Math.abs(v).toFixed(2); return v >= 0 || +a === 0 ? t('東経 {v}°', { v: a }) : t('西経 {v}°', { v: a }); }
 function km(v) { return t('{v} km', { v }); }
 function fmtLatLon(la, lo) { return `${fmtLat(la)}${sep()}${fmtLon(lo)}`; }
 function azName(a) {
@@ -232,7 +236,13 @@ async function init() {
   renderEphemerisDownloads();
 
   $$('#obsTabs button').forEach((b) => b.addEventListener('click', () => setObsTab(b.dataset.obs)));
-  $$('#satModes button').forEach((b) => b.addEventListener('click', () => setSatMode(b.dataset.mode)));
+  $$('#satModes button').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.mode !== state.satMode) {     // a name the page filled in for another source does not carry over
+      $('#satPreset').value = '';
+      if ($('#satName').value === state.satAutoName) $('#satName').value = '';
+    }
+    setSatMode(b.dataset.mode);
+  }));
   $('#fetchTle').addEventListener('click', fetchTle);
   $('#sscId').addEventListener('change', () => showSscInfo(true));
   $$('#kInput button').forEach((b) => b.addEventListener('click', () => setKeplerInput(b.dataset.kin)));
@@ -289,7 +299,9 @@ function changeLanguage(lang) {
   const info = state.info;
   if (!info) return;
   retranslateInput('#placeName', [...info.cities.map((c) => c.name), '地図で選んだ地点'], prev);
+  const autoName = $('#satName').value === state.satAutoName;
   retranslateInput('#satName', [...info.satellites.map((s) => s.spec.name), PRELAUNCH_NAME], prev);
+  if (autoName) state.satAutoName = $('#satName').value;
   fillPresets();
   fillEphemerides([...$('#ephem').options].map((o) => o.value));
   renderEphemerisDownloads();
@@ -324,18 +336,29 @@ function fillPresets() {
 }
 function presetSpec(spec) { return { ...spec, name: t(spec.name) }; }
 
-// The calculator quits by itself when its last page is closed: each page keeps this event stream
-// open, and the browser drops it when the tab or the browser is closed (see server.py)
+// The calculator quits by itself when its last page is closed: a page keeps this event stream
+// open, and the browser drops it when the tab or the browser is closed (see server.py).  One stream
+// per browser is enough, and a browser opens only 6 connections to a server, so its pages take
+// turns (Web Locks): the others wait for the lock and hear from the holder when the server stops.
 function watchPage() {
-  state.pageStream = new EventSource('/api/page/stream');
-  state.pageStream.onerror = () => {
-    if (state.stopped) return;
-    fetch('/api/info').catch(() => showStopped(t('日食計算機は終了しています')));
-  };
+  if (window.BroadcastChannel) {
+    state.pageChannel = new BroadcastChannel('eclipsecalc-page');
+    state.pageChannel.onmessage = (ev) => { if (ev.data === 'stopped' && !state.stopped) showStopped(t('日食計算機は終了しています')); };
+  }
+  const open = () => new Promise(() => {      // the lock is held while the page is open
+    state.pageStream = new EventSource('/api/page/stream');
+    state.pageStream.onerror = () => {
+      if (state.stopped) return;
+      fetch('/api/info').catch(() => showStopped(t('日食計算機は終了しています')));
+    };
+  });
+  if (navigator.locks) navigator.locks.request('eclipsecalc-page-stream', open);
+  else open();
 }
 function showStopped(title) {
   state.stopped = true;
   if (state.pageStream) state.pageStream.close();
+  if (state.pageChannel) state.pageChannel.postMessage('stopped');
   const again = state.info && state.info.app_mode ? t('「日食計算機」アプリを開いてください') : t('start.bat（Mac・Linux は start.command）を起動してください');
   document.body.innerHTML = '';
   document.body.append(el('div', { class: 'quit-msg' },
@@ -425,13 +448,25 @@ function showSscInfo(setName) {
   const s = state.sscSats.find((x) => x.id === id);
   box.hidden = !id;
   if (!s) { box.innerHTML = `<span style="color:var(--err)">${esc(t('「{id}」は SSCWeb の衛星一覧にありません', { id }))}</span>`; return; }
-  if (setName) $('#satName').value = s.name;
+  if (setName) $('#satName').value = state.satAutoName = s.name;
   box.innerHTML = `<b>${esc(s.name)}</b><br>` +
     esc(t('軌道データ: {start} 〜 {end}（{res} 秒間隔）', { start: s.start.slice(0, 10), end: s.end.slice(0, 10), res: s.resolution_s }));
 }
+/* A UTC time as cli.py accepts it (2027-1-1, 2027-01-01 5:30, ...Z) -> 'YYYY-MM-DDTHH:MM:SS' of the form. */
+function formUtc(s) {
+  const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(String(s).trim());
+  if (!m) return '';
+  const p = (x, n = 2) => String(+(x || 0)).padStart(n, '0');
+  return `${p(m[1], 4)}-${p(m[2])}-${p(m[3])}T${p(m[4])}:${p(m[5])}:${p(m[6])}`;
+}
+/* Line 2 of a TLE with the mean anomaly replaced (as eclipsecalc.observers.tle_with_mean_anomaly). */
+function tleWithMeanAnomaly(line2, m) {
+  const body = line2.slice(0, 43) + (((+m % 360) + 360) % 360).toFixed(4).padStart(8) + line2.slice(51, 68);
+  return body + [...body].reduce((sum, c) => sum + (c === '-' ? 1 : /\d/.test(c) ? +c : 0), 0) % 10;
+}
 function applySatSpec(spec) {
-  $('#satName').value = spec.name || '';
-  state.fetchedTle = null; state.tleInfo = null;
+  $('#satName').value = state.satAutoName = spec.name || '';
+  state.fetchedTle = null; state.tleInfo = null; state.tleReq++;
   $('#satInfo').hidden = true;
   if (spec.type === 'celestrak') { setSatMode('celestrak'); $('#norad').value = spec.norad; }
   else if (spec.type === 'geo') { setSatMode('geo'); $('#geoLon').value = spec.lon; }
@@ -439,10 +474,11 @@ function applySatSpec(spec) {
   else if (spec.type === 'sscweb') { $('#sscId').value = spec.id; setSatMode('sscweb'); }
   else if (spec.type === 'tle') {
     setSatMode('tle');
-    $('#tleText').value = [spec.name, spec.line1, spec.line2].filter(Boolean).join('\n');
+    const line2 = spec.m_deg != null ? tleWithMeanAnomaly(spec.line2, spec.m_deg) : spec.line2;   // one phase of a sweep
+    $('#tleText').value = [spec.name, spec.line1, line2].filter(Boolean).join('\n');
   } else if (spec.type === 'kepler') {
     setSatMode('kepler');
-    if (spec.epoch) $('#kEpoch').value = spec.epoch.replace(' ', 'T').replace('Z', '').slice(0, 19);
+    if (spec.epoch) $('#kEpoch').value = formUtc(spec.epoch);
     $('#kJ2').checked = spec.j2 !== false;
     let peri = spec.perigee_alt_km, apo = spec.apogee_alt_km;
     if (spec.a_km) {
@@ -450,13 +486,14 @@ function applySatSpec(spec) {
       peri = spec.a_km * (1 - e) - R_EARTH; apo = spec.a_km * (1 + e) - R_EARTH;
       $('#kA').value = spec.a_km; $('#kE').value = e;
     }
-    $('#kPeri').value = peri.toFixed(1); $('#kApo').value = apo.toFixed(1);
+    if (peri != null) { $('#kPeri').value = +peri.toFixed(3); $('#kApo').value = +apo.toFixed(3); }
     $('#kSso').checked = !!spec.sso;
     if (spec.i_deg != null) $('#kInc').value = spec.i_deg;
     if (spec.ltan_h != null) { $('#kPlane').value = 'ltan'; $('#kLtan').value = fmtLtan(spec.ltan_h); }
     else { $('#kPlane').value = 'raan'; $('#kRaan').value = spec.raan_deg ?? 0; }
     $('#kArgp').value = spec.argp_deg ?? 0; $('#kM').value = spec.m_deg ?? 0;
-    setKeplerInput(spec.a_km ? 'elements' : 'plan', false);
+    // the six elements cannot hold the sun-synchronous / LTAN shortcuts; the plan form holds every combination
+    setKeplerInput(spec.a_km && !spec.sso && spec.ltan_h == null ? 'elements' : 'plan', false);
   }
 }
 /* "plan": perigee/apogee altitudes with sun-synchronous / LTAN shortcuts;
@@ -533,17 +570,21 @@ function updateKeplerForm() {
     : '';
 }
 async function fetchTle() {
-  const box = $('#satInfo');
+  const box = $('#satInfo'), norad = $('#norad').value, req = ++state.tleReq;
+  // an answer that arrives after another satellite was chosen (number edited, preset, reopened result) is dropped
+  const stale = () => req !== state.tleReq || $('#norad').value !== norad;
   box.hidden = false;
   box.innerHTML = '<span class="spinner"></span>' + esc(t('CelesTrak から取得中…'));
   try {
-    const d = await api('/api/tle?norad=' + encodeURIComponent($('#norad').value));
-    state.fetchedTle = { norad: +$('#norad').value, line1: d.line1, line2: d.line2, name: d.name };
-    if (!$('#satName').value || $('#satPreset').value === '') $('#satName').value = d.name;
+    const d = await api('/api/tle?norad=' + encodeURIComponent(norad));
+    if (stale()) { if (req === state.tleReq) box.hidden = true; return; }
+    state.fetchedTle = { norad: +norad, line1: d.line1, line2: d.line2, name: d.name };
+    if (!$('#satName').value || $('#satPreset').value === '') $('#satName').value = state.satAutoName = d.name;
     state.tleInfo = d;
     renderTleInfo();
     $('#tleText').value = `${d.name}\n${d.line1}\n${d.line2}`;
   } catch (err) {
+    if (stale()) { if (req === state.tleReq) box.hidden = true; return; }
     box.innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`;
   }
 }
@@ -645,12 +686,17 @@ function buildRequest() {
   const sunSel = $('#sunR').value;
   const moonSel = $('#moonR').value;
   const plSel = $('#planetR').value;
+  const radius = (id) => {
+    const v = num(id, NaN);
+    if (!(v > 0)) throw new Error(t('太陽・月の半径は正の数（km）で入力してください'));
+    return v;
+  };
   const settings = {
     ephemeris: $('#ephem').value,
     delta_t: $('#dtMode').value === 'manual' && $('#dtValue').value !== '' ? num('#dtValue') : null,
-    sun_radius_km: sunSel === 'custom' ? num('#sunRCustom') : rp.sun[sunSel],
-    moon_radius_ext_km: moonSel === 'custom' ? num('#moonRExt') : rp.moon[moonSel][0],
-    moon_radius_int_km: moonSel === 'custom' ? num('#moonRInt') : rp.moon[moonSel][1],
+    sun_radius_km: sunSel === 'custom' ? radius('#sunRCustom') : rp.sun[sunSel],
+    moon_radius_ext_km: moonSel === 'custom' ? radius('#moonRExt') : rp.moon[moonSel][0],
+    moon_radius_int_km: moonSel === 'custom' ? radius('#moonRInt') : rp.moon[moonSel][1],
     mercury_radius_km: rp.mercury[plSel], venus_radius_km: rp.venus[plSel],
     min_sun_alt_deg: num('#minAlt'), refraction: $('#refraction').checked,
     earth_atm_km: num('#atm'), include_invisible: $('#includeInvisible').checked,
@@ -666,6 +712,7 @@ async function runSearch() {
   if (!req.phenomena.length) { setStatus(st, t('計算する現象を 1 つ以上選んでください'), 'err'); return; }
   const btn = $('#runBtn');
   btn.disabled = true;
+  const seq = ++state.listSeq;
   const msg = req.observer.type === 'horizons' ? t('JPL Horizons から軌道を取得して計算中…') :
     req.observer.type === 'sscweb' ? t('NASA SSCWeb から軌道を取得して計算中…') :
     req.observer.type === 'celestrak' ? t('CelesTrak から TLE を取得して計算中…') : t('計算中…');
@@ -674,6 +721,7 @@ async function runSearch() {
     if (req.sweepStep) {
       const { sweepStep, ...body } = req;
       const r = await api('/api/phase_sweep', { ...body, step_deg: sweepStep });
+      if (seq !== state.listSeq) return;      // a saved result was opened meanwhile
       r.request = savedRequest(req, r);
       state.sweep = r;
       state.sweepGroup = 0;
@@ -687,6 +735,7 @@ async function runSearch() {
       return;
     }
     const r = await api('/api/search', req);
+    if (seq !== state.listSeq) return;
     r.request = savedRequest(req, r);
     state.result = r;
     state.sweep = null;
@@ -699,7 +748,7 @@ async function runSearch() {
     renderResults();
     if (r.events.length === 1) openDetail(r.events[0].id, { root: true });
   } catch (err) {
-    setStatus(st, err.message, 'err');
+    if (seq === state.listSeq) setStatus(st, err.message, 'err');
   } finally {
     btn.disabled = false;
   }
@@ -1048,8 +1097,8 @@ function savedRequest(req, r) {
   }
   return out;
 }
-/* An event without the server's id (which means nothing once the server is restarted). */
-function noId({ id, ...e }) { return e; }
+/* An event without the server's ids (which mean nothing once the server is restarted). */
+function noId({ id, serverId, ...e }) { return e; }
 function stripIds(r) {
   const out = { ...r };
   if (r.events) out.events = r.events.map(noId);
@@ -1092,8 +1141,10 @@ async function openSavedFile(file) {
   }
 }
 function openSavedResult(data, name) {
+  state.listSeq++;
+  state.mapData = {};     // the ids saved1, saved2, ... of another file named other events
   const events = new Map();
-  const tag = (e) => { e.id = `saved${events.size + 1}`; events.set(e.id, e); };
+  const tag = (e) => { delete e.serverId; e.id = `saved${events.size + 1}`; events.set(e.id, e); };
   if (data.groups) {
     for (const g of data.groups) {
       for (const row of g.rows) {
@@ -1126,7 +1177,10 @@ function openSavedResult(data, name) {
 /* One event saved from the detail view ("JSON をダウンロード"): shown as saved; the map and
    other places are computed from the request saved with it. */
 function openSavedEvent(data, name) {
+  state.listSeq++; state.detailSeq++;
+  state.mapData = {};
   const d = data.event;
+  delete d.serverId;
   d.id = 'saved1';
   state.saved = { request: d.request || data.request, events: new Map([[d.id, d]]), name, savedAt: data.saved_at, tool: data.tool };
   if (state.saved.request) {
@@ -1187,12 +1241,19 @@ function applyRequestToForm(req) {
     setObsTab('space');
     $('#satPreset').value = '';
     applySatSpec(o);
-    $('#kSweep').checked = o.type === 'kepler' && req.step_deg != null;
-    if (req.step_deg != null && $$('#kSweepStep option').some((x) => +x.value === +req.step_deg)) $('#kSweepStep').value = String(+req.step_deg);
+    const step = req.step_deg != null ? String(+req.step_deg) : null;
+    $('#kSweep').checked = o.type === 'kepler' && step != null;
+    if (step != null) {     // a step of cli.py --sweep that the list does not have
+      if (!$$('#kSweepStep option').some((x) => x.value === step)) $('#kSweepStep').append(el('option', { value: step }, `${step}°`));
+      $('#kSweepStep').value = step;
+    }
     updateKeplerForm();
   }
-  if (req.start) $('#start').value = req.start.slice(0, 10);
-  if (req.end) $('#end').value = req.end.slice(0, 10);
+  if (req.start) $('#start').value = formUtc(req.start).slice(0, 10);
+  if (req.end) {      // the form has dates only: an end later than 0h is rounded up to the next day
+    const e = formUtc(req.end);
+    $('#end').value = e.slice(11) > '00:00:00' ? isoDate(new Date(Date.parse(e.slice(0, 10) + 'T00:00:00Z') + 864e5)) : e.slice(0, 10);
+  }
   const s = { ...state.info.defaults, ...(req.settings || {}) };
   const eph = s.ephemeris && !s.ephemeris.endsWith('.bsp') ? s.ephemeris + '.bsp' : s.ephemeris;
   if (eph && $$('#ephem option').some((x) => x.value === eph)) { $('#ephem').value = eph; updateCoverage(); }
@@ -1223,9 +1284,15 @@ function applyRequestToForm(req) {
 async function openDetail(id, { root = false, push = false } = {}) {
   const st = $('#status');
   const saved = state.saved && state.saved.events.get(id);
-  setStatus(st, saved && !saved.serverId ? t('保存した計算条件で詳細を計算中…') : t('詳細を計算中…'), 'busy');
+  const busy = saved && !saved.serverId ? t('保存した計算条件で詳細を計算中…') : t('詳細を計算中…');
+  setStatus(st, busy, 'busy');
+  const seq = ++state.detailSeq;
   try {
     const d = await liveDetail(id);
+    if (seq !== state.detailSeq) {      // closed, or another list or event was shown meanwhile
+      if (st.textContent === busy) setStatus(st, '');
+      return;
+    }
     if (push && state.detail) state.stack.push(state.detail.id);
     if (root) { state.stack = []; state.rootId = d.id; }
     state.detail = d;
@@ -1239,7 +1306,7 @@ async function openDetail(id, { root = false, push = false } = {}) {
     if (d.kind === 'global') loadGeLocal(d);
     $('#detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
-    setStatus(st, err.message, 'err');
+    if (seq === state.detailSeq) setStatus(st, err.message, 'err');
   }
 }
 async function loadGeLocal(d) {
@@ -1253,6 +1320,7 @@ async function loadGeLocal(d) {
   } catch (err) { console.warn(err); }
 }
 function closeDetail() {
+  state.detailSeq++;
   $('#detail').hidden = true;
   state.detail = null; state.local = null; state.playing = false;
   state.selectedId = null;
@@ -1415,7 +1483,7 @@ function renderOverview() {
     el('dt', {}, t('ΔT（TT−UT）')), el('dd', {}, t('{v} 秒', { v: d.delta_t_s.toFixed(2) })),
     el('dt', {}, t('太陽の視直径（最大時）')), el('dd', {}, `${f1(d.sun_diameter_arcsec)}″`),
     el('dt', {}, t('{body}の視直径（最大時）', { body: bodyJa(d.body) })), el('dd', {}, `${f1(d.body_diameter_arcsec)}″`),
-    moon && el('dt', {}, t('サロス番号')), moon && el('dd', {}, d.saros),
+    moon && el('dt', {}, t('サロス番号')), moon && el('dd', {}, d.saros ?? '—'),
     el('dt', {}, t('計算モデル')), el('dd', {}, t('太陽半径 {v} km', { v: p.sun_radius_km.toFixed(0) }) + sep() + (moon
       ? t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) })
       : t('{body}半径 {v} km', { body: bodyJa(d.body), v: (d.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) }))),

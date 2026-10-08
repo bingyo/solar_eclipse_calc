@@ -30,11 +30,12 @@ from skyfield.framelib import true_equator_and_equinox_of_date as TOD
 
 from .constants import (AU_KM, DAY_S, MERCURY_RADIUS, MOON_K_EXTERNAL, MOON_K_INTERNAL,
                         RAD2ARCSEC, SUN_RADIUS_IAU2015, VENUS_RADIUS, WGS84_A, WGS84_B)
-from .conjunctions import BODY_MIN_DISTANCE_KM, find_conjunctions, geocentric_min_separation
+from .conjunctions import BODY_MIN_DISTANCE_KM, BODY_MIN_RATE, find_conjunctions, geocentric_min_separation
 from .geometry import angle_between, magnitude, norm, obscuration
-from .i18n import tr
-from .observers import HorizonsObserver, ObserverError, SSCWebObserver
+from .i18n import span, tr
+from .observers import HorizonsObserver, ObserverError, SSCWebObserver, TLEObserver
 from .saros import saros_number
+from .shadow import Shadow, sun_moon_itrs
 from .timeutil import iso_utc
 
 SAFETY = 1.6
@@ -287,9 +288,10 @@ def candidate_windows(ctx, observer, body, jd_a, jd_b, params):
     rho_s = math.asin(params.sun_radius_km / (0.983 * AU_KM - r))
     rho_b = math.asin(min(1.0, Rbe / (d_min - r)))
     limit = rho_s + rho_b + par_b + par_s + 0.06 * DEG
-    tc = find_conjunctions(ctx, body, jd_a - 2.0, jd_b + 2.0)
-    span = 0.3 if body == 'moon' else 1.5
-    smin, rate = geocentric_min_separation(ctx, body, tc, span)
+    # an event of a far observer can lie up to ~limit / rate days from its conjunction
+    pad = max(2.0, 1.5 * limit / BODY_MIN_RATE[body])
+    tc = find_conjunctions(ctx, body, jd_a - pad, jd_b + pad)
+    smin, rate = geocentric_min_separation(ctx, body, tc, 0.3 if body == 'moon' else 1.5)
     keep = smin < limit
     wins = []
     for c, sm, rt in zip(tc[keep], smin[keep], rate[keep]):
@@ -304,6 +306,21 @@ def candidate_windows(ctx, observer, body, jd_a, jd_b, params):
         else:
             merged.append(list(w))
     return [(a, b) for a, b, _ in merged], tc
+
+
+def eclipse_new_moons(ctx, jd, params):
+    """The geocentric new moons within 1 d of the times ``jd`` that have a solar eclipse somewhere on
+    the Earth (the penumbra touches it: the test of search_global)."""
+    jd = np.asarray(jd, float)
+    tc = find_conjunctions(ctx, 'moon', jd.min() - 1.0, jd.max() + 1.0)
+    if tc.size:
+        tc = tc[np.abs(tc[:, None] - jd[None, :]).min(axis=1) < 1.0]
+    if tc.size == 0:
+        return tc
+    off = np.arange(-7 * 60, 7 * 60 + 1, 5) / 1440.0
+    S, M, _ = sun_moon_itrs(ctx, (tc[:, None] + off[None, :]).ravel())
+    mp = Shadow(S, M, params).fundamental()['m_partial'].reshape(tc.size, -1)
+    return tc[mp.min(axis=1) < 0]
 
 
 class LocalSearch:
@@ -326,10 +343,10 @@ class LocalSearch:
             return []
         margin = 0.6
         if isinstance(self.observer, HorizonsObserver):
-            if self.observer.coverage is None:
-                self.observer.survey(self.jd_a - margin, self.jd_b + margin)
-            ca, cb = self.observer.coverage
             pad = self.observer.step_min / 1440.0 + 0.02
+            if self.observer.coverage is None:
+                self.observer.survey(self.jd_a - margin - pad, self.jd_b + margin + pad)
+            ca, cb = self.observer.coverage
             if ca + pad > self.jd_a - margin or cb - pad < self.jd_b + margin:
                 a2 = max(self.jd_a, ca + pad + margin)
                 b2 = min(self.jd_b, cb - pad - margin)
@@ -345,8 +362,7 @@ class LocalSearch:
             if cov and (cov[0] > self.jd_a - margin or cov[1] < self.jd_b + margin):
                 a2 = max(self.jd_a, cov[0] + margin + 0.01)
                 b2 = min(self.jd_b, cov[1] - margin - 0.01)
-                period = (f'{iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10]}〜'
-                          f'{iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10]}')
+                period = span(iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10], iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10])
                 if b2 <= a2:
                     raise ObserverError(tr('指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）', period=period))
                 self.warnings.append(tr('NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました', period=period))
@@ -354,6 +370,16 @@ class LocalSearch:
             if not self.observer.surveyed:
                 self.observer.survey(self.jd_a, self.jd_b)
             self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
+        elif isinstance(self.observer, TLEObserver):
+            jd_d = self.observer.decay_jd(self.jd_b + margin)
+            if jd_d is not None:
+                date = iso_utc(self.ctx.ts.tt_jd(jd_d))[:10]
+                if jd_d - margin <= self.jd_a:
+                    raise ObserverError(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、指定期間は計算できません',
+                                           date=date))
+                self.warnings.append(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、それ以降は計算していません',
+                                        date=date))
+                self.jd_b = min(self.jd_b, jd_d - margin)
         wins, _ = candidate_windows(ctx, self.observer, self.body, self.jd_a - margin,
                                     self.jd_b + margin, self.p)
         self.observer.prepare(ctx, wins)
@@ -518,6 +544,11 @@ class LocalSearch:
                 d['visible'] = any(a - 1e-9 <= x <= b + 1e-9 for a, b in e['visible'])
                 contacts.append(d)
             e['contacts'] = contacts
+        # A far observer also sees the Moon cross the Sun in months without an eclipse on the Earth,
+        # which belong to no Saros series (every eclipse seen from the ground does).
+        self._ecl_tc = None
+        if self.body == 'moon' and self.observer.r_max_km > WGS84_A + 50:
+            self._ecl_tc = eclipse_new_moons(self.ctx, [self.jd0 + e['xm'] for e in events], self.p)
         for e in events:
             self._summarise(e)
 
@@ -550,7 +581,11 @@ class LocalSearch:
                            obscuration=float(obscuration(g['rs'][k], g['rbe'][k], g['sep'][k])))
         else:
             vis_max = None
-        saros = saros_number(jd0 + e['xm']) if body == 'moon' else None
+        saros = None
+        if body == 'moon':
+            tc = getattr(self, '_ecl_tc', None)
+            if tc is None or (tc.size and np.abs(tc - (jd0 + e['xm'])).min() < 1.0):
+                saros = saros_number(jd0 + e['xm'])
         e.update(dict(
             body=body, type=etype,
             jd_c1=jd0 + e['x1'], jd_max=jd0 + e['xm'], jd_c4=jd0 + e['x4'],

@@ -3,9 +3,14 @@ import datetime as _dt
 
 import numpy as np
 
+# 1972-01-01T00:00:00 UTC as a TT Julian date.  Before it there is no UTC with leap seconds (Skyfield
+# would use TT - 42.184 s, up to a minute off); those times are UT1 (UT = TT - Delta T), as in the
+# eclipse catalogues.
+_UTC_FROM_TT = 2441317.5 + 42.184 / 86400.0
+
 
 def parse_utc(ctx, text):
-    """Parse 'YYYY-MM-DD' or an ISO date-time (UTC) into a TT Julian date."""
+    """Parse 'YYYY-MM-DD' or an ISO date-time (UTC; UT before 1972) into a TT Julian date."""
     text = text.strip().replace(' ', 'T')
     if text.endswith('Z'):
         text = text[:-1]
@@ -17,6 +22,8 @@ def parse_utc(ctx, text):
         d, hh, mm, sec = text, 0, 0, 0.0
     y, mo, da = (int(v) for v in d.split('-')) if not d.startswith('-') else _neg_date(d)
     t = ctx.ts.utc(y, mo, da, int(hh), int(mm), sec)
+    if t.tt < _UTC_FROM_TT:
+        t = ctx.ts.ut1(y, mo, da, int(hh), int(mm), sec)
     return float(t.tt)
 
 
@@ -26,11 +33,10 @@ def _neg_date(d):
 
 
 def iso_utc(t):
-    """Skyfield Time (scalar or array) -> ISO-8601 UTC string(s) with ms."""
+    """Skyfield Time (scalar or array) -> ISO-8601 UTC string(s) with ms (UT1 before 1972)."""
     scalar = np.ndim(t.tt) == 0
-    year, month, day, hour, minute, second = t.utc
-    year, month, day, hour, minute, second = (np.atleast_1d(v) for v in
-                                              (year, month, day, hour, minute, second))
+    cal = np.where(np.asarray(t.tt) < _UTC_FROM_TT, t.ut1_calendar(), t.utc)
+    year, month, day, hour, minute, second = (np.atleast_1d(v) for v in cal)
     out = []
     for y, mo, d, h, mi, s in zip(year, month, day, hour, minute, second):
         ms = int(round(float(s) * 1000.0))
