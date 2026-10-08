@@ -671,6 +671,8 @@ def preflight(req, obs):
     the warnings it would give (an old TLE is judged at the end of the period
     farthest from its epoch) -> list of warnings."""
     from eclipsecalc import server
+    from eclipsecalc.local import tle_decay
+    from eclipsecalc.observers import ObserverError, TLEObserver
     kw = {k: req[k] for k in ('phenomena', 'observer', 'start', 'end', 'settings')}
     with _api_errors():
         ctx, _, jd_a, jd_b, _ = server._parse_request(server.SearchRequest(**kw))
@@ -678,10 +680,16 @@ def preflight(req, obs):
         raise InputError(tr('人工衛星の観測者では期間を 20 年以内にしてください'))
     if req.get('step_deg') is not None and jd_b - jd_a > server.SWEEP_MAX_DAYS:
         raise InputError(tr('位相を変えた一括計算では期間を 1 年以内にしてください'))
+    warnings = []
+    if isinstance(obs, TLEObserver):        # the re-entry that SGP4 predicts
+        try:
+            _, warnings = tle_decay(ctx, obs, jd_a, jd_b)
+        except ObserverError as exc:
+            raise InputError(str(exc))
     epoch = getattr(obs, 'epoch_jd', None)
     if epoch is None:
-        return []
-    return obs.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
+        return warnings
+    return warnings + obs.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
 
 
 def calculate(req, debug=False):

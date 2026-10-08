@@ -242,6 +242,14 @@ def test_tle_decay_and_checksum():
         assert False, 'computed after the re-entry'
     except server.HTTPException as exc:
         assert exc.status_code == 400 and '2025-05' in exc.detail
+    with tempfile.TemporaryDirectory() as tmp:        # --dry-run tells the same
+        path = os.path.join(tmp, 'decay.txt')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(DECAY_TLE)
+        code, d = _cli_json(['--tle', path, '--start', '2024-09-01', '--end', '2025-09-01', '--dry-run'])
+        assert code == 0 and any('2025-05' in w for w in d['warnings']), d
+        code, d = _cli_json(['--tle', path, '--start', '2025-08-01', '--end', '2025-09-01', '--dry-run'])
+        assert code == 1 and '2025-05' in d['error'], d
     # a mistyped TLE (the checksum does not match) is computed, with a warning
     lines = ISS_TLE.splitlines()
     with tempfile.TemporaryDirectory() as tmp:

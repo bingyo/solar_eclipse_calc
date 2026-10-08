@@ -282,6 +282,22 @@ MESSAGES = {
         'zh': '经度须在 -180～180 度之间',
         'hi': 'देशांतर -180 से 180 डिग्री के बीच होना चाहिए',
     },
+    '標高は -12,000〜100,000 m で指定してください': {
+        'en': 'The elevation must be between -12,000 and 100,000 m',
+        'fr': 'L’altitude doit être comprise entre -12 000 et 100 000 m',
+        'ru': 'Высота над уровнем моря должна быть от -12 000 до 100 000 м',
+        'es': 'La altitud debe estar entre -12 000 y 100 000 m',
+        'zh': '海拔须在 -12,000～100,000 m 之间',
+        'hi': 'ऊँचाई -12,000 से 100,000 मी के बीच होनी चाहिए',
+    },
+    '軌道要素は数値で指定してください': {
+        'en': 'The orbital elements must be numbers',
+        'fr': 'Les éléments orbitaux doivent être des nombres',
+        'ru': 'Элементы орбиты должны быть числами',
+        'es': 'Los elementos orbitales deben ser números',
+        'zh': '轨道根数须为数值',
+        'hi': 'कक्षीय तत्व संख्याएँ होनी चाहिए',
+    },
     '地球固定点 {lon:.2f}°': {
         'en': 'Earth-fixed point {lon:.2f}°', 'fr': 'Point fixe terrestre {lon:.2f}°',
         'ru': 'Точка, неподвижная относительно Земли, {lon:.2f}°', 'es': 'Punto fijo terrestre {lon:.2f}°',

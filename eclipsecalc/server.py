@@ -1,6 +1,7 @@
 """FastAPI web server: JSON API + static single-page UI."""
 import asyncio
 import itertools
+import math
 import os
 import secrets
 import signal
@@ -293,7 +294,10 @@ def tle(norad: int):
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise HTTPException(502, tr('CelesTrak に接続できませんでした: {exc}', exc=exc))
-    obs = TLEObserver(get_context(), l1, l2, name)
+    try:
+        obs = TLEObserver(get_context(), l1, l2, name)
+    except ObserverError as exc:        # e.g. a TLE whose perigee is inside the Earth (re-entered)
+        raise HTTPException(400, str(exc))
     d = obs.describe()
     d['epoch'] = iso_from_jd(get_context(), obs.epoch_jd)
     return d
@@ -602,7 +606,7 @@ def event_detail(eid: str):
 def event_map(eid: str, grid: float = 1.0):
     obj = _get(eid)
     ctx, params = obj['ctx'], obj['params']
-    grid = float(min(max(grid, 0.5), 3.0))
+    grid = float(min(max(grid, 0.5), 3.0)) if math.isfinite(grid) else 1.0
     ev = obj['event']
     with _compute_lock:
         try:

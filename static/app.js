@@ -131,7 +131,9 @@ async function api(path, body) {
   try { data = await res.json(); } catch (_) { /* ignore */ }
   if (!res.ok) {
     const d = data && data.detail;
-    throw new Error(typeof d === 'string' ? d : d ? d.map((x) => x.msg).join('\n') : `HTTP ${res.status}`);
+    const err = new Error(typeof d === 'string' ? d : d ? d.map((x) => x.msg).join('\n') : `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
@@ -1205,17 +1207,40 @@ function savedNote() {
   const how = s.request ? t('詳細は保存した計算条件で再計算します。') : t('このファイルには計算条件がないため、詳細は表示できません。');
   return `<div class="saved-note">${esc(sentences([t('保存した結果を表示しています（{name}{when}）。', { name: s.name, when }), how]))}</div>`;
 }
+/* What /api/restore needs to find an event again. */
+function restoreKey(e) {
+  return Object.fromEntries(['body', 'kind', 'jd_max', 'jd_c1', 'jd_c4', 'm_deg'].filter((k) => e[k] != null).map((k) => [k, e[k]]));
+}
+/* The event of the list or phase sweep on the page with the server's id `id`. */
+function listEvent(id) {
+  if (state.result) return state.result.events.find((e) => e.id === id) || null;
+  for (const g of state.sweep ? state.sweep.groups : []) {
+    for (const row of g.rows) {
+      const e = (row.events || []).find((x) => x.id === id) || (row.best && row.best.id === id ? row.best : null);
+      if (e) return e;
+    }
+  }
+  return null;
+}
 /* The server's id of an event: an event of a saved result is computed again (once) from the
-   saved request; the server forgets it when restarted, then it is computed again. */
+   saved request; the server forgets events when restarted (and the oldest ones after many
+   searches), then they are computed again from the request of their list. */
 async function liveDetail(id) {
   const s = state.saved && state.saved.events.get(id);
-  if (!s) return api('/api/event/' + id);
+  if (!s) {
+    const e = listEvent(id), req = (state.result || state.sweep || {}).request;
+    try { return await api('/api/event/' + ((e && e.serverId) || id)); } catch (err) {
+      if (!e || !req || err.status !== 404) throw err;
+    }
+    const d = await api('/api/restore', { request: req, event: restoreKey(e) });
+    e.serverId = d.id;
+    return d;
+  }
   if (s.serverId) {
     try { return await api('/api/event/' + s.serverId); } catch (_) { s.serverId = null; }
   }
   if (!state.saved.request) throw new Error(t('このファイルには計算条件（request）がないため、詳細を計算できません'));
-  const event = Object.fromEntries(['body', 'kind', 'jd_max', 'jd_c1', 'jd_c4', 'm_deg'].filter((k) => s[k] != null).map((k) => [k, s[k]]));
-  const d = await api('/api/restore', { request: state.saved.request, event });
+  const d = await api('/api/restore', { request: state.saved.request, event: restoreKey(s) });
   s.serverId = d.id;
   return d;
 }

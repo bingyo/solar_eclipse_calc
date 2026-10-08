@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from eclipsecalc import server  # noqa: E402
 from eclipsecalc.constants import WGS84_A  # noqa: E402
 from eclipsecalc.context import get_context  # noqa: E402
-from eclipsecalc.observers import (SSCWebObserver, build_observer, ltan_from_raan,  # noqa: E402
-                                   mean_sun_ra_deg, sun_synchronous_inclination)
+from eclipsecalc.observers import (ObserverError, SSCWebObserver, build_observer,  # noqa: E402
+                                   ltan_from_raan, mean_sun_ra_deg, sun_synchronous_inclination)
 from eclipsecalc.timeutil import parse_utc  # noqa: E402
 
 CTX = get_context()
@@ -82,6 +82,25 @@ def test_phase_sweep_total_eclipse_2027():
     e = max(s['events'], key=lambda e: e['magnitude'])
     assert e['type'] == best['type'] and abs(e['magnitude'] - best['magnitude']) < 1e-9
     assert e['max'] == best['max']
+
+
+def test_input_checks():
+    # Values that are not numbers (JSON allows NaN and Infinity) are refused with a message
+    # instead of giving empty or meaningless results; an eccentricity of 1 or more is called so.
+    kep = {'type': 'kepler', 'epoch_jd_tt': 2461000.5, 'a_km': 7000.0, 'e': 0.0, 'i_deg': 98.0, 'raan_deg': 0.0}
+    for spec, key in (({'type': 'ground', 'lat': 35, 'lon': 139, 'elevation_m': math.inf}, '標高'),
+                      ({'type': 'geo', 'lon': math.nan}, '経度'),
+                      (dict(kep, e=1.2), '離心率'),
+                      (dict(kep, a_km=math.nan), '数値')):
+        try:
+            build_observer(CTX, spec)
+            assert False, spec
+        except ObserverError as exc:
+            assert key in str(exc), (spec, exc)
+    # perigee and apogee given the other way round are the same orbit
+    o = build_observer(CTX, {'type': 'kepler', 'epoch_jd_tt': 2461000.5, 'perigee_alt_km': 800,
+                             'apogee_alt_km': 500, 'i_deg': 98.0, 'raan_deg': 0.0}).describe()
+    assert abs(o['perigee_km'] - 500) < 1e-6 and abs(o['apogee_km'] - 800) < 1e-6
 
 
 if __name__ == '__main__':

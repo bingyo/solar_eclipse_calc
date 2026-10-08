@@ -308,6 +308,20 @@ def candidate_windows(ctx, observer, body, jd_a, jd_b, params):
     return [(a, b) for a, b, _ in merged], tc
 
 
+def tle_decay(ctx, observer, jd_a, jd_b, margin=0.6):
+    """A TLE observer after the decay that SGP4 predicts is meaningless (inside the Earth): the end of
+    the period limited to before it, and the warnings -> (jd_b, warnings); ObserverError if the
+    whole period is after it."""
+    jd_d = observer.decay_jd(jd_b + margin)
+    if jd_d is None:
+        return jd_b, []
+    date = iso_utc(ctx.ts.tt_jd(jd_d))[:10]
+    if jd_d - margin <= jd_a:
+        raise ObserverError(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、指定期間は計算できません', date=date))
+    return min(jd_b, jd_d - margin), [tr('SGP4 ではこの衛星は {date} ごろに再突入するため、それ以降は計算していません',
+                                         date=date)]
+
+
 def eclipse_new_moons(ctx, jd, params):
     """The geocentric new moons within 1 d of the times ``jd`` that have a solar eclipse somewhere on
     the Earth (the penumbra touches it: the test of search_global)."""
@@ -371,15 +385,8 @@ class LocalSearch:
                 self.observer.survey(self.jd_a, self.jd_b)
             self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
         elif isinstance(self.observer, TLEObserver):
-            jd_d = self.observer.decay_jd(self.jd_b + margin)
-            if jd_d is not None:
-                date = iso_utc(self.ctx.ts.tt_jd(jd_d))[:10]
-                if jd_d - margin <= self.jd_a:
-                    raise ObserverError(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、指定期間は計算できません',
-                                           date=date))
-                self.warnings.append(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、それ以降は計算していません',
-                                        date=date))
-                self.jd_b = min(self.jd_b, jd_d - margin)
+            self.jd_b, w = tle_decay(ctx, self.observer, self.jd_a, self.jd_b, margin)
+            self.warnings += [x for x in w if x not in self.warnings]
         wins, _ = candidate_windows(ctx, self.observer, self.body, self.jd_a - margin,
                                     self.jd_b + margin, self.p)
         self.observer.prepare(ctx, wins)
@@ -664,7 +671,11 @@ class LocalSearch:
         x1, x4 = e['jd_c1'] - self.jd0, e['jd_c4'] - self.jd0
         dur = x4 - x1
         pad = max(dur * 0.08, 90.0 / DAY_S)
-        x = np.linspace(x1 - pad, x4 + pad, n)
+        lo, hi = x1 - pad, x4 + pad
+        jd = getattr(self.observer.vf, 'jd', None)
+        if jd is not None and jd.size:      # tabulated orbits (Horizons, SSCWeb) end where their data ends
+            lo, hi = max(lo, jd[0] - self.jd0 + 1e-7), min(hi, jd[-1] - self.jd0 - 1e-7)
+        x = np.linspace(lo, hi, n)
         d = self.details(x)
         t0 = self.ctx.time(self.jd0, x[0])
         res = {k: (np.round(np.asarray(v, float), 6).tolist() if k not in ('time',) else None)

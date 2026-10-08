@@ -94,6 +94,8 @@ class GroundObserver(Observer):
             raise ObserverError(tr('緯度は -90〜90 度で指定してください'))
         if not (-180 <= lon <= 360):
             raise ObserverError(tr('経度は -180〜180 度で指定してください'))
+        if not -12_000 <= elevation_m <= 100_000:      # also NaN
+            raise ObserverError(tr('標高は -12,000〜100,000 m で指定してください'))
         self.lat = float(lat)
         self.lon = float(((lon + 180.0) % 360.0) - 180.0)
         self.elevation_m = float(elevation_m)
@@ -117,6 +119,12 @@ class FixedITRSObserver(Observer):
     """Earth-fixed point far above the surface, e.g. an ideal geostationary satellite."""
 
     def __init__(self, lat, lon, height_km, name=''):
+        if not (-90 <= lat <= 90):
+            raise ObserverError(tr('緯度は -90〜90 度で指定してください'))
+        if not (-180 <= lon <= 360):
+            raise ObserverError(tr('経度は -180〜180 度で指定してください'))
+        if not 0 <= height_km < 1e7:
+            raise ObserverError(tr('入力値を解釈できません: {exc}', exc=f'height_km={height_km}'))
         self.lat, self.lon, self.height_km = float(lat), float(lon), float(height_km)
         self.name = name or tr('地球固定点 {lon:.2f}°', lon=lon)
         self.vf = wgs84.latlon(self.lat, self.lon, elevation_m=self.height_km * 1000.0)
@@ -312,10 +320,12 @@ def sun_synchronous_inclination(a_km, e=0.0):
 class KeplerObserver(Observer):
     def __init__(self, ctx, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg,
                  j2=True, name=''):
-        if a_km * (1 - e) <= WGS84_A:
-            raise ObserverError(tr('近地点高度が地表より低くなっています'))
+        if not all(math.isfinite(v) for v in (epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg)):
+            raise ObserverError(tr('軌道要素は数値で指定してください'))
         if not (0 <= e < 1):
             raise ObserverError(tr('離心率は 0 以上 1 未満で指定してください'))
+        if a_km * (1 - e) <= WGS84_A:
+            raise ObserverError(tr('近地点高度が地表より低くなっています'))
         self.name = name or tr('軌道要素で指定した衛星')
         self.params = dict(epoch_jd_tt=epoch_jd_tt, a_km=a_km, e=e, i_deg=i_deg,
                            raan_deg=raan_deg, argp_deg=argp_deg, m_deg=m_deg, j2=j2)
@@ -802,6 +812,7 @@ def build_observer(ctx, spec, parse_time=None):
         else:
             hp = float(spec.get('perigee_alt_km', spec.get('alt_km', 500)))
             ha = float(spec.get('apogee_alt_km', hp))
+            hp, ha = min(hp, ha), max(hp, ha)      # given the other way round
             a = WGS84_A + 0.5 * (hp + ha)
             spec = dict(spec, e=(ha - hp) / (2 * a))
         e = float(spec.get('e', 0))
