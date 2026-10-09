@@ -112,6 +112,12 @@ Mac 版を Developer ID で署名して公証するには `--sign` に設定フ�
 python tools/build_bundles.py --target macos --sign <署名用フォルダ>/signing.json
 ```
 
+### Cloudflare で公開する（インストール不要）
+
+画面を [Cloudflare Containers](https://developers.cloudflare.com/containers/) で動かすと、PC にインストールしなくても URL を開くだけで使えます（Workers Paid プランが必要）。
+リポジトリの Secrets に Cloudflare の API トークンとアカウント ID を登録すると、GitHub Actions が公開し、`main` への push のたびに公開し直します。手順と料金の目安は [docs/cloudflare.md](docs/cloudflare.md) にあります。
+`Dockerfile` は Docker が動くほかの場所でも使えます（`docker build -t eclipsecalc .` → `docker run --rm -p 8080:8080 eclipsecalc`）。
+
 ## できること
 
 | 観測者 | 内容 |
@@ -219,6 +225,10 @@ tests/test_saved_result.py  保存した結果を開いたときの詳細の再�
 tools/validate_hinode_images.py  「ひので」の観測画像での検証
 tools/build_bundles.py      Python・ライブラリ・暦を同梱した配布用 ZIP の作成
 packaging/macos/            Mac 版アプリの起動部分（launcher.c・launch.sh）と署名設定の見本
+Dockerfile                  画面のコンテナ（Python・ライブラリ・暦 de440s と de440 を同梱）
+cloudflare/                 Cloudflare Containers で公開する Worker と設定
+.github/workflows/deploy-cloudflare.yml  Cloudflare への公開（GitHub Actions）
+docs/cloudflare.md          Cloudflare で公開する手順
 docs/hinode_validation.md   「ひので」による検証の記録
 docs/macos_signing.md       Mac 版の署名と公証の手順
 docs/images/                README の画面例（en/ は英語版の README 用）

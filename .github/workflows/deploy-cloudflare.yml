@@ -1,0 +1,71 @@
+# 画面を Cloudflare Containers に公開する（手順は docs/cloudflare.md）。
+# リポジトリの Secrets に CLOUDFLARE_API_TOKEN と CLOUDFLARE_ACCOUNT_ID がないときは何もしない。
+name: Deploy to Cloudflare
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - eclipsecalc/**
+      - static/**
+      - run.py
+      - cli.py
+      - requirements.txt
+      - Dockerfile
+      - .dockerignore
+      - cloudflare/**
+      - .github/workflows/deploy-cloudflare.yml
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check the secrets
+        id: secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN と CLOUDFLARE_ACCOUNT_ID が未設定のため公開しません（docs/cloudflare.md）"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.secrets.outputs.skip != 'true'
+
+      # 公開する前に、同じイメージが起動して計算できることを確かめる（wrangler はこのビルドのキャッシュを使う）
+      - name: Build and test the image
+        if: steps.secrets.outputs.skip != 'true'
+        run: |
+          docker build -t eclipsecalc .
+          docker run -d --name eclipsecalc -p 8080:8080 eclipsecalc
+          for i in $(seq 60); do curl -fsS http://localhost:8080/api/info > /dev/null && break; sleep 1; done
+          curl -fsS http://localhost:8080/api/info | grep -q '"de440.bsp"'
+          curl -fsS http://localhost:8080/api/search -H 'Content-Type: application/json' \
+            -d '{"observer": {"type": "ground", "lat": 35.68, "lon": 139.77}, "start": "2030-01-01", "end": "2031-01-01"}' \
+            | grep -q '"events"'
+          curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/search -H 'Origin: https://example.com' \
+            -H 'Content-Type: application/json' -d '{}' | grep -q 403
+
+      - name: Show the container log
+        if: failure() && steps.secrets.outputs.skip != 'true'
+        run: docker logs eclipsecalc || true
+
+      - uses: actions/setup-node@v5
+        if: steps.secrets.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - name: Deploy
+        if: steps.secrets.outputs.skip != 'true'
+        working-directory: cloudflare
+        run: |
+          npm install --no-audit --no-fund
+          npx wrangler deploy

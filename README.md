@@ -114,6 +114,12 @@ To sign the Mac version with a Developer ID and notarize it, give a settings fil
 python tools/build_bundles.py --target macos --sign <signing folder>/signing.json
 ```
 
+### Publishing on Cloudflare (nothing to install)
+
+Running the page on [Cloudflare Containers](https://developers.cloudflare.com/containers/) lets anyone use it just by opening a URL, with nothing installed on the PC (the Workers Paid plan is needed).
+Once a Cloudflare API token and the account ID are registered in the repository's Secrets, GitHub Actions publishes it, and publishes it again on every push to `main`. [docs/cloudflare.md](docs/cloudflare.md) (in Japanese) gives the steps and an estimate of the cost.
+The `Dockerfile` also works anywhere else Docker runs (`docker build -t eclipsecalc .` → `docker run --rm -p 8080:8080 eclipsecalc`).
+
 ## What it can do
 
 | Observer | Details |
@@ -221,6 +227,10 @@ tests/test_saved_result.py  Tests of recomputing the details when saved results 
 tools/validate_hinode_images.py  Validation with Hinode's images
 tools/build_bundles.py      Building the distribution ZIPs with Python, the libraries and the ephemeris
 packaging/macos/            The start-up part of the Mac app (launcher.c, launch.sh) and a sample of the signing settings
+Dockerfile                  Container of the page (with Python, the libraries and the ephemerides de440s and de440)
+cloudflare/                 The Worker and settings for publishing on Cloudflare Containers
+.github/workflows/deploy-cloudflare.yml  Publishing on Cloudflare (GitHub Actions)
+docs/cloudflare.md          Steps for publishing on Cloudflare (in Japanese)
 docs/hinode_validation.md   Record of the validation with Hinode (in Japanese)
 docs/macos_signing.md       Signing and notarizing the Mac version (in Japanese)
 docs/images/                Screenshots for the READMEs (en/ for this English README)

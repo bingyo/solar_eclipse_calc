@@ -1,0 +1,8 @@
+# Dockerfile が使うものだけを送る
+*
+!requirements.txt
+!run.py
+!cli.py
+!eclipsecalc/
+!static/
+**/__pycache__

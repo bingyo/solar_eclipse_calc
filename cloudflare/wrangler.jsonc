@@ -1,0 +1,23 @@
+// Cloudflare Containers で画面を公開する設定（手順は docs/cloudflare.md）
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "solar-eclipse-calc",
+  "main": "src/index.js",
+  "compatibility_date": "2025-10-01",
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "EclipseCalc",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      // 1/4 vCPU・メモリ 1 GiB。計算が遅いときは "standard-1"（1/2 vCPU・4 GiB）に
+      "instance_type": "basic",
+      // 計算した現象はサーバーのメモリに覚えるので、全員で 1 台を使う（料金の上限にもなる）
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "ECLIPSE_CALC", "class_name": "EclipseCalc" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EclipseCalc"] }]
+}
