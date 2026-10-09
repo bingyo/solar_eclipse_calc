@@ -1,247 +1,251 @@
-# 日食・太陽面通過 精密計算機
+# Precise Calculator of Solar Eclipses and Transits
 
-日食（月による太陽の食）と、水星・金星の太陽面通過を高精度に計算し、ブラウザで分かりやすく閲覧するツールです。
-観測者は **地上の任意地点**、**人工衛星（TLE / 軌道要素 / 静止衛星 / JPL Horizons の探査機）**、**地球全体** から選べます。
+**English** | [日本語](README.ja.md)
 
-![2027年8月2日の皆既日食の経路と最大食分の分布](docs/images/global_map.png)
+A tool that computes solar eclipses (the Sun eclipsed by the Moon) and transits of Mercury and Venus with high precision, and shows them clearly in your browser.
+The observer can be **any place on the ground**, **an artificial satellite (TLE / orbital elements / geostationary satellite / any spacecraft in JPL Horizons)**, or **the whole Earth**.
+
+![Path of the total solar eclipse of 2 August 2027 and the distribution of the greatest magnitude](docs/images/en/global_map.png)
 
 | | |
 |---|---|
-| ![ルクソールから見た2027年8月2日の皆既日食](docs/images/luxor_view.png) | ![「ひので」が軌道上で見た2011年1月4日の金環日食](docs/images/hinode_view.png) |
-| **地上から見た様子**：ルクソール（エジプト）での 2027 年 8 月 2 日の皆既日食。皆既は 6 分 22.6 秒、欠け方を動画で再生できます | **人工衛星から見た様子**：太陽観測衛星「ひので」が 2011 年 1 月 4 日に軌道上で見た金環日食 |
-| ![2026〜2035年に世界で起きる日食・太陽面通過の一覧](docs/images/global_list.png) | ![打ち上げ前の衛星について平均近点角ごとの結果をまとめた画面](docs/images/prelaunch_sweep.png) |
-| **一覧**：2026〜2035 年に世界で起きる日食と太陽面通過（種類・食分・中心食の継続時間・サロス番号） | **打ち上げ前の検討**：高度 680 km の太陽同期軌道から見る 2027 年 8 月 2 日の日食を、衛星の位置（平均近点角）ごとに計算 |
+| ![The total solar eclipse of 2 August 2027 seen from Luxor](docs/images/en/luxor_view.png) | ![The annular eclipse of 4 January 2011 seen in orbit by Hinode](docs/images/en/hinode_view.png) |
+| **Seen from the ground**: the total solar eclipse of 2 August 2027 at Luxor (Egypt). Totality lasts 6 min 22.6 s, and the progress of the eclipse can be played as an animation | **Seen from a satellite**: the annular eclipse that the solar observatory Hinode saw in orbit on 4 January 2011 |
+| ![List of the solar eclipses and transits in the world from 2026 to 2035](docs/images/en/global_list.png) | ![Results for a satellite before launch, summarised by mean anomaly](docs/images/en/prelaunch_sweep.png) |
+| **List**: the solar eclipses and transits in the world from 2026 to 2035 (type, magnitude, duration of the central eclipse, Saros number) | **Planning before launch**: the eclipse of 2 August 2027 seen from a 680 km sun-synchronous orbit, computed for each position of the satellite (mean anomaly) |
 
-## 起動
+## Getting started
 
-Python をインストールしていなくても使えます。
+You can use it without installing Python.
 
-### 配布用パッケージ（ダウンロード不要）
+### Distribution packages (nothing else to download)
 
-| OS | ファイル | 中身 |
+| OS | File | Contents |
 |---|---|---|
-| Windows 10 / 11 | `solar_eclipse_calc-<版>-windows-x64.zip`（約 66 MB） | フォルダ（`start.bat` で起動） |
-| macOS 11 以降（Apple シリコン・Intel 共通） | `solar_eclipse_calc-<版>-macos.zip`（約 120 MB） | アプリ「日食計算機」 |
+| Windows 10 / 11 | `solar_eclipse_calc-<version>-windows-x64.zip` (about 66 MB) | A folder (start it with `start.bat`) |
+| macOS 11 or later (Apple silicon and Intel) | `solar_eclipse_calc-<version>-macos.zip` (about 120 MB) | The app "日食計算機" (Eclipse Calculator) |
 
-Python・ライブラリ・JPL 暦（1849〜2150 年）が入っているので、初回からインターネットに接続しなくても数秒で起動します。
-ブラウザで `http://127.0.0.1:8765/` が開きます（ポートが使用中の場合は、起動中の本ツールをそのまま開くか、空いているポートを自動で選びます）。
-PC の設定やインストール済みの Python には影響せず、管理者権限も不要です。
+Python, the libraries and the JPL ephemeris (1849–2150) are included, so it starts in a few seconds without an internet connection, even the first time.
+`http://127.0.0.1:8765/` opens in your browser (if the port is in use, it opens the copy of this tool that is already running, or picks a free port automatically).
+It does not touch your PC's settings or any Python you have installed, and it needs no administrator rights.
+
+The calculator's screen and messages are in English if your browser is set to English (you can switch the language with 🌐 at the top right).
 
 **Windows**
 
-1. ZIP を右クリック →「すべて展開」し、展開したフォルダの `start.bat` をダブルクリックします。
-2. 初回に「Windows によって PC が保護されました」と表示されたら、「詳細情報」→「実行」を押します。
-3. 終了するときは、ブラウザの計算機の画面（タブ）をすべて閉じます。約 10 秒後に、起動時に開いた黒い画面（コマンドプロンプト）も自動で閉じます。黒い画面を閉じても終了できます。不要になったらフォルダごと削除してください。
+1. Right-click the ZIP → "Extract All", then double-click `start.bat` in the extracted folder.
+2. If "Windows protected your PC" appears the first time, click "More info" → "Run anyway".
+3. To quit, close all the calculator's pages (tabs) in the browser. About 10 seconds later, the black window (Command Prompt) that opened at start-up closes by itself. Closing the black window also quits. When you no longer need it, delete the whole folder.
 
 **Mac**
 
-1. ZIP を Safari などのブラウザでダウンロードしてダブルクリックで展開し、「日食計算機」を「アプリケーション」フォルダにドラッグします。
-2. 「日食計算機」をダブルクリックします。初回は「インターネットからダウンロードされたアプリケーションです。開いてもよろしいですか？」と表示されるので「開く」を押します。
-3. 終了するときは、計算機のタブ（またはブラウザ）を閉じるか、画面右上の「終了」を押します。タブをすべて閉じると、計算機も約 10 秒後に自動で終了します。
+1. Download the ZIP with a browser such as Safari, double-click it to extract it, and drag "日食計算機" to the "Applications" folder.
+2. Double-click "日食計算機". The first time, macOS asks whether you are sure you want to open an app downloaded from the internet; click "Open".
+3. To quit, close the calculator's tab (or the browser), or click "Quit" at the top right of the page. When all its tabs are closed, the calculator also quits by itself after about 10 seconds.
 
-ZIP をリモートデスクトップの「Windows App」やメッセージアプリなどから Mac に保存すると、macOS がアプリの実行を禁止し、「アプリケーション"日食計算機"を開けません」と表示されます。ブラウザでダウンロードし直してください。
+If you save the ZIP to the Mac from the Remote Desktop app "Windows App", a messaging app or the like, macOS blocks the app and says that the application "日食計算機" can't be opened. Download it again with a browser.
 
-追加した暦などは `~/Library/Application Support/SolarEclipseCalc`、ログは `~/Library/Logs/SolarEclipseCalc.log` に保存されます。不要になったら、アプリとこのフォルダを削除してください。
-Mac 版は Apple の Developer ID で署名し、公証を受けて配布します（[作り方](docs/macos_signing.md)）。公証していない Mac 版は、初回に「"日食計算機"は開いていません」と表示されたあと、「システム設定」→「プライバシーとセキュリティ」の下にある「このまま開く」を押すと開けます。
+Ephemerides you add are saved in `~/Library/Application Support/SolarEclipseCalc`, and the log in `~/Library/Logs/SolarEclipseCalc.log`. When you no longer need them, delete the app and this folder.
+The Mac version is signed with an Apple Developer ID and notarized for distribution ([how it is built](docs/macos_signing.md), in Japanese). A Mac version that is not notarized shows '"日食計算機" Not Opened' the first time; then open it with "Open Anyway" under "System Settings" → "Privacy & Security".
 
-1550〜2650 年を扱う場合は、画面の「詳細設定」にある **「de440.bsp を追加」** を押すと DE440（約 114 MB）をダウンロードし、暦として選べるようになります。
-Windows で新しい版に入れ替えるときは、追加した暦（`data/de440.bsp`）を新しいフォルダの `data/` に移すとダウンロードを省けます（Mac ではそのまま引き継がれます）。
+To cover 1550–2650, click **"Add de440.bsp"** in "Advanced settings" on the page. It downloads DE440 (about 114 MB), which you can then select as the ephemeris.
+On Windows, when you move to a new version, you can skip the download by moving the added ephemeris (`data/de440.bsp`) into `data/` of the new folder (on a Mac it carries over as it is).
 
-### ソース一式から起動
+### Starting from the source
 
-リポジトリの ZIP などの配布用パッケージでないフォルダでも、`start.bat`（Windows）／`start.command`（macOS、Linux は端末で `sh start.command`）で起動できます。
-この場合は初回だけ、Python の実行環境（[uv](https://github.com/astral-sh/uv) と Python 3.12）、必要なライブラリ、JPL 暦をインターネットからダウンロードするため、数分かかります。2 回目以降は数秒で起動し、オフラインでも動きます。
-Python 本体とライブラリはフォルダ内の `.runtime/` にだけ置かれます（約 200 MB）。
+A folder that is not a distribution package, such as a ZIP of the repository, can also be started with `start.bat` (Windows) / `start.command` (macOS; on Linux run `sh start.command` in a terminal).
+In that case the first start downloads a Python runtime ([uv](https://github.com/astral-sh/uv) and Python 3.12), the libraries and the JPL ephemeris from the internet, which takes a few minutes. After that it starts in a few seconds and works offline.
+Python and the libraries are placed only in `.runtime/` inside the folder (about 200 MB).
 
-Mac でダウンロードしたソース一式は、`start.command` をダブルクリックすると「壊れているため開けません」と表示されます（署名のないスクリプトのため）。最初の 1 回だけ「ターミナル」を開いて `sh ` と入力し（sh の後に半角スペース）、`start.command` をターミナルのウィンドウにドラッグして return キーを押してください。このときフォルダから「インターネットから入手」の印を外すので、2 回目からはダブルクリックで起動できます。
+On a Mac, double-clicking `start.command` in a downloaded copy of the source says that it is damaged and can't be opened (because the script is not signed). The first time only, open "Terminal", type `sh ` (sh followed by a space), drag `start.command` into the Terminal window and press return. This removes the "downloaded from the internet" mark from the folder, so from then on you can start it with a double-click.
 
-### Python をお使いの場合
+### If you use Python
 
 ```bash
 pip install -r requirements.txt
 python run.py
 ```
 
-DE440 は `python tools/download_ephemeris.py de440` でも追加できます。
-`start.bat` / `start.command` で準備した Python（`.runtime/venv/`）でテストやツールを実行することもできます（例: Windows は `.runtime\venv\Scripts\python tests\test_validation.py`、Mac・Linux は `.runtime/venv/bin/python tests/test_validation.py`）。
+DE440 can also be added with `python tools/download_ephemeris.py de440`.
+You can also run the tests and tools with the Python prepared by `start.bat` / `start.command` (`.runtime/venv/`), e.g. `.runtime\venv\Scripts\python tests\test_validation.py` on Windows and `.runtime/venv/bin/python tests/test_validation.py` on Mac and Linux.
 
-### コマンドラインでの計算（生成 AI からの利用）
+### Computing from the command line (for generative AI)
 
-画面と同じ計算を、画面を開かずに `cli.py` で実行できます。観測者は画面と同じく、次のどれでも指定できます。
-軌道情報などを生成 AI（Claude Code などのコーディングエージェント）に渡すと、AI が `cli.py` で計算・確認できるようにしてあり、手順と出力の項目を [docs/cli.md](docs/cli.md) に、AI 向けの要点を [AGENTS.md](AGENTS.md) にまとめています。
+`cli.py` runs the same computations as the page, without opening it. The observer can be any of the following, as on the page.
+If you give orbit information and the like to a generative AI (a coding agent such as Claude Code), the AI can compute and check it with `cli.py`: the steps and the output fields are in [docs/cli.md](docs/cli.md) (in Japanese), and the key points for AI agents in [AGENTS.md](AGENTS.md).
 
-| 観測者 | 引数 |
+| Observer | Arguments |
 |---|---|
-| 軌道6要素 | `--epoch`（元期, UTC）`--a --e --i --raan --argp --m` |
-| 計画中の軌道 | `--epoch` と `--alt`（または `--perigee-alt --apogee-alt`）、`--sso`（または `--i`）、`--ltan`（または `--raan`）。`--sweep 10` で平均近点角ごとの一括計算 |
-| TLE | `--tle ファイル`（`-` で標準入力）、`--norad 番号`（CelesTrak から最新の TLE を取得）。元期から何週間も先なら `--sweep 10` で衛星の位置による幅を確認 |
-| 静止衛星・探査機・過去の軌道 | `--geo-lon 経度`、`--horizons ID`（JPL Horizons）、`--sscweb ID`（NASA SSCWeb） |
-| 地上の地点・地球全体 | `--lat --lon --elev`、`--city 地点名`、`--global` |
-| JSON | `--request ファイル`（Web API と同じ形） |
+| Six orbital elements | `--epoch` (epoch, UTC) `--a --e --i --raan --argp --m` |
+| Planned orbit | `--epoch` and `--alt` (or `--perigee-alt --apogee-alt`), `--sso` (or `--i`), `--ltan` (or `--raan`). `--sweep 10` computes for each mean anomaly |
+| TLE | `--tle FILE` (`-` for standard input), `--norad NUMBER` (fetches the latest TLE from CelesTrak). For events weeks after the epoch, check the spread due to the satellite's position with `--sweep 10` |
+| Geostationary satellites, spacecraft, past orbits | `--geo-lon LONGITUDE`, `--horizons ID` (JPL Horizons), `--sscweb ID` (NASA SSCWeb) |
+| A place on the ground, the whole Earth | `--lat --lon --elev`, `--city NAME`, `--global` |
+| JSON | `--request FILE` (the same form as the Web API) |
 
 ```bash
-python cli.py --epoch 2027-07-30T12:00:00 --a 7058.1 --e 0.0012 --i 98.13 --raan 220.5 --argp 90 --m 45 --start 2027-07-25 --end 2027-08-10 --tz 9
+python cli.py --epoch 2027-07-30T12:00:00 --a 7058.1 --e 0.0012 --i 98.13 --raan 220.5 --argp 90 --m 45 --start 2027-07-25 --end 2027-08-10 --lang en
 ```
 
 ```bash
-python cli.py --city 東京 --start 2026-01-01 --end 2056-01-01 --phenomena moon --tz 9 --detail
+python cli.py --city Tokyo --start 2026-01-01 --end 2056-01-01 --phenomena moon --tz 9 --detail --lang en
 ```
 
-期間は `--start` `--end`（UTC の日付）、現象は `--phenomena`（`moon`, `mercury`, `venus`。既定はすべて）で指定します。
-出力は `--format table`（既定。`--tz 9` で日本時間）、`csv`（画面の「一覧をCSV保存」と同じ列）、`json`（計算条件 `request` つき。生成 AI 向け）から選べ、`--detail` で接触ごとの時刻・太陽高度・位置角なども出力します。`--dry-run` は計算せずに入力の解釈（衛星の周期・高度など）だけを出力します。
-表示の言語は `--lang`（`ja`, `en`, `fr`, `ru`, `es`, `zh`, `hi`）で選べます（既定は環境の言語）。
-ほかの引数は `python cli.py --help` で確認できます。
-Python をインストールしていない場合は、Windows の配布用パッケージなら `.runtime\python-windows-x86_64\python.exe -E -s cli.py …`、ソース一式を `start.bat` / `start.command` で準備した場合は `.runtime/venv/` の Python で実行します。
-ファイルやパイプへの出力は UTF-8 です。Windows PowerShell 5.1 で出力を受け取って文字化けするときは、`-o ファイル` で保存してください。
+The period is given by `--start` `--end` (dates in UTC), and the phenomena by `--phenomena` (`moon`, `mercury`, `venus`; all by default).
+The output is `--format table` (the default; `--tz 9` shows Japan time), `csv` (the same columns as "Save list as CSV" on the page) or `json` (with the computation settings `request`; meant for generative AI). `--detail` also outputs the time, Sun altitude, position angle and so on of each contact. `--dry-run` computes nothing and outputs only how the input was interpreted (the satellite's period, altitude and so on).
+The language is chosen with `--lang` (`ja`, `en`, `fr`, `ru`, `es`, `zh`, `hi`; by default the language of the environment).
+See `python cli.py --help` for the other arguments.
+Without Python installed, use `.runtime\python-windows-x86_64\python.exe -E -s cli.py …` in the Windows distribution package, or the Python in `.runtime/venv/` if you prepared the source with `start.bat` / `start.command`.
+Output to files and pipes is UTF-8. If the output is garbled when Windows PowerShell 5.1 receives it, save it with `-o FILE`.
 
-### 配布用パッケージの作り方
+### Building the distribution packages
 
 ```bash
 python tools/build_bundles.py
 ```
 
-`dist/` に Windows 用と macOS 用の ZIP ができます（数分。Windows でも Mac 用を作れます）。[uv](https://github.com/astral-sh/uv) と git が必要です。
-中身は git で管理しているファイル（`git add` 済みのもの）、`data/de440s.bsp`、Python 3.12（[python-build-standalone](https://github.com/astral-sh/python-build-standalone)。バージョンとチェックサムはスクリプトに固定）と、`requirements.txt` を満たす作成時点のライブラリです。
-ライブラリのバイトコードはあらかじめコンパイルしてあり、初回の起動も速くなっています。Linux 用は `--target linux-x86_64` で作れます。
+This makes ZIPs for Windows and macOS in `dist/` (a few minutes; the Mac one can be built on Windows too). It needs [uv](https://github.com/astral-sh/uv) and git.
+They contain the files tracked by git (those already `git add`ed), `data/de440s.bsp`, Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone); the version and checksums are fixed in the script) and the libraries satisfying `requirements.txt` at the time of building.
+The libraries' bytecode is compiled in advance, so even the first start is fast. A Linux package can be built with `--target linux-x86_64`.
 
-Mac 版を Developer ID で署名して公証するには `--sign` に設定ファイルを指定します。証明書と API キーの用意から順に [docs/macos_signing.md](docs/macos_signing.md) にまとめています。
+To sign the Mac version with a Developer ID and notarize it, give a settings file to `--sign`. [docs/macos_signing.md](docs/macos_signing.md) (in Japanese) goes through it step by step, starting from preparing the certificate and the API key.
 
 ```bash
-python tools/build_bundles.py --target macos --sign <署名用フォルダ>/signing.json
+python tools/build_bundles.py --target macos --sign <signing folder>/signing.json
 ```
 
-## できること
+## What it can do
 
-| 観測者 | 内容 |
+| Observer | Details |
 |---|---|
-| 地上の地点 | 緯度・経度・標高（WGS84）。都市プリセット、地図クリックでの地点選択。地平線・大気差・最低太陽高度を考慮 |
-| 人工衛星 | NORAD 番号で CelesTrak から最新 TLE を取得（SGP4）／TLE 貼り付け／ケプラー軌道要素（J2 永年摂動つき。軌道6要素〔元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角〕の直接入力のほか、高度での指定、太陽同期軌道の傾斜角の自動計算、昇交点の地方時での指定に対応）／理想静止衛星／JPL Horizons の任意探査機（JWST、SOHO 等）／NASA SSCWeb の科学衛星の過去軌道（「ひので」等。過去の現象の再現用）。**地球による太陽の遮蔽**（大気高度も指定可）を考慮 |
-| 地球全体 | 世界のどこかで見える日食を全探索（種類・γ・食分・最大食地点・中心食継続時間・中心食帯幅・サロス番号）。太陽面通過は地心接触時刻 |
+| A place on the ground | Latitude, longitude and elevation (WGS84). City presets, picking a place by clicking a map. Takes the horizon, atmospheric refraction and a minimum Sun altitude into account |
+| Artificial satellite | Latest TLE fetched from CelesTrak by NORAD number (SGP4) / pasted TLE / Keplerian orbital elements (with J2 secular perturbations; besides entering the six orbital elements directly [epoch, semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of perigee, mean anomaly], an orbit can be given by its altitude, with the inclination of a sun-synchronous orbit computed automatically, and by the local time of the ascending node) / ideal geostationary satellite / any spacecraft in JPL Horizons (JWST, SOHO, etc.) / past orbits of science satellites from NASA SSCWeb (Hinode etc.; for reproducing past events). Takes into account **the Sun being hidden by the Earth** (the height of the atmosphere can also be given) |
+| The whole Earth | Finds every solar eclipse seen anywhere in the world (type, γ, magnitude, point of greatest eclipse, duration of the central eclipse, width of the central path, Saros number). Transits are given with geocentric contact times |
 
-結果画面（上の「はじめの画面」「計算結果」で、ようこそ画面と計算結果を行き来できます。詳細の「↑ 一覧に戻る」で一覧へ戻ります）:
+The results (switch between the start page and the results with "Start page" / "Results" at the top; "↑ Back to the list" in the details returns to the list):
 
-- **一覧**: 日付・種類・最大時刻・食分/中心間距離・継続時間・見えるか（日の出/日の入り帯食、地球による遮蔽）・サロス。種類フィルタ、CSV 保存。**「結果を保存」で一覧と計算条件を保存し、右上の「保存した結果を開く」であとから同じ画面で見返せます**（一覧は保存したときのまま表示し、行をクリックすると保存した条件で詳細・動画・地図を計算し直します。`cli.py --format json` の出力も開けます）
-- **概要**: 平易な日本語の説明文、主要指標、第1〜第4接触の時刻・太陽高度/方位・位置角 P/天頂角 V・衛星直下点
-- **見え方（動画）**: 太陽と月/惑星の円盤を実スケールで再生（天頂が上／天の北が上／地球方向が下）。地平線、衛星から見た地球の縁、皆既中のコロナも表示
-- **グラフ**: 食分・食面積率（通過は中心間距離）、太陽高度または「地球の縁からの太陽の離角」
-- **経過図**: 太陽面上の月/惑星の経路、第1接触・最大・第4接触の円、接触の時刻と位置（太陽中心からの角度秒）、主な値を 1 枚にまとめた図（天の北が上／太陽の自転軸の北が上。PNG・SVG で保存）
-- **地図**: 中心線、皆既/金環帯の南北限界線、10 分ごとの本影、部分食の限界線、最大食分の分布（太陽が地平線上の時間帯のみ）、太陽面通過の可視地域、衛星直下点軌跡。**地図をクリックするとその地点の見え方を計算**
-- **データ**: JSON（「保存した結果を開く」で開き直せます）・時系列 CSV・テキスト
+- **List**: date, type, time of maximum, magnitude / distance between centres, duration, visibility (eclipse in progress at sunrise or sunset, hidden by the Earth) and Saros. Filter by type, save as CSV. **"Save results" saves the list and the settings, and "Open saved results" at the top right shows them again later on the same page** (the list is shown as it was saved; clicking a row recomputes the details, animation and map with the saved settings. The output of `cli.py --format json` can be opened too)
+- **Overview**: a description in plain language, the key values, and for the 1st to 4th contacts the time, Sun altitude/azimuth, position angle P / vertex angle V and the sub-satellite point
+- **View (animation)**: plays the discs of the Sun and the Moon or planet at true scale (zenith up / celestial north up / Earth down). Also shows the horizon, the limb of the Earth seen from a satellite and the corona during totality
+- **Charts**: magnitude and obscuration (for transits, the distance between centres), and the Sun's altitude or its "angle above the Earth's limb"
+- **Eclipse diagram**: one figure with the path of the Moon or planet across the Sun, the discs at the 1st contact, maximum and 4th contact, the times and positions of the contacts (in arcseconds from the centre of the Sun) and the key values (celestial north up / the Sun's rotation axis north up; saved as PNG or SVG)
+- **Map**: central line, northern and southern limits of the path of totality or annularity, the umbra every 10 minutes, limits of the partial eclipse, distribution of the greatest magnitude (only while the Sun is above the horizon), the region where a transit is visible, and the satellite's ground track. **Click the map to compute the circumstances at that place**
+- **Data**: JSON (can be opened again with "Open saved results"), time-series CSV, text
 
-表示時刻のタイムゾーンは右上で切り替えられます（計算は UTC/TT で行い、表示のみ変換）。
+The time zone of the displayed times can be switched at the top right (computations are done in UTC/TT; only the display is converted).
 
-画面の言語は右上の 🌐 で、日本語・English・Français・Русский・Español・中文・हिन्दी から選べます（初回はブラウザの言語に合わせ、選んだ言語は次回も使います）。エラーや注意のメッセージも選んだ言語で表示します。`cli.py` の出力も `--lang` で同じ言語から選べます。文書は日本語です。
+The language of the page is chosen with 🌐 at the top right, from 日本語, English, Français, Русский, Español, 中文 and हिन्दी (the first time it follows the browser's language, and the chosen language is used next time too). Error and warning messages are also shown in the chosen language. The output of `cli.py` can be in the same languages with `--lang`. The other documents (in `docs/`) are in Japanese.
 
-### 打ち上げ前の衛星
+### Satellites before launch
 
-日食が起きる日は何年も前から決まっていますが、衛星から見た時刻や欠け方は「その瞬間に衛星が軌道上のどこにいるか」で大きく変わり、これは打ち上げて軌道が決まるまで分かりません。
-「軌道要素」に計画値（高度、太陽同期軌道なら昇交点の地方時）を入れ、**「平均近点角を変えて一括計算」** を選ぶと、衛星の位置を 5〜45° 刻みで変えて計算し、現象ごとに次の範囲をまとめます。
+The dates of solar eclipses are known years in advance, but the times and the depth of an eclipse seen from a satellite depend strongly on "where the satellite is in its orbit at that moment", which is not known until the satellite is launched and its orbit is fixed.
+Enter the planned values in "Orbital elements" (the altitude and, for a sun-synchronous orbit, the local time of the ascending node) and select **"Compute for many mean anomalies (planning before launch)"**. The satellite's position is varied in steps of 5–45°, and for each event the following ranges are summarised:
 
-- 衛星から見えるか、1 回の日食で何回遭遇するか（低軌道では周回ごとに繰り返し遭遇します）
-- 最大食分の範囲と、皆既・金環になる位相の割合
-- 最大の時刻の範囲（位相ごとの結果の表・グラフから、各ケースの詳細も開けます）
+- whether it is seen from the satellite, and how many times the satellite meets one eclipse (in low orbits it meets it again on each orbit)
+- the range of the greatest magnitude, and the share of phases with a total or annular eclipse
+- the range of the time of maximum (from the table and chart of the results by phase, the details of each case can be opened too)
 
-例: 高度 680 km・昇交点 18 時の太陽同期軌道から見る 2027-08-02 の皆既日食は、どの位相でも 2〜3 回の部分日食になりますが、最大食分は 0.42〜1.03 と位相で大きく変わり、皆既になるのは 36 通り中 2 通りです。
-打ち上げ後は NORAD 番号で最新の TLE を取得して計算し直し、現象の数日前にもう一度計算すると秒単位の時刻になります（[「ひので」での検証](docs/hinode_validation.md)では、3〜4 週間前の軌道要素で 5〜20 秒、直前の軌道で 1 秒程度の差でした）。
+Example: the total solar eclipse of 2027-08-02 seen from a 680 km sun-synchronous orbit with the ascending node at 18:00 is a partial eclipse met 2–3 times for every phase, but the greatest magnitude varies widely with the phase, from 0.42 to 1.03, and only 2 of the 36 cases are total.
+After launch, fetch the latest TLE by NORAD number and compute again; computing once more a few days before the event gives times to the second (in [the validation with Hinode](docs/hinode_validation.md) (in Japanese), the difference was 5–20 s with orbital elements from 3–4 weeks before, and about 1 s with the orbit just before the event).
 
-## 精度と検証
+## Accuracy and validation
 
-NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validation.py` で再現できます）。
-接触時刻の比較では NASA と同じ半径（太陽 959.63″、金星 8.41″・水星 3.36″ at 1 AU）を使用しています。
+Comparison with the values published by NASA (Espenak & Meeus); reproducible with `python tests/test_validation.py`.
+For the contact times the same radii as NASA are used (Sun 959.63″, Venus 8.41″ and Mercury 3.36″ at 1 AU).
 
-| 現象 | 項目 | NASA 公表値 | 本ツール |
+| Phenomenon | Item | NASA | This tool |
 |---|---|---|---|
-| 2012 金星の太陽面通過（地心） | 第1〜第4接触 | 22:09:38 / 22:27:34 / 01:29:36 / 04:31:39 / 04:49:35 | 22:09:37.5 / 22:27:34.0 / 01:29:36.7 / 04:31:39.1 / 04:49:35.7 |
-| 2004 金星の太陽面通過（地心） | 第1〜第4接触 | 05:13:29 / 05:32:55 / 08:19:44 / 11:06:33 / 11:25:59 | 05:13:30.0 / 05:32:55.8 / 08:19:44.7 / 11:06:33.4 / 11:25:59.3 |
-| 2019 水星の太陽面通過（地心） | 第1〜第4接触・最小距離 | 12:35:27 / 12:37:08 / 15:19:48 / 18:02:33 / 18:04:14・75.9″ | 12:35:27.2 / 12:37:08.4 / 15:19:48.1 / 18:02:33.0 / 18:04:14.3・75.9″ |
-| 2017-08-21 皆既日食 | γ・食分・継続・幅 | 0.4367・1.0306・2分40秒・115 km | 0.4367・1.0306・2分40.0秒・114.7 km |
-| 2024-04-08 皆既日食 | γ・食分・継続・幅 | 0.3431・1.0566・4分28秒・197.5 km | 0.3431・1.0566・4分28.0秒・197.5 km |
-| 2023-04-20 金環皆既日食 | 食分・継続 | 1.0132・1分16秒 | 1.0132・1分16.0秒 |
-| 2023-10-14 金環日食 | 食分・継続 | 0.9520・5分17秒 | 0.9520・5分17.1秒 |
-| 2001〜2100 年の日食 | 件数 | 部分77・金環72・皆既68・金環皆既7 | 同数 |
+| 2012 transit of Venus (geocentric) | 1st–4th contacts | 22:09:38 / 22:27:34 / 01:29:36 / 04:31:39 / 04:49:35 | 22:09:37.5 / 22:27:34.0 / 01:29:36.7 / 04:31:39.1 / 04:49:35.7 |
+| 2004 transit of Venus (geocentric) | 1st–4th contacts | 05:13:29 / 05:32:55 / 08:19:44 / 11:06:33 / 11:25:59 | 05:13:30.0 / 05:32:55.8 / 08:19:44.7 / 11:06:33.4 / 11:25:59.3 |
+| 2019 transit of Mercury (geocentric) | 1st–4th contacts, least distance | 12:35:27 / 12:37:08 / 15:19:48 / 18:02:33 / 18:04:14, 75.9″ | 12:35:27.2 / 12:37:08.4 / 15:19:48.1 / 18:02:33.0 / 18:04:14.3, 75.9″ |
+| 2017-08-21 total solar eclipse | γ, magnitude, duration, width | 0.4367, 1.0306, 2 min 40 s, 115 km | 0.4367, 1.0306, 2 min 40.0 s, 114.7 km |
+| 2024-04-08 total solar eclipse | γ, magnitude, duration, width | 0.3431, 1.0566, 4 min 28 s, 197.5 km | 0.3431, 1.0566, 4 min 28.0 s, 197.5 km |
+| 2023-04-20 hybrid solar eclipse | magnitude, duration | 1.0132, 1 min 16 s | 1.0132, 1 min 16.0 s |
+| 2023-10-14 annular solar eclipse | magnitude, duration | 0.9520, 5 min 17 s | 0.9520, 5 min 17.1 s |
+| Solar eclipses of 2001–2100 | count | partial 77, annular 72, total 68, hybrid 7 | same |
 
-さらに、地図用の「影の円錐」モデルで求めた皆既帯の限界線を、独立した地点計算（Skyfield による地上観測者の視位置）で検証しています。限界線の 100 m 外側は部分日食、100 m 内側は皆既日食になることを確認しています。
+In addition, the limits of the path of totality obtained with the "shadow cone" model used for the map are checked with independent computations for single places (apparent positions for an observer on the ground with Skyfield): 100 m outside a limit the eclipse is partial, and 100 m inside it is total.
 
-### 太陽観測衛星「ひので」の実観測との比較
+### Comparison with observations by the solar observatory Hinode
 
-「ひので」（高度約 680 km）が 2006〜2017 年に軌道上で遭遇した日食・太陽面通過を、NASA SSCWeb の過去軌道を使って計算し、実際の観測画像と国立天文台の予報に照らしました（`python tests/test_hinode.py`、画像の測定は `python tools/validate_hinode_images.py`。詳細は [docs/hinode_validation.md](docs/hinode_validation.md)）。
+The solar eclipses and transits that Hinode (altitude about 680 km) met in orbit in 2006–2017 were computed from its past orbit in NASA SSCWeb and checked against the actual images and the predictions of the National Astronomical Observatory of Japan (`python tests/test_hinode.py`; the images are measured with `python tools/validate_hinode_images.py`. Details in [docs/hinode_validation.md](docs/hinode_validation.md), in Japanese).
 
-| 比較対象 | 結果 |
+| Compared with | Result |
 |---|---|
-| X 線望遠鏡の画像に写った月の位置（2014・2016・2017 年） | 実際の現象との差 0.4〜3.5 秒（軌道の沿軌道誤差 3〜28 km 相当）。画像の回転角は太陽の自転軸方位角と 0.4° 以内で一致 |
-| 国立天文台（相馬充氏）の予報 8 現象・20 パス | 現象ごとにほぼ一定の差（軌道要素の違い）。それを除いた残差は RMS 0.2〜0.65 秒 |
-| 観測報告 11 現象（食分、画像の時刻、軌道上でだけ起きた食、金星の第1接触が地球の影に入ったこと等） | すべて整合 |
+| Position of the Moon in X-ray telescope images (2014, 2016, 2017) | 0.4–3.5 s from the actual event (equivalent to an along-track error of 3–28 km in the orbit). The rotation of the images agrees with the position angle of the Sun's rotation axis within 0.4° |
+| Predictions by the National Astronomical Observatory of Japan (Mitsuru Sôma) for 8 events, 20 passes | An almost constant offset for each event (from the different orbital elements). With it removed, the residuals are 0.2–0.65 s RMS |
+| Observation reports of 11 events (magnitude, image times, eclipses that happened only in orbit, the 1st contact of Venus falling in the Earth's shadow, etc.) | All consistent |
 
-低軌道衛星からの食の計算精度は、ほぼ衛星の軌道の精度で決まります（沿軌道 7.5 km ≒ 1 秒）。
+The accuracy of eclipses computed for a satellite in low orbit is set almost entirely by the accuracy of the satellite's orbit (7.5 km along track ≈ 1 s).
 
-### 計算方法の要点
+### How it computes
 
-- **天体位置**: JPL DE440/DE440s（Skyfield）。観測者ごとに光行時間を反復計算（10⁻¹² 日まで収束）
-- **時刻系**: IERS 観測値と長期モデルによる ΔT（手動指定も可）、閏秒を含む UTC
-- **接触判定**: 観測者から見た太陽と月（惑星）の視半径・中心間角距離。光行差は全方向に共形写像として作用し接触（円の接線条件）を変えないため、BCRS 方向（天体位置）で判定し、高度・方位・位置角は視位置で計算
-- **探索**: 地心合（新月・内合）で候補時間帯を絞り込み、観測者の最大視差を考慮して窓幅を決定。両天体の実際の角速度から求めたリプシッツ定数による分枝限定法で、短い食（低軌道衛星では数分）も取りこぼさないよう走査し、接触は二分法で 0.1 ms、最大は黄金分割で収束
-- **地球全体の食**: 太陽・月の地心視位置を ITRS（地球固定座標）に変換し、太陽と月に接する半影・本影円錐と WGS84 楕円体の交差を直接計算（ベッセル要素と等価）。限界線は影の輪郭の包絡線（輪郭上で境界の時間微分が 0 になる点）として求めます
-- **月の半径**: NASA 方式（外接 k=0.2725076、内接 k=0.272281）で月縁の山・谷の平均的な影響を近似。平均半径・任意値も選択可
-- **衛星**: SGP4（TLE）、2 体＋J2 永年摂動（軌道要素）、地球固定点（静止衛星）、Horizons の位置・速度のエルミート補間。地球の遮蔽は WGS84 楕円体の縁の局所半径＋指定した大気高度で判定
+- **Positions of bodies**: JPL DE440/DE440s (Skyfield). The light time is iterated for each observer (converged to 10⁻¹² day)
+- **Time scales**: ΔT from IERS observations and a long-term model (can also be set by hand), UTC including leap seconds
+- **Contacts**: from the apparent radii of the Sun and the Moon (planet) and the angular distance between their centres as seen by the observer. Aberration acts on all directions as a conformal map and does not change contacts (the tangency of circles), so contacts are found from BCRS directions (positions of the bodies), and altitude, azimuth and position angles are computed from apparent positions
+- **Search**: candidate windows are narrowed down with the geocentric conjunctions (new Moon, inferior conjunction), and the window width is set from the observer's largest parallax. A branch-and-bound scan with a Lipschitz constant from the actual angular velocities of both bodies makes sure that short eclipses (a few minutes for a satellite in low orbit) are not missed. Contacts are converged to 0.1 ms by bisection, and the maximum by golden-section search
+- **Eclipses over the whole Earth**: the geocentric apparent positions of the Sun and the Moon are converted to ITRS (Earth-fixed coordinates), and the intersections of the penumbral and umbral cones tangent to the Sun and the Moon with the WGS84 ellipsoid are computed directly (equivalent to Besselian elements). The limit lines are found as envelopes of the shadow outlines (the points on the outline where the time derivative of the boundary is zero)
+- **Radius of the Moon**: the NASA convention (k = 0.2725076 for external contacts, k = 0.272281 for internal ones) approximates the average effect of the mountains and valleys on the lunar limb. The mean radius or any value can also be chosen
+- **Satellites**: SGP4 (TLE), two-body motion plus J2 secular perturbations (orbital elements), a point fixed to the Earth (geostationary satellite), Hermite interpolation of Horizons positions and velocities. Being hidden by the Earth is judged from the local radius of the WGS84 ellipsoid at the limb plus the given height of the atmosphere
 
-### 制限事項
+### Limitations
 
-- 月縁の地形（凹凸）は考慮していないため、実際の接触時刻は ±1〜2 秒程度ずれることがあります（特に皆既の始まり・終わり）。
-- 将来・過去の ΔT は不確かです。時刻そのものよりも「食が見える場所（経度）」に影響します。
-- TLE は元期から日数が経つと位置誤差が大きくなります（画面に警告を表示します）。数か月以上先の衛星からの予報は目安としてください。CelesTrak からは最新の TLE しか取得できないため、過去の現象を衛星から計算するときは当時の TLE を貼り付けるか、「NASA SSCWeb」（衛星 ID で指定。例: hinode）を使ってください。
-- 大気差は太陽高度の表示と「見えるか」の判定に使い、円盤の変形は描画していません（接触時刻には影響しません）。
-- 初回の Python 環境の準備と暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
+- The topography (unevenness) of the lunar limb is not taken into account, so the actual contact times can differ by about ±1–2 s (especially the beginning and end of totality).
+- Future and past ΔT are uncertain. This affects "where (at which longitude) the eclipse is seen" more than the times themselves.
+- The position error of a TLE grows with time after its epoch (the page shows a warning). Take predictions for a satellite months or more ahead as a guide only. CelesTrak provides only the latest TLE, so to compute past events from a satellite, paste a TLE from that time or use "NASA SSCWeb" (given by satellite ID, e.g. hinode).
+- Atmospheric refraction is used for the displayed Sun altitude and for judging visibility; the flattening of the discs is not drawn (it does not affect the contact times).
+- An internet connection is needed for preparing Python and downloading the ephemeris the first time, for CelesTrak, JPL Horizons and NASA SSCWeb, and for the "Detailed map" of the map. Everything else works offline.
 
-## ファイル構成
+## Files
 
 ```
-start.bat / start.command   起動ファイル（Windows / Linux・Mac のソース一式）。同梱の Python で起動し、なければ初回に .runtime/ へ自動で準備
-run.py                      起動スクリプト（Python から直接起動する場合）
+start.bat / start.command   Start-up files (Windows / Linux and Mac, from the source). Start with the bundled Python, or prepare one in .runtime/ the first time if there is none
+run.py                      Start-up script (when starting directly from Python)
 eclipsecalc/
-  context.py                暦・時刻系の読み込み（暦の自動ダウンロード）
-  net.py                    HTTPS 通信（OS の証明書ストアで検証）
-  observers.py              観測者モデル（地上・TLE・軌道要素・静止・Horizons・SSCWeb）
-  conjunctions.py           新月・内合の探索（候補時間帯）
-  local.py                  観測者ごとの接触時刻・最大・可視性の計算
-  shadow.py                 ITRS での半影/本影円錐
-  global_eclipse.py         地球全体の日食探索
-  eclipse_map.py            中心線・限界線・食分分布・通過可視図
-  server.py                 Web API（FastAPI）
-  i18n.py                   Web API のエラー・注意の翻訳
-static/                     画面（HTML/CSS/JavaScript、Leaflet、Natural Earth 地図）
-  i18n.js                   画面の翻訳（日本語の文言をキーに 6 言語）
-tests/test_validation.py    NASA 公表値との比較テスト
-tests/test_hinode.py        「ひので」の予報・観測報告との比較テスト
-tests/test_orbit_planning.py  太陽同期軌道・昇交点地方時・位相の一括計算のテスト
-tests/test_saved_result.py  保存した結果を開いたときの詳細の再計算のテスト
-tools/validate_hinode_images.py  「ひので」の観測画像での検証
-tools/build_bundles.py      Python・ライブラリ・暦を同梱した配布用 ZIP の作成
-packaging/macos/            Mac 版アプリの起動部分（launcher.c・launch.sh）と署名設定の見本
-docs/hinode_validation.md   「ひので」による検証の記録
-docs/macos_signing.md       Mac 版の署名と公証の手順
-docs/images/                README の画面例
-data/                       JPL 暦（初回起動時に自動取得、git 管理外）
-.runtime/                   Python・ライブラリ（配布用パッケージに同梱、またはソース一式では初回に準備。git 管理外）
-build/ dist/                配布用 ZIP の作業場所と出力先（git 管理外）
+  context.py                Loading the ephemerides and time scales (automatic download of ephemerides)
+  net.py                    HTTPS (verified with the OS certificate store)
+  observers.py              Observer models (ground, TLE, orbital elements, geostationary, Horizons, SSCWeb)
+  conjunctions.py           Search for new Moons and inferior conjunctions (candidate windows)
+  local.py                  Contact times, maximum and visibility for each observer
+  shadow.py                 Penumbral/umbral cones in ITRS
+  global_eclipse.py         Search for eclipses over the whole Earth
+  eclipse_map.py            Central line, limits, magnitude distribution, transit visibility
+  server.py                 Web API (FastAPI)
+  i18n.py                   Translations of the Web API's errors and warnings
+static/                     The page (HTML/CSS/JavaScript, Leaflet, Natural Earth maps)
+  i18n.js                   Translations of the page (6 languages keyed by the Japanese text)
+tests/test_validation.py    Comparison with the values published by NASA
+tests/test_hinode.py        Comparison with the predictions and observation reports for Hinode
+tests/test_orbit_planning.py  Tests of sun-synchronous orbits, local time of the ascending node and the sweep over phases
+tests/test_saved_result.py  Tests of recomputing the details when saved results are opened
+tools/validate_hinode_images.py  Validation with Hinode's images
+tools/build_bundles.py      Building the distribution ZIPs with Python, the libraries and the ephemeris
+packaging/macos/            The start-up part of the Mac app (launcher.c, launch.sh) and a sample of the signing settings
+docs/hinode_validation.md   Record of the validation with Hinode (in Japanese)
+docs/macos_signing.md       Signing and notarizing the Mac version (in Japanese)
+docs/images/                Screenshots for the READMEs (en/ for this English README)
+data/                       JPL ephemerides (downloaded on the first start; not tracked by git)
+.runtime/                   Python and the libraries (bundled in the distribution packages, or prepared the first time from the source; not tracked by git)
+build/ dist/                Working area and output of the distribution ZIPs (not tracked by git)
 ```
 
-### API（抜粋）
+### API (excerpt)
 
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
-  - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
-  - 軌道要素（`kepler`）では `"sso": true`（傾斜角を自動計算）、`"ltan_h": 18.0`（昇交点の地方時で軌道面を指定）も使えます
-- `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler` または `tle` の衛星の平均近点角を変えて一括計算（期間 1 年以内）
-- `POST /api/ephemeris/download?name=de440.bsp` … JPL 暦を `data/` にダウンロード（画面の「de440.bsp を追加」）
-- `POST /api/shutdown` … 計算機を終了（Mac 版アプリの「終了」。`run.py --app` で起動したときだけ有効）
-- `GET /api/page/stream` … 画面が開いている間つなぎ続けるイベントストリーム。`run.py` がブラウザを開いて起動したときは、これがすべて切れて 10 秒たつと終了します（`--no-browser` では終了しません）
-- `GET /api/event/{id}` … 接触時刻と時系列、`GET /api/event/{id}/map` … 地図データ、`POST /api/local` … 地図上の地点の見え方
+  - observer examples: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
+  - With orbital elements (`kepler`), `"sso": true` (inclination computed automatically) and `"ltan_h": 18.0` (orbital plane given by the local time of the ascending node) can also be used
+- `POST /api/phase_sweep` … the same form as `/api/search` plus `"step_deg": 10`; computes a `kepler` or `tle` satellite for many mean anomalies (period of at most 1 year)
+- `POST /api/ephemeris/download?name=de440.bsp` … downloads a JPL ephemeris into `data/` ("Add de440.bsp" on the page)
+- `POST /api/shutdown` … quits the calculator ("Quit" in the Mac app; only when started with `run.py --app`)
+- `GET /api/page/stream` … an event stream kept open while the page is open. When `run.py` started with opening the browser, it quits 10 seconds after all of these are closed (not with `--no-browser`)
+- `GET /api/event/{id}` … contact times and time series, `GET /api/event/{id}/map` … map data, `POST /api/local` … circumstances at a place on the map
 
-`http://127.0.0.1:8765/docs` で対話的な API ドキュメントを参照できます。
+Interactive API documentation is at `http://127.0.0.1:8765/docs`.
 
-## データとライブラリ
+## Data and libraries
 
-JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、NASA SSCWeb（衛星の過去軌道）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
+JPL DE440 ephemerides and JPL Horizons (NASA/JPL), CelesTrak (TLE), NASA SSCWeb (past orbits of satellites), Skyfield (MIT), sgp4 (MIT), Leaflet (BSD-2), Natural Earth (public domain), OpenStreetMap (ODbL, when the detailed map is shown).
 
-## ライセンス
+## License
 
-[MIT License](LICENSE)。同梱の Leaflet は BSD-2-Clause（[static/vendor/leaflet/LICENSE](static/vendor/leaflet/LICENSE)）です。
+[MIT License](LICENSE). The bundled Leaflet is under BSD-2-Clause ([static/vendor/leaflet/LICENSE](static/vendor/leaflet/LICENSE)).
