@@ -225,6 +225,10 @@
 
   <!-- ======================= 結果 ======================= -->
   <section class="results" aria-live="polite">
+    <nav id="viewNav" class="seg view-nav" aria-label="表示の切り替え" hidden>
+      <button type="button" data-view="welcome">はじめの画面</button>
+      <button type="button" data-view="results">計算結果</button>
+    </nav>
     <div id="welcome" class="card welcome">
       <h2>ようこそ</h2>
       <p data-i18n-html="welcome">左の設定で <b>①現象</b>・<b>②観測者</b>・<b>③期間</b> を選んで「計算する」を押すと、見られる日食や太陽面通過の一覧が表示されます。
@@ -280,12 +284,16 @@
           <h2 id="detailTitle"></h2>
           <p id="detailSub" class="muted"></p>
         </div>
-        <button type="button" class="ghost close" id="closeDetail" aria-label="閉じる">✕</button>
+        <div class="detail-actions">
+          <button type="button" class="ghost small" id="toListBtn">↑ 一覧に戻る</button>
+          <button type="button" class="ghost close" id="closeDetail" aria-label="閉じる">✕</button>
+        </div>
       </div>
       <div class="tabs" role="tablist" id="detailTabs">
         <button type="button" data-tab="overview" class="active">概要</button>
         <button type="button" data-tab="view">見え方（動画）</button>
         <button type="button" data-tab="chart">グラフ</button>
+        <button type="button" data-tab="sheet">経過図</button>
         <button type="button" data-tab="map">地図</button>
         <button type="button" data-tab="data">データ</button>
       </div>
@@ -314,6 +322,19 @@
         <div id="chart1" class="chart"></div>
         <div id="chart2" class="chart"></div>
         <p class="hint">グラフ上をクリックすると、その時刻の見え方に移動します。</p>
+      </div>
+      <div class="tabpane" data-tabpane="sheet" hidden>
+        <div class="row gap">
+          <label class="field">向き
+            <select id="sheetOrient">
+              <option value="north">天の北が上</option>
+              <option value="solar">太陽の自転軸の北が上</option>
+            </select></label>
+          <button type="button" class="secondary small" id="dlSheetPng">PNG で保存</button>
+          <button type="button" class="secondary small" id="dlSheetSvg">SVG で保存</button>
+        </div>
+        <div id="sheet" class="sheet"></div>
+        <p class="hint">太陽の中心から見た位置を角度秒で表します（X は西、Y は北が正）。</p>
       </div>
       <div class="tabpane" data-tabpane="map" hidden>
         <div id="mapStatus" class="status"></div>

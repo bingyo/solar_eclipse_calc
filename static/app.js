@@ -25,7 +25,7 @@ const state = {
   info: null, obsTab: 'ground', satMode: 'celestrak', kInput: 'plan', fetchedTle: null, sscSats: null,
   sweep: null, sweepGroup: 0,
   result: null, filters: new Set(), selectedId: null,
-  detail: null, local: null, stack: [], rootId: null, saved: null,
+  detail: null, local: null, stack: [], rootId: null, saved: null, view: 'welcome',
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
   tleInfo: null, downloadable: [], layerControls: [],
   tleReq: 0, satAutoName: '',     // the latest TLE fetch; the satellite name the page filled in (not typed)
@@ -270,6 +270,8 @@ async function init() {
     if (f) openSavedFile(f);
   });
   $('#closeDetail').addEventListener('click', closeDetail);
+  $('#toListBtn').addEventListener('click', () => scrollToEl($('#resultArea')));
+  $$('#viewNav button').forEach((b) => b.addEventListener('click', () => goView(b.dataset.view)));
   $('#backBtn').addEventListener('click', goBack);
   $$('#detailTabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $$('[data-example]').forEach((b) => b.addEventListener('click', () => runExample(b.dataset.example)));
@@ -277,6 +279,9 @@ async function init() {
   $('#dlJson').addEventListener('click', downloadJson);
   $('#dlCsv').addEventListener('click', downloadSeriesCsv);
   $('#copyText').addEventListener('click', copyText);
+  $('#sheetOrient').addEventListener('change', renderSheet);
+  $('#dlSheetPng').addEventListener('click', downloadSheetPng);
+  $('#dlSheetSvg').addEventListener('click', downloadSheetSvg);
 }
 
 /* ------------------------------------------------------------------ */
@@ -730,9 +735,8 @@ async function runSearch() {
       state.result = null;
       state.saved = null;
       setStatus(st, t('完了（{s} 秒）', { s: r.elapsed_s.toFixed(1) }));
-      $('#welcome').hidden = true;
-      $('#resultArea').hidden = false;
       closeDetail();
+      showView('results');
       renderSweep();
       return;
     }
@@ -744,9 +748,8 @@ async function runSearch() {
     state.saved = null;
     state.filters = new Set();
     setStatus(st, t('完了（{s} 秒）', { s: r.elapsed_s.toFixed(1) }));
-    $('#welcome').hidden = true;
-    $('#resultArea').hidden = false;
     closeDetail();
+    showView('results');
     renderResults();
     if (r.events.length === 1) openDetail(r.events[0].id, { root: true });
   } catch (err) {
@@ -1165,8 +1168,6 @@ function openSavedResult(data, name) {
     try { applyRequestToForm(request); } catch (err) { console.warn(err); }
   }
   closeDetail();
-  $('#welcome').hidden = true;
-  $('#resultArea').hidden = false;
   if (data.groups) {
     state.sweep = r; state.sweepGroup = 0; state.result = null;
     renderSweep();
@@ -1174,6 +1175,7 @@ function openSavedResult(data, name) {
     state.result = r; state.sweep = null; state.filters = new Set();
     renderResults();
   }
+  showView('results');
   setStatus($('#status'), t('「{name}」を開きました', { name }));
 }
 /* One event saved from the detail view ("JSON をダウンロード"): shown as saved; the map and
@@ -1189,12 +1191,10 @@ function openSavedEvent(data, name) {
     try { applyRequestToForm(state.saved.request); } catch (err) { console.warn(err); }
   }
   state.result = null; state.sweep = null;
-  $('#welcome').hidden = true;
-  $('#resultArea').hidden = true;
   state.stack = []; state.rootId = d.id; state.selectedId = null;
   state.detail = d;
   state.local = d.kind === 'global' ? data.local || null : d;
-  $('#detail').hidden = false;
+  showView('results');
   $('#backBtn').hidden = true;
   renderDetailAll(true);
   if (d.kind === 'global' && !state.local) loadGeLocal(d);
@@ -1304,6 +1304,36 @@ function applyRequestToForm(req) {
 }
 
 /* ------------------------------------------------------------------ */
+/* the welcome page and the results                                    */
+/* ------------------------------------------------------------------ */
+/* Show the welcome page or the results (the list and the open event), keeping both. */
+function showView(view) {
+  state.view = view;
+  const res = view === 'results';
+  if (!res) pause();
+  $('#welcome').hidden = res;
+  $('#resultArea').hidden = !res || !(state.result || state.sweep);
+  $('#detail').hidden = !res || !state.detail;
+  updateViewNav();
+}
+function updateViewNav() {
+  $('#viewNav').hidden = !(state.result || state.sweep || state.detail);
+  $$('#viewNav button').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));
+  $('#toListBtn').hidden = !(state.result || state.sweep);
+}
+function goView(view) {
+  const back = view === 'results' && state.view !== 'results';
+  showView(view);
+  if (back && state.detail) showTab(currentTab());     // the canvas and the map get their size again
+  scrollToEl($('.results'));
+}
+/* Scroll to an element, below the bar at the top. */
+function scrollToEl(e) {
+  const y = e.getBoundingClientRect().top + window.scrollY - $('.topbar').offsetHeight - 12;
+  window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+}
+
+/* ------------------------------------------------------------------ */
 /* detail                                                              */
 /* ------------------------------------------------------------------ */
 async function openDetail(id, { root = false, push = false } = {}) {
@@ -1324,7 +1354,7 @@ async function openDetail(id, { root = false, push = false } = {}) {
     state.selectedId = root ? id : state.selectedId;
     $$('#eventTable tbody tr').forEach((tr) => tr.classList.toggle('selected', tr.dataset.id === state.selectedId));
     state.local = d.kind === 'global' ? null : d;
-    $('#detail').hidden = false;
+    showView('results');
     $('#backBtn').hidden = state.stack.length === 0;
     renderDetailAll(true);
     setStatus(st, '');
@@ -1342,6 +1372,7 @@ async function loadGeLocal(d) {
     renderOverview();
     setupViewer();
     renderCharts();
+    if (currentTab() === 'sheet') renderSheet();
   } catch (err) { console.warn(err); }
 }
 function closeDetail() {
@@ -1350,6 +1381,8 @@ function closeDetail() {
   state.detail = null; state.local = null; state.playing = false;
   state.selectedId = null;
   $$('#eventTable tbody tr').forEach((tr) => tr.classList.remove('selected'));
+  if (!state.result && !state.sweep && state.view === 'results') showView('welcome');     // nothing left to show
+  else updateViewNav();
 }
 function goBack() {
   const id = state.stack.pop();
@@ -1362,6 +1395,7 @@ function showTab(tab) {
   if (tab === 'map') loadMap();
   if (tab === 'view') { resizeCanvas(); drawDisk(); }
   if (tab === 'chart') renderCharts();
+  if (tab === 'sheet') renderSheet();
   if (tab === 'data') renderData();
 }
 function renderDetailAll(reset) {
@@ -1377,6 +1411,7 @@ function renderDetailAll(reset) {
     showTab(currentTab());
   } else {
     renderCharts();
+    if (currentTab() === 'sheet') renderSheet();
     if (currentTab() === 'map') loadMap(true);
     if (currentTab() === 'data') renderData();
   }
@@ -1952,6 +1987,319 @@ function updateCursor() {
     const cur = box.querySelector('.cursor');
     if (cur && box._X) { const x = box._X(state.t); cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* one-sheet diagram (経過図)                                          */
+/* ------------------------------------------------------------------ */
+/* Position angle of the Sun's rotation axis, degrees east of the celestial north (Meeus, ch. 25 and 29; about 0.01°). */
+function solarP(ms) {
+  const R = Math.PI / 180, jd = ms / 86400000 + 2440587.5, T = (jd - 2451545) / 36525;
+  const L0 = 280.46646 + 36000.76983 * T + 0.0003032 * T * T;
+  const M = (357.52911 + 35999.05029 * T - 0.0001537 * T * T) * R;
+  const C = (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.sin(M) + (0.019993 - 0.000101 * T) * Math.sin(2 * M) + 0.000289 * Math.sin(3 * M);
+  const om = (125.04 - 1934.136 * T) * R;
+  const lam = (L0 + C - 0.00569 - 0.00478 * Math.sin(om)) * R;
+  const eps = (23.439291 - 0.0130042 * T + 0.00256 * Math.cos(om)) * R;
+  const K = (73.6667 + 1.3958333 * (jd - 2396758) / 36525) * R;
+  return (Math.atan(-Math.cos(lam) * Math.tan(eps)) + Math.atan(-Math.cos(lam - K) * Math.tan(7.25 * R))) / R;
+}
+/* Rough width of a text in px, to squeeze a long one into its place. */
+function textWidth(s, size) {
+  let w = 0;
+  for (const ch of String(s)) w += /[　-鿿＀-￯]/.test(ch) ? size : size * 0.58;
+  return w;
+}
+function sheetText(root, x, y, s, { size = 12, fill = '#262b38', anchor = 'start', weight = null, w = 0, transform = null } = {}) {
+  const e = svg('text', { x, y, 'font-size': size, fill, 'text-anchor': anchor });
+  if (weight) e.setAttribute('font-weight', weight);
+  if (transform) e.setAttribute('transform', transform);
+  if (w && textWidth(s, size) * (weight ? 1.06 : 1) > w) { e.setAttribute('textLength', w); e.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+  e.textContent = s;
+  root.append(e);
+  return e;
+}
+function fmtStep(s) { return s < 60 ? t('{s}秒', { s }) : s < 3600 ? t('{m}分', { m: s / 60 }) : t('{h}時間', { h: s / 3600 }); }
+const SHEET_FONT = 'system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, "Noto Sans", sans-serif';
+const SHEET_STYLE = {
+  C1: { color: '#2463c9', dash: '2 4' }, MAX: { color: '#e8850c', dash: '9 5' }, C4: { color: '#19875f', dash: '12 4 2 4' },
+  C2: { color: '#8a3fd1' }, C3: { color: '#8a3fd1' },
+};
+
+function renderSheet() {
+  const box = $('#sheet');
+  const d = state.detail, L = state.local;
+  if (!d || !L || !state.series) { box.innerHTML = `<p class="muted" style="padding:12px">${esc(t('計算中…'))}</p>`; return; }
+  box.replaceChildren(sheetSvg(d, L, $('#sheetOrient').value));
+}
+
+/* The event on one sheet: the body's path across the Sun with its circles at the contacts,
+   the contact times and positions, and the main values (after the NAOJ / Hinode prediction charts). */
+function sheetSvg(d, L, orient) {
+  const s = state.series;
+  const moon = L.body === 'moon', kind = L.observer_kind;
+  const cs = L.contacts;
+  const cmax = cs.find((c) => c.label === 'MAX');
+  const tc = (c) => (new Date(c.time).getTime() - s.t0ms) / 1000;
+  const Pdeg = solarP(new Date(cmax.time).getTime());
+  const rot = orient === 'solar' ? Pdeg * Math.PI / 180 : 0;
+  const cr = Math.cos(rot), sr = Math.sin(rot);
+  // (x, y): arcseconds west and north of the Sun's centre
+  const XY = (xi, eta) => [-(xi * cr - eta * sr), eta * cr + xi * sr];
+  // a square frame around the Sun and the body at the contacts, on a round grid
+  const box = [-cmax.rho_s, cmax.rho_s, -cmax.rho_s, cmax.rho_s];
+  for (const c of cs) {
+    const [x, y] = XY(c.xi, c.eta);
+    box[0] = Math.min(box[0], x - c.rho_b); box[1] = Math.max(box[1], x + c.rho_b);
+    box[2] = Math.min(box[2], y - c.rho_b); box[3] = Math.max(box[3], y + c.rho_b);
+  }
+  const span = Math.max(box[1] - box[0], box[3] - box[2]), m = span * 0.03;
+  const gstep = niceStep(span, 12);
+  const nx = Math.ceil((box[1] + m) / gstep) - Math.floor((box[0] - m) / gstep), ny = Math.ceil((box[3] + m) / gstep) - Math.floor((box[2] - m) / gstep);
+  const n = Math.max(nx, ny), ext = n * gstep;
+  const x0 = (Math.floor((box[0] - m) / gstep) - Math.floor((n - nx) / 2)) * gstep, y0 = (Math.floor((box[2] - m) / gstep) - Math.floor((n - ny) / 2)) * gstep;
+
+  const W = 1000, px = 82, py = 96, S = 600, rx = px + S + 34, rw = W - rx - 24;
+  const X = (v) => px + (v - x0) / ext * S, Y = (v) => py + (y0 + ext - v) / ext * S, R = (r) => r / ext * S;
+  const P = (c) => { const [x, y] = XY(c.xi, c.eta); return [X(x), Y(y)]; };
+  const cx = X(0), cy = Y(0);
+  const rowH = 30, tableY = py + S + 58, H = tableY + 26 + rowH * cs.length + 76;
+
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, 'font-family': SHEET_FONT, role: 'img' });
+  root.append(svg('rect', { x: 0, y: 0, width: W, height: H, fill: '#fff' }));
+
+  // title
+  sheetText(root, W / 2, 40, t('{date} の{type}', { date: fmtDate(d.max), type: typeLabel(d) }), { size: 22, weight: 700, anchor: 'middle', w: W - 60 });
+  sheetText(root, W / 2, 66, t('観測者: {obs}', { obs: observerText(L.observer || d.observer) }), { size: 13, fill: '#4a5468', anchor: 'middle', w: W - 60 });
+
+  // grid and axes
+  for (let i = 0; i <= n; i++) {
+    const vx = x0 + i * gstep, vy = y0 + i * gstep;
+    if (i > 0 && i < n) {
+      root.append(svg('line', { x1: X(vx), x2: X(vx), y1: py, y2: py + S, stroke: Math.abs(vx) < 1e-9 ? '#d5dbe5' : '#eef0f4' }));
+      root.append(svg('line', { x1: px, x2: px + S, y1: Y(vy), y2: Y(vy), stroke: Math.abs(vy) < 1e-9 ? '#d5dbe5' : '#eef0f4' }));
+    }
+    root.append(svg('line', { x1: X(vx), x2: X(vx), y1: py + S, y2: py + S + 5, stroke: '#7a8396' }));
+    root.append(svg('line', { x1: px - 5, x2: px, y1: Y(vy), y2: Y(vy), stroke: '#7a8396' }));
+    sheetText(root, X(vx), py + S + 19, String(Math.round(vx * 100) / 100), { size: 11, fill: '#4a5468', anchor: 'middle' });
+    sheetText(root, px - 8, Y(vy) + 4, String(Math.round(vy * 100) / 100), { size: 11, fill: '#4a5468', anchor: 'end' });
+  }
+  sheetText(root, px + S / 2, py + S + 40, t('東 ← X（″）→ 西'), { size: 12, anchor: 'middle' });
+  sheetText(root, 0, 0, orient === 'solar' ? t('太陽の南 ← Y（″）→ 太陽の北') : t('南 ← Y（″）→ 北'),
+    { size: 12, anchor: 'middle', transform: `translate(${px - 52},${py + S / 2}) rotate(-90)` });
+
+  const clip = svg('clipPath', { id: 'sheetClip' });
+  clip.append(svg('rect', { x: px, y: py, width: S, height: S }));
+  const defs = svg('defs');
+  defs.append(clip);
+  root.append(defs);
+  const g = svg('g', { 'clip-path': 'url(#sheetClip)' });
+  root.append(g);
+
+  // the Sun
+  const rs = R(cmax.rho_s);
+  g.append(svg('circle', { cx, cy, r: rs, fill: '#fff4d6', stroke: '#e39b17', 'stroke-width': 1.8 }));
+  g.append(svg('path', { d: `M${cx - 6},${cy}h12M${cx},${cy - 6}v12`, stroke: '#c98a14', 'stroke-width': 1.2 }));
+
+  // the path of the body's centre; dashed where it cannot be seen
+  const hidden = (i) => kind !== 'geocenter' && s.vis[i] <= 0;
+  let anyHidden = false;
+  const segs = [];
+  s.dt_s.forEach((_, i) => {
+    const [x, y] = XY(s.xi[i], s.eta[i]);
+    const pt = `${X(x).toFixed(1)},${Y(y).toFixed(1)}`;
+    const h = hidden(i);
+    anyHidden = anyHidden || h;
+    const last = segs[segs.length - 1];
+    if (last && last.h === h) last.pts.push(pt);
+    else { if (last) last.pts.push(pt); segs.push({ h, pts: [pt] }); }
+  });
+  for (const sg of segs) {
+    g.append(svg('path', { d: 'M' + sg.pts.join('L'), fill: 'none', stroke: sg.h ? '#9aa4b8' : '#262b38', 'stroke-width': 1.6, 'stroke-dasharray': sg.h ? '5 4' : 'none' }));
+  }
+  const at = (tt) => { const [x, y] = XY(sample(s.xi, tt), sample(s.eta, tt)); return [X(x), Y(y)]; };
+  // side of the path away from the Sun at time tt (unit vector on the screen)
+  const outward = (tt) => {
+    const dt = s.dur / 400, [x1, y1] = at(Math.max(0, tt - dt)), [x2, y2] = at(Math.min(s.dur, tt + dt)), [x, y] = at(tt);
+    let nx = -(y2 - y1), ny = x2 - x1;
+    const n = Math.hypot(nx, ny) || 1;
+    nx /= n; ny /= n;
+    if (nx * (x - cx) + ny * (y - cy) < 0) { nx = -nx; ny = -ny; }
+    return [nx, ny];
+  };
+  const t1 = tc(cs[0]), t4 = tc(cs[cs.length - 1]);
+  // name of the Sun across the path from the body at the maximum
+  {
+    const [nx, ny] = outward(tc(cmax)), lx = cx - nx * 0.5 * rs, ly = cy - ny * 0.5 * rs;
+    sheetText(g, lx, ly, t('太陽'), { size: 18, fill: '#b5790f', anchor: 'middle', weight: 700 });
+    sheetText(g, lx, ly + 18, t('視半径 {v}″', { v: cmax.rho_s.toFixed(2) }), { size: 12, fill: '#8a6a1f', anchor: 'middle' });
+  }
+  // arrow for the direction of motion, half-way between the maximum and the end
+  {
+    const ta = (tc(cmax) + t4) / 2;
+    const [x1, y1] = at(ta - s.dur / 200), [x2, y2] = at(ta + s.dur / 200);
+    const a = Math.atan2(y2 - y1, x2 - x1), [x, y] = at(ta), k = 9;
+    const p = (b, r) => `${(x + r * Math.cos(b)).toFixed(1)},${(y + r * Math.sin(b)).toFixed(1)}`;
+    g.append(svg('path', { d: `M${p(a, k)}L${p(a + 2.6, k)}L${p(a - 2.6, k)}Z`, fill: '#262b38' }));
+  }
+  // time marks
+  const steps = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 7200, 10800];
+  const tstep = steps.find((x) => (t4 - t1) / x <= 10) || 10800;
+  for (let ms = Math.ceil((s.t0ms + t1 * 1000) / (tstep * 1000)) * tstep * 1000; ms <= s.t0ms + t4 * 1000; ms += tstep * 1000) {
+    const tt = (ms - s.t0ms) / 1000, [x, y] = at(tt), [nx, ny] = outward(tt);
+    g.append(svg('path', { d: `M${x},${y - 5.5}L${x + 5},${y + 3.5}L${x - 5},${y + 3.5}Z`, fill: '#fff', stroke: '#4a5468', 'stroke-width': 1.2 }));
+    const iso = new Date(ms).toISOString();
+    sheetText(g, x - nx * 15, y - ny * 15 + 4, tstep >= 60 ? fmtHM(iso) : fmtTime(iso),
+      { size: 10, fill: '#7a8396', anchor: -nx > 0.3 ? 'start' : -nx < -0.3 ? 'end' : 'middle' });
+  }
+  // the body at the first contact, the maximum and the last contact
+  for (const c of [cs[0], cmax, cs[cs.length - 1]]) {
+    const [x, y] = P(c), st = SHEET_STYLE[c.label];
+    g.append(svg('circle', { cx: x, cy: y, r: Math.max(R(c.rho_b), 2), fill: 'none', stroke: st.color, 'stroke-width': 1.6, 'stroke-dasharray': st.dash }));
+  }
+  // contact points on the Sun's limb, and the deepest point at the maximum
+  const point = (c) => {
+    const sep = Math.hypot(c.xi, c.eta) || 1, ux = c.xi / sep, uy = c.eta / sep;
+    let k;
+    if (c.label === 'MAX') {      // the Moon's limb on the line of the centres, which gives the magnitude
+      k = c.sep_arcsec - c.rho_b;
+      if (!moon || Math.abs(k) > c.rho_s) return null;
+    } else k = (c.label === 'C2' || c.label === 'C3') && c.rho_b_int > c.rho_s ? -c.rho_s : c.rho_s;
+    return XY(k * ux, k * uy);
+  };
+  for (const c of cs) {
+    const st = SHEET_STYLE[c.label] || SHEET_STYLE.C2, [x, y] = P(c), q = point(c);
+    if (q) g.append(svg('circle', { cx: X(q[0]), cy: Y(q[1]), r: 3.5, fill: st.color }));
+    g.append(svg('rect', { x: x - 4, y: y - 4, width: 8, height: 8, fill: '#fff', stroke: st.color, 'stroke-width': 1.8 }));
+  }
+  // times of the first contact, the maximum and the last contact, and of the others where there is room
+  const main = (c) => c.label === 'C1' || c.label === 'MAX' || c.label === 'C4';
+  const labelled = [];
+  for (const c of [...cs.filter(main), ...cs.filter((c) => !main(c))]) {
+    const st = SHEET_STYLE[c.label] || SHEET_STYLE.C2, [x, y] = P(c);
+    if (!main(c) && labelled.some(([a, b]) => Math.hypot(a - x, b - y) < 40)) continue;
+    labelled.push([x, y]);
+    const [nx, ny] = outward(tc(c));
+    sheetText(g, x + nx * 16, y + ny * 16 + 4, fmtTime(c.time, 1),
+      { size: 11, weight: 700, fill: st.color, anchor: nx > 0.3 ? 'start' : nx < -0.3 ? 'end' : 'middle' });
+  }
+  root.append(svg('rect', { x: px, y: py, width: S, height: S, fill: 'none', stroke: '#7a8396' }));
+
+  // legend
+  let yy = py + 8;
+  sheetText(root, rx, yy, t('凡例'), { size: 13, weight: 700 });
+  yy += 22;
+  const legend = (draw, label) => { draw(rx, yy - 4); sheetText(root, rx + 40, yy, label, { size: 12, w: rw - 40 }); yy += 22; };
+  for (const c of [cs[0], cmax, cs[cs.length - 1]]) {
+    const st = SHEET_STYLE[c.label];
+    legend((x, y) => root.append(svg('line', { x1: x, x2: x + 30, y1: y, y2: y, stroke: st.color, 'stroke-width': 1.8, 'stroke-dasharray': st.dash })),
+      contactName(c.label, L)[0]);
+  }
+  const inner = cs.filter((c) => c.label === 'C2' || c.label === 'C3');
+  if (inner.length) {
+    legend((x, y) => root.append(svg('rect', { x: x + 11, y: y - 4, width: 8, height: 8, fill: '#fff', stroke: SHEET_STYLE.C2.color, 'stroke-width': 1.8 })),
+      [...new Set(inner.map((c) => contactName(c.label, L)[0]))].join(sep()));
+  }
+  legend((x, y) => root.append(svg('line', { x1: x, x2: x + 30, y1: y, y2: y, stroke: '#262b38', 'stroke-width': 1.6 })), t('{body}の中心の経路', { body: bodyJa(L.body) }));
+  if (anyHidden) {
+    legend((x, y) => root.append(svg('line', { x1: x, x2: x + 30, y1: y, y2: y, stroke: '#9aa4b8', 'stroke-width': 1.6, 'stroke-dasharray': '5 4' })),
+      kind === 'ground' ? t('見えない区間（太陽が地平線の下）') : t('見えない区間（太陽が地球に隠される）'));
+  }
+  legend((x, y) => root.append(svg('path', { d: `M${x + 15},${y - 5.5}L${x + 20},${y + 3.5}L${x + 10},${y + 3.5}Z`, fill: '#fff', stroke: '#4a5468', 'stroke-width': 1.2 })),
+    t('{step}ごとの位置', { step: fmtStep(tstep) }));
+  legend((x, y) => root.append(svg('rect', { x: x + 11, y: y - 4, width: 8, height: 8, fill: '#fff', stroke: '#4a5468', 'stroke-width': 1.8 })), t('接触時の中心'));
+  legend((x, y) => root.append(svg('circle', { cx: x + 15, cy: y, r: 3.5, fill: '#4a5468' })), moon ? t('接触点・最も深く欠ける点') : t('接触点'));
+
+  // main values
+  yy += 12;
+  sheetText(root, rx, yy, t('主な値'), { size: 13, weight: 700 });
+  yy += 8;
+  const vals = [];
+  if (moon) {
+    vals.push([t('最大食分'), f4(L.magnitude)], [t('食面積率'), pct(L.obscuration, 2)]);
+    if (L.type === 'total' || L.type === 'annular') vals.push([L.type === 'total' ? t('皆既の継続時間') : t('金環の継続時間'), fmtDur(L.central_duration_s, true)]);
+    vals.push([t('食の継続時間'), fmtDur(L.duration_s)]);
+  } else {
+    vals.push([t('太陽中心との最小距離'), f1(L.min_sep_arcsec) + '″'], [t('経過時間'), fmtDur(L.duration_s)]);
+    if (L.central_duration_s > 0) vals.push([t('内接している時間'), fmtDur(L.central_duration_s)]);
+  }
+  vals.push([t('{body}の視半径（最大時）', { body: bodyJa(L.body) }), `${cmax.rho_b.toFixed(2)}″`]);
+  if (moon) vals.push([t('視直径比（月/太陽）'), f4(L.ratio)], [t('サロス番号'), String((d.kind === 'global' ? d.saros : L.saros) ?? '—')]);
+  if (kind === 'ground') vals.push([t('最大時の太陽高度'), `${cmax.sun_alt.toFixed(1)}°` + paren(azName(cmax.sun_az))]);
+  if (kind === 'space') vals.push([t('見える時間の割合'), pct(L.vis_fraction, 0)]);
+  vals.push([t('太陽の自転軸の方位角 P'), `${Pdeg >= 0 ? '+' : ''}${Pdeg.toFixed(2)}°`]);
+  for (const [k, v] of vals) {
+    sheetText(root, rx, yy + 14, k, { size: 11, fill: '#7a8396', w: rw });
+    sheetText(root, rx, yy + 32, v, { size: 15, weight: 700, w: rw });
+    yy += 38;
+  }
+
+  // contact table
+  const cols = [
+    { h: t('接触'), w: 172 },
+    { h: t('時刻（{tz}）', { tz: tzLabel(d.max) }), w: 122 },
+    { h: t('中心 X, Y（″）'), w: 146 },
+    { h: t('接触点 X, Y（″）'), w: 146 },
+    { h: t('位置角 P'), w: 70 },
+    { h: moon ? t('食分') : t('中心間距離'), w: 80 },
+  ];
+  if (kind === 'ground') cols.push({ h: t('太陽高度'), w: 90 });
+  if (kind === 'space') cols.push({ h: t('地球の縁からの離角'), w: 106 });
+  if (kind !== 'geocenter') cols.push({ h: t('観測'), w: 84 });
+  const tw = cols.reduce((a, c) => a + c.w, 0);
+  let tx = (W - tw) / 2;
+  cols.forEach((c) => { c.x = tx; tx += c.w; });
+  root.append(svg('rect', { x: cols[0].x, y: tableY, width: tw, height: 26, fill: '#f3f5f9' }));
+  for (const c of cols) sheetText(root, c.x + 6, tableY + 17, c.h, { size: 11, weight: 700, fill: '#4a5468', w: c.w - 10 });
+  const xy = (q) => (q ? `(${q[0].toFixed(1)}, ${q[1].toFixed(1)})` : '—');
+  cs.forEach((c, i) => {
+    const y = tableY + 26 + i * rowH;
+    if (c.label === 'MAX') root.append(svg('rect', { x: cols[0].x, y, width: tw, height: rowH, fill: '#fff6e8' }));
+    root.append(svg('line', { x1: cols[0].x, x2: cols[0].x + tw, y1: y + rowH, y2: y + rowH, stroke: '#e3e7ee' }));
+    const [n, sub] = contactName(c.label, L);
+    const st = SHEET_STYLE[c.label] || SHEET_STYLE.C2;
+    root.append(svg('rect', { x: cols[0].x + 6, y: y + 6, width: 7, height: 7, fill: '#fff', stroke: st.color, 'stroke-width': 1.6 }));
+    sheetText(root, cols[0].x + 19, y + 14, n, { size: 12, weight: 700, w: cols[0].w - 24 });
+    if (sub) sheetText(root, cols[0].x + 19, y + 26, sub, { size: 10, fill: '#7a8396', w: cols[0].w - 24 });
+    const cells = [fmtTime(c.time, 1) + (dayDiff(c.time, d.max) ? ' ' + fmtDateShort(c.time) : ''), xy(XY(c.xi, c.eta)), xy(point(c)), `${c.pa.toFixed(1)}°`,
+      moon ? f4(c.magnitude) : `${f1(c.sep_arcsec)}″`];
+    if (kind === 'ground') cells.push(`${c.sun_alt.toFixed(1)}°`);
+    if (kind === 'space') cells.push(`${c.vis.toFixed(1)}°`);
+    if (kind !== 'geocenter') cells.push(c.visible ? t('見える') : kind === 'ground' ? t('地平線下') : t('地球に隠れる'));
+    const hiddenCell = kind !== 'geocenter' && !c.visible ? cells.length - 1 : -1;
+    cells.forEach((v, j) => sheetText(root, cols[j + 1].x + 6, y + 19, v, { size: 12, w: cols[j + 1].w - 10, fill: j === hiddenCell ? '#c0392b' : '#262b38' }));
+  });
+
+  // conditions
+  let fy = tableY + 26 + rowH * cs.length + 24;
+  const p = L.params;
+  const model = t('太陽半径 {v} km', { v: p.sun_radius_km.toFixed(0) }) + sep() + (moon
+    ? t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) })
+    : t('{body}半径 {v} km', { body: bodyJa(L.body), v: (L.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) }));
+  sheetText(root, cols[0].x, fy, [`${t('暦')} ${L.ephemeris}`, `ΔT ${t('{v} 秒', { v: L.delta_t_s.toFixed(2) })}`, model].join(sep()), { size: 11, fill: '#4a5468', w: tw });
+  fy += 18;
+  sheetText(root, cols[0].x, fy, (orient === 'solar' ? t('太陽の自転軸の北が上（P = {p}°）', { p: Pdeg.toFixed(2) }) : t('天の北が上・東が左（空に見えるとおりの向き）'))
+    + sep() + t('X・Y は太陽の中心から測った角度（西・北が正）'), { size: 11, fill: '#4a5468', w: tw });
+  fy += 18;
+  const made = new Date().toISOString();
+  sheetText(root, cols[0].x + tw, fy, `${document.title}${state.info ? ' v' + state.info.version : ''}${sep()}${t('作成 {time}', { time: `${fmtDT(made)} ${tzLabel(made)}` })}`,
+    { size: 10, fill: '#9aa4b8', anchor: 'end', w: tw });
+  return root;
+}
+function sheetFile(ext) { return `eclipse_sheet_${state.detail.max.slice(0, 10)}.${ext}`; }
+function sheetSource() { const e = $('#sheet svg'); return e ? new XMLSerializer().serializeToString(e) : null; }
+function downloadSheetSvg() { const src = sheetSource(); if (src) saveFile(sheetFile('svg'), src, 'image/svg+xml'); }
+function downloadSheetPng() {
+  const e = $('#sheet svg'), src = sheetSource();
+  if (!src) return;
+  const vb = e.viewBox.baseVal, k = 2;
+  const img = new Image();
+  img.onload = () => {
+    const c = el('canvas', { width: vb.width * k, height: vb.height * k });
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob((b) => saveFile(sheetFile('png'), b, 'image/png'));
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src);
 }
 
 /* ------------------------------------------------------------------ */

@@ -51,6 +51,17 @@ async def _language(request: Request, call_next):
 
 
 @app.middleware('http')
+async def _revalidate_page(request: Request, call_next):
+    '''The browser asks again for the page and its scripts each time (304 when unchanged),
+    so that an updated calculator is not shown with the old screen from the cache.'''
+    response = await call_next(request)
+    path = request.url.path
+    if path == '/' or path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.middleware('http')
 async def _same_origin(request: Request, call_next):
     '''Refuse POSTs sent by other web pages: a form on any site could otherwise make the
     calculator download an ephemeris or quit (the endpoints without a JSON body need no preflight).'''
