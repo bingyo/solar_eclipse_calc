@@ -2841,6 +2841,14 @@ MESSAGES = {
         'zh': '正在下载 JPL 历表 {name}（{desc}）：{url}',
         'hi': 'JPL एफ़ेमेरिस {name} ({desc}) डाउनलोड हो रहा है: {url}',
     },
+    'JPL 暦を {url} からダウンロードできませんでした（{exc}）。別の配布元から取得します': {
+        'en': 'Could not download the JPL ephemeris from {url} ({exc}); trying another source',
+        'fr': 'Impossible de télécharger l’éphéméride JPL depuis {url} ({exc})\xa0; essai d’une autre source',
+        'ru': 'Не удалось загрузить эфемериды JPL с {url} ({exc}); пробуем другой источник',
+        'es': 'No se pudo descargar la efeméride JPL desde {url} ({exc}); se prueba otra fuente',
+        'zh': '无法从 {url} 下载 JPL 历表（{exc}），改从其他来源获取',
+        'hi': '{url} से JPL एफ़ेमेरिस डाउनलोड नहीं हो सका ({exc}); दूसरे स्रोत से कोशिश की जा रही है',
+    },
     '{name} は自動ダウンロードに対応していません（対応: {names}）': {
         'en': '{name} cannot be downloaded automatically (available: {names})',
         'fr': '{name} ne peut pas être téléchargé automatiquement (pris en charge : {names})',

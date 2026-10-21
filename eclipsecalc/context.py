@@ -20,7 +20,10 @@ _contexts = {}
 _contexts_lock = threading.Lock()
 
 
-JPL_EPHEMERIS_URL = 'https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/'
+# The JPL ephemerides from JPL's Solar System Dynamics server, or the same files from NAIF when that
+# cannot be reached (as the Dockerfile)
+EPHEMERIS_URLS = ('https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/',
+                  'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/')
 DOWNLOADABLE = {'de440s.bsp': '1849〜2150年・約 32 MB', 'de440.bsp': '1550〜2650年・約 114 MB'}
 
 
@@ -36,7 +39,8 @@ def available_ephemerides():
 
 
 def ensure_ephemeris(name=DEFAULT_EPHEMERIS, log=print):
-    """Download a JPL ephemeris into data/ if it is not there yet."""
+    """Download a JPL ephemeris into data/ if it is not there yet (from the first of EPHEMERIS_URLS
+    that answers)."""
     from .net import download_file
     found = _ephemeris_path(name)
     if found:
@@ -46,9 +50,16 @@ def ensure_ephemeris(name=DEFAULT_EPHEMERIS, log=print):
         raise ValueError(tr('{name} は自動ダウンロードに対応していません（対応: {names}）',
                             name=name, names=', '.join(DOWNLOADABLE)))
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    url = JPL_EPHEMERIS_URL + name
-    log(tr('JPL 暦 {name}（{desc}）をダウンロードしています: {url}', name=name, desc=tr(DOWNLOADABLE[name]), url=url))
-    download_file(url, path, log)
+    for k, base in enumerate(EPHEMERIS_URLS):
+        url = base + name
+        log(tr('JPL 暦 {name}（{desc}）をダウンロードしています: {url}', name=name, desc=tr(DOWNLOADABLE[name]), url=url))
+        try:
+            download_file(url, path, log, timeout=60)
+            break
+        except OSError as exc:          # unreachable, timed out, HTTP error, cut off
+            if k == len(EPHEMERIS_URLS) - 1:
+                raise
+            log(tr('JPL 暦を {url} からダウンロードできませんでした（{exc}）。別の配布元から取得します', url=url, exc=exc))
     log(tr('保存しました: {path}', path=path))
     return path
 

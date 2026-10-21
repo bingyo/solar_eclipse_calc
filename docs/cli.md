@@ -20,7 +20,7 @@ python cli.py --help
 | Windows の配布用パッケージ | `.runtime\python-windows-x86_64\python.exe -E -s cli.py …` |
 
 - 作業フォルダはリポジトリ（`cli.py` のあるフォルダ）にしてください。
-- 初回に暦（`data/de440s.bsp`、約 32 MB）がなければ自動でダウンロードします。
+- 初回に暦（`data/de440s.bsp`、約 32 MB）がなければ自動でダウンロードします（JPL のサーバー ssd.jpl.nasa.gov から。つながらなければ NAIF（naif.jpl.nasa.gov）の同じファイルを使います）。
 - ファイルやパイプへの出力（標準出力・標準エラー出力）は UTF-8 です（コンソールにはそのまま表示します）。Windows PowerShell 5.1 で出力を受け取って文字化けするときは、`-o ファイル`（常に UTF-8）で保存して読むか、先に `[Console]::OutputEncoding = [Text.Encoding]::UTF8` を実行します。環境変数 `PYTHONIOENCODING` を指定すると、その文字コードで出力します。
 - 表示の言語は `--lang`（`ja` 日本語、`en` 英語、`fr` フランス語、`ru` ロシア語、`es` スペイン語、`zh` 中国語、`hi` ヒンディー語）で選びます。指定しなければ環境変数 `ECLIPSECALC_LANG`、なければ環境の言語（`LANG` などの環境変数、Windows の表示言語）、それもなければ英語です。ヘルプ・表・CSV の種類の列・経過の表示・エラー・`warnings` がその言語になります。JSON の項目名と、`type`・`body` などの値は言語によらず同じです（`type_ja` は常に日本語）。
 - インターネットが必要なのは `--norad`（CelesTrak）、`--horizons`（JPL Horizons）、`--sscweb` と `--list-sscweb`（NASA SSCWeb）だけです。ほかの計算はオフラインでできます。

@@ -4,14 +4,22 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-# data/ は ADD より先に作る: ADD --chmod が作る親ディレクトリには x が付かないことがあり（BuildKit の版による、
-# moby/buildkit#5943）、そうなると実行用のユーザーが暦を読めず起動できない。data/cache は CelesTrak・SSCWeb の一覧の保存先
+# 実行用のユーザーが暦を読めるように data/ を作っておく（以前の ADD --chmod は親ディレクトリに x を付けないことがあった。
+# moby/buildkit#5943）。data/cache は CelesTrak・SSCWeb の一覧の保存先
 RUN useradd --system --no-create-home --home-dir /app eclipsecalc \
     && mkdir -p data/cache && chmod 755 data && chown eclipsecalc data/cache
 
-# JPL 暦（de440s = 1849〜2150 年、de440 = 1550〜2650 年）を入れておき、起動のたびのダウンロードをなくす
-ADD --chmod=644 https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s.bsp data/de440s.bsp
-ADD --chmod=644 https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440.bsp data/de440.bsp
+# JPL 暦（de440s = 1849〜2150 年、de440 = 1550〜2650 年）を入れておき、起動のたびのダウンロードをなくす。
+# JPL の SSD のサーバーにつながらないときは、NAIF が公開している同じファイルを使う（eclipsecalc/context.py と同じ順）
+RUN for f in de440s.bsp de440.bsp; do \
+      for base in https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets; do \
+        python -c 'import socket, sys, urllib.request as u; socket.setdefaulttimeout(60); o = u.build_opener(); o.addheaders = [("User-Agent", "eclipsecalc")]; u.install_opener(o); u.urlretrieve(*sys.argv[1:])' \
+          "$base/$f" "data/$f" && break; \
+        echo "could not download $base/$f"; rm -f "data/$f"; \
+      done; \
+      test -s "data/$f" || exit 1; \
+    done \
+    && chmod 644 data/de440s.bsp data/de440.bsp
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

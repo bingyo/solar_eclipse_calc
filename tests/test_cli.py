@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -474,6 +475,48 @@ def test_unreachable_service():
         assert code == 1 and 'JPL Horizons' in d['error'], d
     finally:
         observers._urlopen = saved
+
+
+def test_ephemeris_mirror():
+    # When JPL's server cannot be reached, the ephemeris comes from NAIF (the same file) and the log
+    # says so; when no server answers, the error is raised.
+    import urllib.error
+    from eclipsecalc import context, net
+
+    tried = []
+
+    def ssd_down(url, path, log=print, timeout=120):
+        tried.append(url)
+        if 'ssd.jpl.nasa.gov' in url:
+            raise urllib.error.URLError('timed out (test)')
+        with open(path, 'wb') as f:
+            f.write(b'DAF/SPK (test)')
+
+    def offline(url, path, log=print, timeout=120):
+        tried.append(url)
+        raise urllib.error.URLError('offline (test)')
+
+    saved = context.DATA_DIR, context.BUNDLED_DATA_DIR, net.download_file
+    token = i18n.set_lang('en')
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            context.DATA_DIR = context.BUNDLED_DATA_DIR = Path(tmp)
+            net.download_file = ssd_down
+            log = []
+            path = context.ensure_ephemeris('de440.bsp', log=log.append)
+            assert path == Path(tmp) / 'de440.bsp' and path.read_bytes() == b'DAF/SPK (test)'
+            assert tried == [base + 'de440.bsp' for base in context.EPHEMERIS_URLS] and 'naif.jpl.nasa.gov' in tried[1]
+            assert any('trying another source' in m for m in log), log
+            tried.clear()
+            net.download_file = offline
+            try:
+                context.ensure_ephemeris('de440s.bsp', log=log.append)
+                assert False, 'no error'
+            except urllib.error.URLError:
+                assert len(tried) == 2 and not (Path(tmp) / 'de440s.bsp').exists()
+        finally:
+            context.DATA_DIR, context.BUNDLED_DATA_DIR, net.download_file = saved
+            i18n.reset_lang(token)
 
 
 def test_tle_with_mean_anomaly():

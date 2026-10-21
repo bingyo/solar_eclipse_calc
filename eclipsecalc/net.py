@@ -22,10 +22,10 @@ def urlopen(url, timeout, headers=None):
     return urllib.request.urlopen(req, timeout=timeout, context=ssl_context())
 
 
-def download_file(url, path, log=print):
+def download_file(url, path, log=print, timeout=120):
     """Download ``url`` to ``path`` atomically (via a .part file)."""
     part = str(path) + '.part'
-    with urlopen(url, 120) as resp, open(part, 'wb') as out:
+    with urlopen(url, timeout) as resp, open(part, 'wb') as out:
         total = int(resp.headers.get('Content-Length') or 0)
         done, next_report = 0, 0.1
         while True:
