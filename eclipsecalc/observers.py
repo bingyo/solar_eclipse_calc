@@ -28,7 +28,7 @@ from .constants import (AU_KM, DAY_S, EARTH_OMEGA, GM_EARTH, GM_MOON, J2_EARTH, 
                         MOON_SOI_KM, WGS84_A, WGS84_B)
 from .context import CACHE_DIR
 from .geometry import norm
-from .i18n import tr
+from .i18n import span, tr
 from .net import urlopen as _urlopen
 
 AU_PER_DAY_PER_KM_S = DAY_S / AU_KM
@@ -71,9 +71,23 @@ class Observer:
     r_max_km = WGS84_A
     v_max_km_s = 0.5
     needs_network = False
+    notes = ()              # warnings about the input itself (given with the results)
 
     def prepare(self, ctx, jd_windows):
         """Called before a scan with the TT JD windows that will be evaluated."""
+
+    def limit_period(self, ctx, jd_a, jd_b, margin):
+        """The part of the period [jd_a, jd_b] (TT JDs) that the orbit data cover (the search looks
+        ``margin`` days beyond it) -> (jd_a, jd_b, warnings when it was shortened)."""
+        return jd_a, jd_b, []
+
+    def clip_windows(self, windows):
+        """The windows of a search without the times the orbit data do not cover."""
+        return windows
+
+    def interval_at(self, jd):
+        """The span (TT JDs) of the orbit data around ``jd``, or None if it is unbounded."""
+        return None
 
     def char_time_s(self):
         """Time scale on which the observer's parallax changes appreciably."""
@@ -157,23 +171,16 @@ class FixedITRSObserver(Observer):
                 'lon': self.lon, 'height_km': self.height_km}
 
 
-class TLEObserver(Observer):
-    def __init__(self, ctx, line1, line2, name=''):
-        line1, line2 = line1.strip(), line2.strip()
-        if not (line1.startswith('1 ') and line2.startswith('2 ')):
-            raise ObserverError(tr('TLE の 1 行目は "1 "、2 行目は "2 " で始まる必要があります'))
-        try:
-            self.vf = EarthSatellite(line1, line2, name or None, ctx.ts)
-        except Exception as exc:  # pragma: no cover - sgp4 raises various errors
-            raise ObserverError(tr('TLE を解釈できません: {exc}', exc=exc))
+class SGP4Observer(Observer):
+    """An Earth satellite propagated with SGP4/SDP4 from mean elements (a TLE or a CCSDS OMM)."""
+    notes = ()
+
+    def _init_sgp4(self, ctx, satrec, name, perigee_error):
+        self.vf = EarthSatellite.from_satrec(satrec, ctx.ts)
+        self.vf.name = name or None
         m = self.vf.model
         if m.error or not m.no_kozai > 0:       # sgp4 does not raise on unreadable fields
             raise ObserverError(tr('TLE を解釈できません: {exc}', exc=f'sgp4 error {m.error}'))
-        # lines whose checksum (last digit) does not match: probably mistyped
-        self.bad_lines = [k for k, ln in ((1, line1), (2, line2))
-                          if len(ln) >= 69 and ln[68].isdigit() and int(ln[68]) != _tle_checksum(ln)]
-        self.line1, self.line2 = line1, line2
-        self.name = name or f'NORAD {m.satnum}'
         n = m.no_kozai / 60.0                       # rad/s
         a = (GM_EARTH / n ** 2) ** (1.0 / 3.0)
         e = m.ecco
@@ -184,20 +191,21 @@ class TLEObserver(Observer):
         self.v_max_km_s = math.sqrt(GM_EARTH * (2 / self.r_min_km - 1 / a)) * 1.02
         self.epoch_jd = float(self.vf.epoch.tt)
         if self.r_min_km < WGS84_A:
-            raise ObserverError(tr('この TLE の近地点は地球内部にあります（再突入済みの可能性）'))
+            raise ObserverError(perigee_error)
 
     def char_time_s(self):
         return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
 
-    def warnings_for(self, ctx, jd):
-        out = [tr('TLE の {n} 行目のチェックサムが合いません（写し間違いの可能性があります）', n=k) for k in self.bad_lines]
-        age = abs(jd - self.epoch_jd)
+    def age_warnings(self, age):
         if age > 30:
-            out.append(tr('TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
-                          '結果は目安として扱ってください。', age=age))
-        elif age > 7:
-            out.append(tr('TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。', age=age))
-        return out
+            return [tr('TLE 元期から {age:.0f} 日離れています。SGP4 の位置誤差は数百 km 以上になり得るため、'
+                       '結果は目安として扱ってください。', age=age)]
+        if age > 7:
+            return [tr('TLE 元期から {age:.0f} 日離れています（位置誤差は数 km〜数十 km 程度）。', age=age)]
+        return []
+
+    def warnings_for(self, ctx, jd):
+        return list(self.notes) + self.age_warnings(abs(jd - self.epoch_jd))
 
     def decay_jd(self, jd_b, step=0.05):
         """The first TT Julian date after the epoch (up to ``jd_b``) at which SGP4 reports an error
@@ -209,17 +217,41 @@ class TLEObserver(Observer):
         k = np.flatnonzero((e != 0) | ~(np.linalg.norm(r, axis=1) > WGS84_A + 100.0))     # ~(>) catches NaN
         return float(jd[k[0]]) if k.size else None
 
-    def describe(self):
+    def elements(self):
         m = self.vf.model
-        # the TLE's own mean elements (TEME of epoch; for checking what was read)
-        return {'kind': 'space', 'model': 'tle', 'name': self.name, 'line1': self.line1,
-                'line2': self.line2, 'norad': m.satnum, 'period_min': self.period_min,
-                'perigee_km': self.r_min_km - WGS84_A,
-                'apogee_km': self.a_km * (1 + self.e) - WGS84_A,
-                'a_km': self.a_km, 'e': self.e, 'i_deg': math.degrees(m.inclo),
-                'raan_deg': math.degrees(m.nodeo), 'argp_deg': math.degrees(m.argpo),
-                'm_deg': math.degrees(m.mo), 'mean_motion_rev_per_day': m.no_kozai * 1440 / (2 * math.pi),
-                'bstar': m.bstar, 'epoch_jd_tt': self.epoch_jd}
+        # the mean elements themselves (TEME of epoch; for checking what was read)
+        return {'period_min': self.period_min, 'perigee_km': self.r_min_km - WGS84_A,
+                'apogee_km': self.a_km * (1 + self.e) - WGS84_A, 'a_km': self.a_km, 'e': self.e,
+                'i_deg': math.degrees(m.inclo), 'raan_deg': math.degrees(m.nodeo),
+                'argp_deg': math.degrees(m.argpo), 'm_deg': math.degrees(m.mo),
+                'mean_motion_rev_per_day': m.no_kozai * 1440 / (2 * math.pi), 'bstar': m.bstar,
+                'epoch_jd_tt': self.epoch_jd}
+
+
+class TLEObserver(SGP4Observer):
+    def __init__(self, ctx, line1, line2, name=''):
+        line1, line2 = line1.strip(), line2.strip()
+        if not (line1.startswith('1 ') and line2.startswith('2 ')):
+            raise ObserverError(tr('TLE の 1 行目は "1 "、2 行目は "2 " で始まる必要があります'))
+        try:
+            sat = EarthSatellite(line1, line2, name or None, ctx.ts)
+        except Exception as exc:  # pragma: no cover - sgp4 raises various errors
+            raise ObserverError(tr('TLE を解釈できません: {exc}', exc=exc))
+        # lines whose checksum (last digit) does not match: probably mistyped
+        self.bad_lines = [k for k, ln in ((1, line1), (2, line2))
+                          if len(ln) >= 69 and ln[68].isdigit() and int(ln[68]) != _tle_checksum(ln)]
+        self.line1, self.line2 = line1, line2
+        self.name = name or f'NORAD {sat.model.satnum}'
+        self._init_sgp4(ctx, sat.model, self.name,
+                        tr('この TLE の近地点は地球内部にあります（再突入済みの可能性）'))
+
+    def warnings_for(self, ctx, jd):
+        out = [tr('TLE の {n} 行目のチェックサムが合いません（写し間違いの可能性があります）', n=k) for k in self.bad_lines]
+        return out + super().warnings_for(ctx, jd)
+
+    def describe(self):
+        return dict({'kind': 'space', 'model': 'tle', 'name': self.name, 'line1': self.line1,
+                     'line2': self.line2, 'norad': self.vf.model.satnum}, **self.elements())
 
 
 def _tle_checksum(line):
@@ -890,6 +922,387 @@ class SSCWebObserver(Observer):
 
 
 # ---------------------------------------------------------------------------
+# Tabulated states (CCSDS OEM, OCM trajectories)
+# ---------------------------------------------------------------------------
+def _lagrange_basis(U, u):
+    """Lagrange basis polynomials of the nodes U (n, k) at u (n,), and their derivatives."""
+    n, k = U.shape
+    d = u[:, None] - U
+    L = np.empty((n, k))
+    dL = np.empty((n, k))
+    for j in range(k):
+        others = [m for m in range(k) if m != j]
+        den = np.prod([U[:, j] - U[:, m] for m in others], axis=0)
+        L[:, j] = np.prod([d[:, m] for m in others], axis=0) / den
+        dL[:, j] = sum(np.prod([d[:, m] for m in others if m != q], axis=0) for q in others) / den
+    return L, dL
+
+
+def interpolate_states(seg, s):
+    """Positions and velocities (n, 3) of a table of states at times s (n,) in the table's seconds:
+    ``seg`` = {'s' (m,), 'pos' (m, 3), 'vel' (m, 3) or None, 'method' ('hermite' | 'lagrange' |
+    'linear'), 'npts'}.  Hermite uses positions and velocities (degree 2 npts - 1); Lagrange the
+    positions (velocities interpolated likewise when given, else the derivative)."""
+    x, P, V = seg['s'], seg['pos'], seg['vel']
+    n = x.size
+    method = seg['method'] if V is not None or seg['method'] != 'hermite' else 'lagrange'
+    k = 2 if method == 'linear' else max(2, min(seg['npts'], n))
+    i = np.searchsorted(x, s)
+    i0 = np.clip(i - k // 2, 0, n - k)
+    idx = i0[:, None] + np.arange(k)[None, :]
+    X = x[idx]
+    c = 0.5 * (X[:, 0] + X[:, -1])
+    hs = (X[:, -1] - X[:, 0]) / (k - 1)
+    U = (X - c[:, None]) / hs[:, None]
+    u = (s - c) / hs
+    Pw = P[idx]
+    if method == 'linear':
+        f = (u - U[:, 0]) / (U[:, 1] - U[:, 0])
+        pos = Pw[:, 0] + f[:, None] * (Pw[:, 1] - Pw[:, 0])
+        vel = (V[idx][:, 0] + f[:, None] * (V[idx][:, 1] - V[idx][:, 0]) if V is not None
+               else (Pw[:, 1] - Pw[:, 0]) / (X[:, 1] - X[:, 0])[:, None])
+        return pos, vel
+    L, dL = _lagrange_basis(U, u)
+    if method == 'hermite':
+        Vw = V[idx] * hs[:, None, None]
+        a = np.zeros_like(U)
+        for j in range(k):
+            a[:, j] = sum(1.0 / (U[:, j] - U[:, m]) for m in range(k) if m != j)
+        du = u[:, None] - U
+        L2 = L * L
+        wp = (1 - 2 * a * du) * L2
+        wv = du * L2
+        dwp = -2 * a * L2 + (1 - 2 * a * du) * 2 * L * dL
+        dwv = L2 + du * 2 * L * dL
+        pos = np.einsum('nk,nkc->nc', wp, Pw) + np.einsum('nk,nkc->nc', wv, Vw)
+        vel = (np.einsum('nk,nkc->nc', dwp, Pw) + np.einsum('nk,nkc->nc', dwv, Vw)) / hs[:, None]
+        return pos, vel
+    pos = np.einsum('nk,nkc->nc', L, Pw)
+    vel = (np.einsum('nk,nkc->nc', L, V[idx]) if V is not None
+           else np.einsum('nk,nkc->nc', dL, Pw) / hs[:, None])
+    return pos, vel
+
+
+def _merge_intervals(ivs, gap=1e-6):
+    out = []
+    for a, b in sorted(ivs):
+        if out and a <= out[-1][1] + gap:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
+
+
+def _clip(windows, intervals):
+    out = []
+    for a, b in windows:
+        for lo, hi in intervals:
+            x, y = max(a, lo), min(b, hi)
+            if y > x:
+                out.append((x, y))
+    return out
+
+
+def _period_text(ctx, jd_a, jd_b):
+    from .timeutil import iso_from_jd
+    return span(iso_from_jd(ctx, jd_a)[:16].replace('T', ' '), iso_from_jd(ctx, jd_b)[:16].replace('T', ' '))
+
+
+class _EphemerisVF(VectorFunction):
+    center = 399
+    ephemeris = None
+
+    def __init__(self, name, j0, segments):
+        self.target = name
+        self.j0 = j0
+        self.segs = segments
+
+    def _at(self, t):
+        s = ((np.asarray(t.whole, float) - self.j0[0]) + (np.asarray(t.tt_fraction, float) - self.j0[1])) * DAY_S
+        shape = np.shape(s)
+        s = np.atleast_1d(s)
+        pos = np.empty((s.size, 3))
+        vel = np.empty((s.size, 3))
+        todo = np.ones(s.size, bool)
+        for seg in self.segs:              # in priority order (the first segment that covers a time)
+            m = todo & (s >= seg['lo'] - 1e-3) & (s <= seg['hi'] + 1e-3)
+            if np.any(m):
+                pos[m], vel[m] = interpolate_states(seg, s[m])
+                todo &= ~m
+        if np.any(todo):
+            raise ObserverError(tr('CCSDS の軌道データの範囲外の時刻が要求されました'))
+        return (pos.T.reshape((3,) + shape) / AU_KM, vel.T.reshape((3,) + shape) * AU_PER_DAY_PER_KM_S,
+                None, None)
+
+
+class EphemerisObserver(Observer):
+    """A spacecraft whose orbit is given as tables of states (CCSDS OEM, OCM trajectories):
+    ``segments`` = [{'s': seconds of TT since ``j0`` (a TT JD pair), 'pos', 'vel' (geocentric GCRS,
+    km and km/s, 'vel' None for positions only), 'method', 'npts', 'lo', 'hi' (the useable span,
+    seconds)}] in priority order (the first that covers a time is used)."""
+
+    def __init__(self, ctx, name, segments, j0, info=None, notes=()):
+        self.ctx = ctx
+        self.name = name
+        self.j0 = j0
+        self.segs = segments
+        self.info = dict(info or {})
+        self.notes = list(notes)
+        jd0 = j0[0] + j0[1]
+        self.intervals = _merge_intervals([(jd0 + g['lo'] / DAY_S, jd0 + g['hi'] / DAY_S) for g in segments])
+        self.vf = _EphemerisVF(name, j0, segments)
+        r = np.concatenate([norm(g['pos'].T) for g in segments])
+        v = np.concatenate([norm(g['vel'].T) if g['vel'] is not None
+                            else norm(np.diff(g['pos'], axis=0).T) / np.maximum(np.diff(g['s']), 1e-9)
+                            for g in segments if g['s'].size > 1])
+        self.r_range = (float(r.min()), float(r.max()))
+        self.r_min_km = max(float(r.min()) * 0.98, 100.0)
+        self.r_max_km = float(r.max()) * 1.02
+        self.v_max_km_s = float(v.max()) * 1.05 + 0.01
+
+    def char_time_s(self):
+        return max(60.0, min(self.r_min_km / self.v_max_km_s, 6 * 3600.0))
+
+    def limit_period(self, ctx, jd_a, jd_b, margin):
+        lo, hi = self.intervals[0][0], self.intervals[-1][1]
+        if hi <= jd_a or lo >= jd_b:
+            raise ObserverError(tr('指定期間には CCSDS の軌道データがありません（データの期間 {period}）',
+                                   period=_period_text(self.ctx, lo, hi)))
+        out = []
+        a2, b2 = max(jd_a, lo), min(jd_b, hi)
+        if a2 > jd_a or b2 < jd_b:
+            out.append(tr('CCSDS の軌道データがある期間（{period}）に限定して計算しました', period=_period_text(self.ctx, lo, hi)))
+        gaps = sum(1 for (x, y), (z, w) in zip(self.intervals[:-1], self.intervals[1:]) if z > a2 and y < b2)
+        if gaps:
+            out.append(tr('CCSDS の軌道データが途切れている {n} か所の期間は計算していません', n=gaps))
+        return a2, b2, list(self.notes) + out
+
+    def clip_windows(self, windows):
+        return _clip(windows, self.intervals)
+
+    def interval_at(self, jd):
+        return min(self.intervals, key=lambda iv: 0 if iv[0] <= jd <= iv[1] else min(abs(jd - iv[0]), abs(jd - iv[1])))
+
+    def prepare(self, ctx, jd_windows):
+        for a, b in jd_windows:
+            if not any(lo - 1e-8 <= a and b <= hi + 1e-8 for lo, hi in self.intervals):
+                raise ObserverError(tr('指定した時刻には CCSDS の軌道データがありません（データの期間 {period}）',
+                                       period=', '.join(_period_text(self.ctx, lo, hi) for lo, hi in self.intervals[:4])))
+
+    def warnings_for(self, ctx, jd):
+        return list(self.notes)
+
+    def describe(self):
+        d = {'kind': 'space', 'model': 'ccsds', 'name': self.name}
+        d.update(self.info)
+        d.update(perigee_km=self.r_range[0] - WGS84_A, apogee_km=self.r_range[1] - WGS84_A,
+                 intervals=[[a, b] for a, b in self.intervals])
+        return d
+
+
+# ---------------------------------------------------------------------------
+# Numerically propagated states (CCSDS OPM, OCM states, orbit determination from a TDM)
+# ---------------------------------------------------------------------------
+MAX_PROP_REVS = 1000            # longest propagation from a state, in revolutions ...
+MAX_PROP_DAYS = 20 * 365.25     # ... and in days
+
+
+class _PropagatedVF(VectorFunction):
+    center = 399
+    ephemeris = None
+
+    def __init__(self, obs):
+        self.obs = obs
+        self.target = obs.name
+
+    def _at(self, t):
+        pos, vel = self.obs.states(t)
+        return pos / AU_KM, vel * AU_PER_DAY_PER_KM_S, None, None
+
+
+class PropagatedObserver(Observer):
+    """A spacecraft whose orbit is propagated numerically (propagate.py) from states:
+    ``anchors`` = [(Skyfield Time, state (6,) relative to ``center`` in ICRS axes, km and km/s)];
+    with several states each is used up to halfway to the next.  ``maneuvers`` = [(Skyfield Time,
+    function(state) -> delta-v (3,))]; ``drag`` / ``srp``: C_D A / m and C_R A / m (m^2/kg)."""
+
+    def __init__(self, ctx, anchors, center='earth', drag=None, srp=None, maneuvers=(), name='', info=None,
+                 notes=(), label='OPM'):
+        from .propagate import Forces, Trajectory, elements as osc_elements
+        self.ctx, self.name, self.center, self.label = ctx, name, center, label
+        self.info = dict(info or {})
+        self.notes = list(notes)
+        self.anchors = []
+        for t, x in sorted(anchors, key=lambda a: float(a[0].tt)):
+            jd0 = (float(t.whole), float(t.tt_fraction))
+            forces = Forces(ctx, jd0, center, drag=drag, srp=srp)
+            el = osc_elements(x[:3], x[3:], forces.gm)
+            revs = MAX_PROP_REVS * el['period_min'] * 60.0 if el['period_min'] else math.inf
+            lim = min(MAX_PROP_DAYS * DAY_S, revs)
+            mans = [(((float(tm.whole) - jd0[0]) + (float(tm.tt_fraction) - jd0[1])) * DAY_S, fn) for tm, fn in maneuvers]
+            self.anchors.append({'jd0': jd0, 'jd': jd0[0] + jd0[1], 'x': np.asarray(x, float), 'el': el,
+                                 'traj': Trajectory(forces, x, mans, (-lim, lim)), 'lim': lim})
+        jds = [a['jd'] for a in self.anchors]
+        self.bounds = [0.5 * (p + q) for p, q in zip(jds[:-1], jds[1:])]
+        self.epoch_jd = jds[0]
+        self.vf = _PropagatedVF(self)
+        first = self.anchors[0]['el']
+        if center == 'earth':
+            rp = min(a['el']['r_min_km'] for a in self.anchors)
+            ra = max(a['el']['r_max_km'] for a in self.anchors)
+            if rp < WGS84_A:
+                raise ObserverError(tr('この状態ベクトルの軌道の近地点は地球内部にあります（再突入の軌道）'))
+            self.r_min_km = rp * 0.98
+            self.r_max_km = min(ra * 1.02 + 50.0, 1e10) if math.isfinite(ra) else 1e10
+            a_km = first['a_km']
+            self.v_max_km_s = (math.sqrt(GM_EARTH * max(2 / self.r_min_km - 1 / a_km, 1e-12)) * 1.03
+                               if math.isfinite(ra) else 20.0)
+            self.period_min = first['period_min']
+        else:
+            self.r_min_km, self.r_max_km, self.v_max_km_s = WGS84_A, 1e10, 50.0
+            self.period_min = None
+
+    # -- coverage ------------------------------------------------------------------
+    def _span(self, k):
+        """TT JDs covered by anchor k: up to halfway to its neighbours, within its limits and before a
+        re-entry found by the propagation."""
+        a = self.anchors[k]
+        lo = a['jd'] - a['lim'] / DAY_S
+        hi = a['jd'] + a['lim'] / DAY_S
+        if k > 0:
+            lo = max(lo, self.bounds[k - 1])
+        if k < len(self.anchors) - 1:
+            hi = min(hi, self.bounds[k])
+        dec = a['traj'].decay_s
+        if dec[1] is not None:
+            hi = min(hi, a['jd'] + dec[1] / DAY_S)
+        if dec[-1] is not None:
+            lo = max(lo, a['jd'] + dec[-1] / DAY_S)
+        return lo, hi
+
+    def coverage(self):
+        spans = [self._span(k) for k in range(len(self.anchors))]
+        return min(s[0] for s in spans), max(s[1] for s in spans)
+
+    def _extend(self, jd_a, jd_b):
+        for k, a in enumerate(self.anchors):
+            lo, hi = self._span(k)
+            x, y = max(jd_a, lo), min(jd_b, hi)
+            if y >= x:
+                a['traj'].extend((x - a['jd']) * DAY_S, (y - a['jd']) * DAY_S)
+
+    def states(self, t):
+        """Geocentric GCRS positions and velocities (3, ...) at the Times t."""
+        whole = np.asarray(t.whole, float)
+        frac = np.asarray(t.tt_fraction, float)
+        shape = np.shape(whole + frac)
+        whole, frac = np.atleast_1d(whole).ravel(), np.atleast_1d(frac).ravel()
+        if whole.size == 1 and frac.size > 1:
+            whole = np.full(frac.size, whole[0])
+        jd = whole + frac
+        pos = np.empty((jd.size, 3))
+        vel = np.empty((jd.size, 3))
+        k = np.searchsorted(self.bounds, jd)
+        lo, hi = self.coverage()
+        if np.any(jd < lo - 1e-9) or np.any(jd > hi + 1e-9):
+            raise ObserverError(tr('{label} から軌道を伝搬した期間（{period}）の外の時刻が要求されました',
+                                   label=self.label, period=_period_text(self.ctx, lo, hi)))
+        for j in np.unique(k):
+            m = k == j
+            a = self.anchors[j]
+            s = ((whole[m] - a['jd0'][0]) + (frac[m] - a['jd0'][1])) * DAY_S
+            a['traj'].extend(float(s.min()), float(s.max()))
+            pos[m], vel[m] = a['traj'].state(s)
+        if self.center != 'earth':
+            from .propagate import EPH_TARGETS
+            tt = self.ctx.ts.tt_jd(whole, frac)
+            st = (self.ctx.eph[EPH_TARGETS[self.center]] - self.ctx.earth).at(tt)
+            pos += st.position.km.T
+            vel += st.velocity.km_per_s.T
+        return pos.T.reshape((3,) + shape), vel.T.reshape((3,) + shape)
+
+    def limit_period(self, ctx, jd_a, jd_b, margin):
+        lo, hi = self.coverage()
+        out = []
+        if hi <= jd_a or lo >= jd_b:
+            raise ObserverError(tr('{label} から軌道を伝搬できる期間（{period}）の外です', label=self.label,
+                                   period=_period_text(self.ctx, lo, hi)))
+        self._extend(max(jd_a - margin, lo), min(jd_b + margin, hi))
+        from .timeutil import iso_from_jd
+        lo2, hi2 = self.coverage()
+        decayed = [a['jd'] + a['traj'].decay_s[1] / DAY_S for a in self.anchors if a['traj'].decay_s[1] is not None]
+        if decayed:
+            out.append(tr('数値積分ではこの衛星は {date} ごろに高度 100 km を下回る（再突入する）ため、それ以降は計算していません',
+                          date=iso_from_jd(self.ctx, decayed[0])[:10]))
+        elif lo2 > jd_a or hi2 < jd_b:
+            days = min(a['lim'] for a in self.anchors) / DAY_S
+            out.append(tr('{label} の元期から前後 {days:.0f} 日（{revs} 周）まで軌道を伝搬し、{period} に限定して計算しました',
+                          label=self.label, days=days, revs=MAX_PROP_REVS, period=_period_text(self.ctx, lo2, hi2)))
+        if lo2 >= jd_b or hi2 <= jd_a:
+            raise ObserverError(out[0] if out else tr('{label} から軌道を伝搬できる期間（{period}）の外です',
+                                                      label=self.label, period=_period_text(self.ctx, lo2, hi2)))
+        self._survey()
+        return max(jd_a, lo2), min(jd_b, hi2), list(self.notes) + out
+
+    def _survey(self):
+        """The distance and speed bounds from the propagated orbit (the far observers of other centres)."""
+        if self.center == 'earth':
+            return
+        lo, hi = self.coverage()
+        jd = np.linspace(lo, hi, 400)
+        t = self.ctx.ts.tt_jd(jd)
+        p, v = self.states(t)
+        r, s = norm(p), norm(v)
+        self.r_min_km = max(float(r.min()) * 0.98, WGS84_A)
+        self.r_max_km = float(r.max()) * 1.02
+        self.v_max_km_s = float(s.max()) * 1.05 + 0.01
+
+    def clip_windows(self, windows):
+        return _clip(windows, [self.coverage()])
+
+    def interval_at(self, jd):
+        return self.coverage()
+
+    def prepare(self, ctx, jd_windows):
+        lo, hi = self.coverage()
+        for a, b in jd_windows:
+            if a < lo - 1e-8 or b > hi + 1e-8:
+                raise ObserverError(tr('{label} から軌道を伝搬できる期間（{period}）の外です', label=self.label,
+                                       period=_period_text(self.ctx, lo, hi)))
+            self._extend(a, b)
+
+    def char_time_s(self):
+        if self.period_min:
+            return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
+        return max(60.0, min(self.r_min_km / self.v_max_km_s, 6 * 3600.0))
+
+    def warnings_for(self, ctx, jd):
+        age = min(abs(jd - a['jd']) for a in self.anchors)
+        out = list(self.notes)
+        if age > 30:
+            out.append(tr('{label} の元期から {age:.0f} 日離れています。数値積分による軌道の伝搬は、大気抵抗・太陽輻射圧・'
+                          '軌道制御などの誤差が日数とともに大きくなるため、結果は目安として扱ってください。',
+                          label=self.label, age=age))
+        elif age > 7:
+            out.append(tr('{label} の元期から {age:.0f} 日離れています（軌道の伝搬の誤差が大きくなっている可能性があります）。',
+                          label=self.label, age=age))
+        return out
+
+    def describe(self):
+        a = self.anchors[0]
+        el = a['el']
+        d = {'kind': 'space', 'model': 'ccsds', 'name': self.name, 'epoch_jd_tt': a['jd']}
+        d.update(self.info)
+        if self.center == 'earth' and el['period_min']:
+            d.update(period_min=el['period_min'], perigee_km=el['r_min_km'] - WGS84_A,
+                     apogee_km=el['r_max_km'] - WGS84_A)
+        d.update({k: el[k] for k in ('a_km', 'e', 'i_deg', 'raan_deg', 'argp_deg', 'm_deg')})
+        d['state_gcrs'] = [float(v) for v in a['x']]
+        d['n_states'] = len(self.anchors)
+        return d
+
+
+# ---------------------------------------------------------------------------
 # CelesTrak TLE lookup
 # ---------------------------------------------------------------------------
 def fetch_tle_celestrak(norad_id):
@@ -968,4 +1381,7 @@ def build_observer(ctx, spec, parse_time=None):
         return HorizonsObserver(ctx, spec['command'], int(spec.get('step_min', 5) or 5), name)
     if kind == 'sscweb':
         return SSCWebObserver(ctx, spec['id'], name)
+    if kind == 'ccsds':
+        from .ccsds import build_observer as ccsds_observer
+        return ccsds_observer(ctx, spec)
     raise ObserverError(tr('不明な観測者タイプです: {kind}', kind=kind))

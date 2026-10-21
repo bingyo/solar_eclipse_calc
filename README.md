@@ -3,7 +3,7 @@
 **English** | [日本語](README.ja.md)
 
 A tool that computes solar eclipses (the Sun eclipsed by the Moon) and transits of Mercury and Venus with high precision, and shows them clearly in your browser.
-The observer can be **any place on the ground**, **an artificial satellite (TLE / orbital elements / geostationary satellite / any spacecraft in JPL Horizons)**, or **the whole Earth**.
+The observer can be **any place on the ground**, **an artificial satellite (TLE / orbital elements / geostationary satellite / any spacecraft in JPL Horizons / CCSDS orbit and tracking data)**, or **the whole Earth**.
 
 ![Path of the total solar eclipse of 2 August 2027 and the distribution of the greatest magnitude](docs/images/en/global_map.png)
 
@@ -80,6 +80,7 @@ If you give orbit information and the like to a generative AI (a coding agent su
 | Planned orbit | `--epoch` and `--alt` (or `--perigee-alt --apogee-alt`), `--sso` (or `--i`), `--ltan` (or `--raan`). `--sweep 10` computes for each mean anomaly |
 | TLE | `--tle FILE` (`-` for standard input), `--norad NUMBER` (fetches the latest TLE from CelesTrak). For events weeks after the epoch, check the spread due to the satellite's position with `--sweep 10` |
 | Geostationary satellites, spacecraft, past orbits | `--geo-lon LONGITUDE`, `--horizons ID` (JPL Horizons), `--sscweb ID` (NASA SSCWeb) |
+| CCSDS messages | `--ccsds FILE` (OEM, OPM, OMM, OCM, TDM; KVN or XML; with a TDM, the station positions `--station NAME=LAT,LON,ELEVATION`) |
 | A place on the ground, the whole Earth | `--lat --lon --elev`, `--city NAME`, `--global` |
 | JSON | `--request FILE` (the same form as the Web API) |
 
@@ -125,7 +126,7 @@ The `Dockerfile` also works anywhere else Docker runs (`docker build -t eclipsec
 | Observer | Details |
 |---|---|
 | A place on the ground | Latitude, longitude and elevation (WGS84). City presets, picking a place by clicking a map. Takes the horizon, atmospheric refraction and a minimum Sun altitude into account |
-| Artificial satellite | Latest TLE fetched from CelesTrak by NORAD number (SGP4) / pasted TLE / Keplerian orbital elements (with J2 secular perturbations; besides entering the six orbital elements directly [epoch, semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of perigee, mean anomaly], an orbit can be given by its altitude, with the inclination of a sun-synchronous orbit computed automatically, and by the local time of the ascending node) / ideal geostationary satellite / any spacecraft in JPL Horizons (JWST, SOHO, etc.) / past orbits of science satellites from NASA SSCWeb (Hinode etc.; for reproducing past events). Takes into account **the Sun being hidden by the Earth** (the height of the atmosphere can also be given) |
+| Artificial satellite | Latest TLE fetched from CelesTrak by NORAD number (SGP4) / pasted TLE / Keplerian orbital elements (with J2 secular perturbations; besides entering the six orbital elements directly [epoch, semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of perigee, mean anomaly], an orbit can be given by its altitude, with the inclination of a sun-synchronous orbit computed automatically, and by the local time of the ascending node) / ideal geostationary satellite / any spacecraft in JPL Horizons (JWST, SOHO, etc.) / past orbits of science satellites from NASA SSCWeb (Hinode etc.; for reproducing past events) / **CCSDS Orbit Data Messages** (the international standard that JAXA and other space agencies use to exchange orbits: an OEM is interpolated, the state vectors of an OPM or OCM are propagated by numerical integration [the Earth's gravity field, the Sun and the Moon, drag, solar radiation pressure, manoeuvres], an OMM is computed with SGP4) and **Tracking Data Messages (TDM)** (with the positions of the stations, the orbit is determined from the angle, range and Doppler measurements). Takes into account **the Sun being hidden by the Earth** (the height of the atmosphere can also be given) |
 | The whole Earth | Finds every solar eclipse seen anywhere in the world (type, γ, magnitude, point of greatest eclipse, duration of the central eclipse, width of the central path, Saros number). Transits are given with geocentric contact times |
 
 The results (switch between the start page and the results with "Start page" / "Results" at the top; "↑ Back to the list" in the details returns to the list):
@@ -173,6 +174,8 @@ For the contact times the same radii as NASA are used (Sun 959.63″, Venus 8.41
 
 In addition, the limits of the path of totality obtained with the "shadow cone" model used for the map are checked with independent computations for single places (apparent positions for an observer on the ground with Skyfield): 100 m outside a limit the eclipse is partial, and 100 m inside it is total.
 
+The CCSDS messages are checked by `python tests/test_ccsds.py`. The OMM made from a TLE gives the positions of the TLE within 1 m, and an OEM with the positions of the TLE every minute gives the same eclipse times (within 2 ms). The numerical integration of an OPM stays within 3 km of SGP4 over a day for the International Space Station (2008), and a manoeuvre changes the semi-major axis as the vis-viva equation says. From angle, range and Doppler measurements made from a known orbit, a TDM gives back that orbit within 2 m over 36 hours (without noise); with noise added, the residuals match the noise.
+
 ### Comparison with observations by the solar observatory Hinode
 
 The solar eclipses and transits that Hinode (altitude about 680 km) met in orbit in 2006–2026 were computed from its past orbit in NASA SSCWeb and checked against the actual images — above all the [quick-look movies of the Hinode Science Center at NAOJ](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/), whose frames carry the exposure time to the millisecond — and against the predictions of the National Astronomical Observatory of Japan (`python tests/test_hinode.py`; the movies are measured with `python tools/validate_hinode_ql.py`, which needs ffmpeg, and the press images with `python tools/validate_hinode_images.py`. Details in [docs/hinode_validation.md](docs/hinode_validation.md), in Japanese).
@@ -197,14 +200,16 @@ The accuracy of eclipses computed for a satellite in low orbit is set almost ent
 - **Radii of the Sun and the planets**: contacts happen at the limb actually seen (the inflection point of the limb darkening), about 0.33 Mm outside the photosphere at τ = 1 that defines the IAU 2015 nominal radius. The default is the visible limb, 959.96″ at 1 AU (696,231 km), from the Hinode SOT movies of the 2006 transit of Mercury and in line with other measurements (SDO/HMI 959.90″, eclipse light curves 959.99″, SOHO/MDI 960.12″). Venus in front of the Sun is larger than its solid surface: 6,131 km in visible light (cloud tops and haze) by default, 6,202 km in X-rays (Reale et al. 2015). The NASA values (959.63″, 8.41″, 3.36″), the IAU values and any value can also be chosen, and every contact shows how many seconds it moves per +1″ of the radii
 - **Radius of the Moon**: the NASA convention (k = 0.2725076 for external contacts, k = 0.272281 for internal ones) approximates the average effect of the mountains and valleys on the lunar limb. The mean radius or any value can also be chosen
 - **Satellites**: SGP4 (TLE), two-body motion plus J2 secular perturbations (orbital elements), a point fixed to the Earth (geostationary satellite), Hermite interpolation of Horizons positions and velocities. Being hidden by the Earth is judged from the local radius of the WGS84 ellipsoid at the limb (latitude from the pole of date) plus the given height of the atmosphere, with the Sun's direction in the Earth's frame (aberrated by the Earth's velocity). Horizons tables are fetched with a step fine enough for an interpolation error below 10 m (a coarser step asked for an orbit close to the Earth or the Moon, or for a flyby, is made finer, with a warning)
+- **CCSDS**: Hermite or Lagrange interpolation of an OEM. The states of an OPM or OCM and the orbit determined from a TDM are integrated numerically by modified Chebyshev–Picard iteration (EGM96 gravity field to degree 8, the Sun and the Moon from DE440, drag with an exponential atmosphere, solar radiation pressure with the Earth's shadow, impulsive manoeuvres). The orbit determination of a TDM is a weighted batch least-squares fit with measurement models that include the light time (measurements beyond 4 sigma are left out, and ranges given as the whole round trip are halved automatically)
 
 ### Limitations
 
 - The topography (unevenness) of the lunar limb is not taken into account, so the actual contact times can differ by about ±1–3 s on the ground (especially the beginning and end of totality) and ±0.1–0.4 s from a satellite in low orbit.
 - Future and past ΔT are uncertain. This affects "where (at which longitude) the eclipse is seen" more than the times themselves.
 - The position error of a TLE grows with time after its epoch (the page shows a warning). Take predictions for a satellite months or more ahead as a guide only. CelesTrak provides only the latest TLE, so to compute past events from a satellite, paste a TLE from that time or use "NASA SSCWeb" (given by satellite ID, e.g. hinode).
+- When an orbit is propagated from a CCSDS OPM, OCM or TDM, the density of the atmosphere is that of an average solar activity. In low orbits, solar activity can make differences of a few km within a few days, so use the OEM (ephemeris) of the operating agency when precision matters. Frequency and phase measurements of a TDM and the covariances of the messages are not used.
 - Atmospheric refraction is used for the displayed Sun altitude and for judging visibility; the flattening of the discs is not drawn (it does not affect the contact times).
-- An internet connection is needed for preparing Python and downloading the ephemeris the first time, for CelesTrak, JPL Horizons and NASA SSCWeb, and for the "Detailed map" of the map. Everything else works offline.
+- An internet connection is needed for preparing Python and downloading the ephemeris the first time, for CelesTrak, JPL Horizons and NASA SSCWeb, and for the "Detailed map" of the map. Everything else (CCSDS messages too) works offline.
 
 ## Files
 
@@ -214,7 +219,10 @@ run.py                      Start-up script (when starting directly from Python)
 eclipsecalc/
   context.py                Loading the ephemerides and time scales (automatic download of ephemerides)
   net.py                    HTTPS (verified with the OS certificate store)
-  observers.py              Observer models (ground, TLE, orbital elements, geostationary, Horizons, SSCWeb)
+  observers.py              Observer models (ground, TLE, orbital elements, geostationary, Horizons, SSCWeb, CCSDS)
+  ccsds.py                  Reading CCSDS Orbit Data Messages (OEM, OPM, OMM, OCM) and Tracking Data Messages (TDM)
+  propagate.py              Numerical integration of orbits (gravity field, Sun and Moon, drag, solar radiation pressure, manoeuvres)
+  od.py                     Orbit determination from the measurements of a TDM
   conjunctions.py           Search for new Moons and inferior conjunctions (candidate windows)
   local.py                  Contact times, maximum and visibility for each observer
   shadow.py                 Penumbral/umbral cones in ITRS
@@ -230,6 +238,7 @@ tests/test_orbit_planning.py  Tests of sun-synchronous orbits, local time of the
 tests/test_saved_result.py  Tests of recomputing the details when saved results are opened
 tests/test_geometry.py      Tests of the solar-north-up coordinates, contact sensitivities, image times and the Earth's occultation of the Sun
 tests/test_ui_i18n.py       Test that every text of the page has its 6 translations
+tests/test_ccsds.py         Tests of reading CCSDS messages, propagating orbits and orbit determination
 tools/hinode_ql.py          Reading the Hinode quick-look movies (frames, exposure times and axes by character recognition; needs ffmpeg)
 tools/validate_hinode_ql.py Validation with the Hinode quick-look movies
 tools/validate_hinode_images.py  Validation with Hinode's press images
@@ -250,9 +259,10 @@ build/ dist/                Working area and output of the distribution ZIPs (no
 ### API (excerpt)
 
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
-  - observer examples: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
+  - observer examples: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"ccsds","text":"CCSDS_OPM_VERS = 3.0 …"}`, `{"type":"global"}`
   - With orbital elements (`kepler`), `"sso": true` (inclination computed automatically) and `"ltan_h": 18.0` (orbital plane given by the local time of the ascending node) can also be used
-- `POST /api/phase_sweep` … the same form as `/api/search` plus `"step_deg": 10`; computes a `kepler` or `tle` satellite for many mean anomalies (period of at most 1 year)
+- `POST /api/phase_sweep` … the same form as `/api/search` plus `"step_deg": 10`; computes a `kepler` or `tle` satellite (or a `ccsds` one given only by OMMs or TLEs) for many mean anomalies (period of at most 1 year)
+- `POST /api/ccsds/inspect` … `{"text": "CCSDS message", "object": "…", "stations": "…"}` returns what the messages hold (objects, TDM participants) and how the observer is interpreted ("Check contents" on the page)
 - `POST /api/ephemeris/download?name=de440.bsp` … downloads a JPL ephemeris into `data/` ("Add de440.bsp" on the page)
 - `POST /api/shutdown` … quits the calculator ("Quit" in the Mac app; only when started with `run.py --app`)
 - `GET /api/page/stream` … an event stream kept open while the page is open. When `run.py` started with opening the browser, it quits 10 seconds after all of these are closed (not with `--no-browser`)
@@ -262,7 +272,7 @@ Interactive API documentation is at `http://127.0.0.1:8765/docs`.
 
 ## Data and libraries
 
-JPL DE440 ephemerides and JPL Horizons (NASA/JPL), CelesTrak (TLE), NASA SSCWeb (past orbits of satellites), Skyfield (MIT), sgp4 (MIT), Leaflet (BSD-2), Natural Earth (public domain), OpenStreetMap (ODbL, when the detailed map is shown).
+JPL DE440 ephemerides and JPL Horizons (NASA/JPL), CelesTrak (TLE), NASA SSCWeb (past orbits of satellites), the EGM96 gravity model (NASA and NGA; coefficients to degree 8), CCSDS 502.0-B-3 (Orbit Data Messages) and 503.0-B-2 (Tracking Data Messages), Skyfield (MIT), sgp4 (MIT), Leaflet (BSD-2), Natural Earth (public domain), OpenStreetMap (ODbL, when the detailed map is shown).
 
 ## License
 

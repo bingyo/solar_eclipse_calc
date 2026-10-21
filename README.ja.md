@@ -3,7 +3,7 @@
 [English](README.md) | **日本語**
 
 日食（月による太陽の食）と、水星・金星の太陽面通過を高精度に計算し、ブラウザで分かりやすく閲覧するツールです。
-観測者は **地上の任意地点**、**人工衛星（TLE / 軌道要素 / 静止衛星 / JPL Horizons の探査機）**、**地球全体** から選べます。
+観測者は **地上の任意地点**、**人工衛星（TLE / 軌道要素 / 静止衛星 / JPL Horizons の探査機 / CCSDS の軌道データ・追跡データ）**、**地球全体** から選べます。
 
 ![2027年8月2日の皆既日食の経路と最大食分の分布](docs/images/global_map.png)
 
@@ -78,6 +78,7 @@ DE440 は `python tools/download_ephemeris.py de440` でも追加できます。
 | 計画中の軌道 | `--epoch` と `--alt`（または `--perigee-alt --apogee-alt`）、`--sso`（または `--i`）、`--ltan`（または `--raan`）。`--sweep 10` で平均近点角ごとの一括計算 |
 | TLE | `--tle ファイル`（`-` で標準入力）、`--norad 番号`（CelesTrak から最新の TLE を取得）。元期から何週間も先なら `--sweep 10` で衛星の位置による幅を確認 |
 | 静止衛星・探査機・過去の軌道 | `--geo-lon 経度`、`--horizons ID`（JPL Horizons）、`--sscweb ID`（NASA SSCWeb） |
+| CCSDS のメッセージ | `--ccsds ファイル`（OEM・OPM・OMM・OCM・TDM。KVN・XML。TDM には観測局の位置 `--station 名前=緯度,経度,標高` を添える） |
 | 地上の地点・地球全体 | `--lat --lon --elev`、`--city 地点名`、`--global` |
 | JSON | `--request ファイル`（Web API と同じ形） |
 
@@ -123,7 +124,7 @@ python tools/build_bundles.py --target macos --sign <署名用フォルダ>/sign
 | 観測者 | 内容 |
 |---|---|
 | 地上の地点 | 緯度・経度・標高（WGS84）。都市プリセット、地図クリックでの地点選択。地平線・大気差・最低太陽高度を考慮 |
-| 人工衛星 | NORAD 番号で CelesTrak から最新 TLE を取得（SGP4）／TLE 貼り付け／ケプラー軌道要素（J2 永年摂動つき。軌道6要素〔元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角〕の直接入力のほか、高度での指定、太陽同期軌道の傾斜角の自動計算、昇交点の地方時での指定に対応）／理想静止衛星／JPL Horizons の任意探査機（JWST、SOHO 等）／NASA SSCWeb の科学衛星の過去軌道（「ひので」等。過去の現象の再現用）。**地球による太陽の遮蔽**（大気高度も指定可）を考慮 |
+| 人工衛星 | NORAD 番号で CelesTrak から最新 TLE を取得（SGP4）／TLE 貼り付け／ケプラー軌道要素（J2 永年摂動つき。軌道6要素〔元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角〕の直接入力のほか、高度での指定、太陽同期軌道の傾斜角の自動計算、昇交点の地方時での指定に対応）／理想静止衛星／JPL Horizons の任意探査機（JWST、SOHO 等）／NASA SSCWeb の科学衛星の過去軌道（「ひので」等。過去の現象の再現用）／**CCSDS の軌道データメッセージ**（JAXA などの宇宙機関が軌道の受け渡しに使う国際標準。OEM は補間、OPM・OCM の状態ベクトルは数値積分〔地球の重力場・太陽と月・大気抵抗・太陽輻射圧・軌道制御〕、OMM は SGP4）と**追跡データメッセージ（TDM）**（観測局の位置を添えると、角度・距離・ドップラーの観測から軌道を決めて計算）。**地球による太陽の遮蔽**（大気高度も指定可）を考慮 |
 | 地球全体 | 世界のどこかで見える日食を全探索（種類・γ・食分・最大食地点・中心食継続時間・中心食帯幅・サロス番号）。太陽面通過は地心接触時刻 |
 
 結果画面（上の「はじめの画面」「計算結果」で、ようこそ画面と計算結果を行き来できます。詳細の「↑ 一覧に戻る」で一覧へ戻ります）:
@@ -171,6 +172,8 @@ NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validatio
 
 さらに、地図用の「影の円錐」モデルで求めた皆既帯の限界線を、独立した地点計算（Skyfield による地上観測者の視位置）で検証しています。限界線の 100 m 外側は部分日食、100 m 内側は皆既日食になることを確認しています。
 
+CCSDS のメッセージは `python tests/test_ccsds.py` で確かめています。TLE から作った OMM は TLE と 1 m 以内で同じ位置になり、TLE の位置を 1 分ごとに書いた OEM は TLE と同じ日食の時刻（差は 2 ms 未満）を与えます。OPM の数値積分は国際宇宙ステーション（2008 年）で SGP4 と 1 日で 3 km 以内、軌道制御の前後の軌道長半径の変化は vis-viva の式どおりです。TDM は、既知の軌道から作った角度・距離・ドップラーの観測から、その軌道を 36 時間にわたって 2 m 以内（雑音なし）で復元し、雑音を加えた観測では残差が加えた雑音の大きさになります。
+
 ### 太陽観測衛星「ひので」の実観測との比較
 
 「ひので」（高度約 680 km）が 2006〜2026 年に軌道上で遭遇した日食・太陽面通過を、NASA SSCWeb の過去軌道を使って計算し、実際の観測画像（特に、各コマに撮影時刻がミリ秒まで入った[国立天文台ひので科学センターの QL 動画](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/)）と国立天文台の予報に照らしました（`python tests/test_hinode.py`、QL 動画の測定は `python tools/validate_hinode_ql.py`（ffmpeg が必要）、広報画像の測定は `python tools/validate_hinode_images.py`。詳細は [docs/hinode_validation.md](docs/hinode_validation.md)）。
@@ -195,14 +198,16 @@ NASA（Espenak & Meeus）の公表値との比較（`python tests/test_validatio
 - **太陽・惑星の半径**: 接触は実際に見える縁（周辺減光の変曲点）で起き、これは IAU 2015 公称値が表す光球 τ=1 より約 0.33 Mm 外側です。既定は見える縁の 1 AU で 959.96″（696,231 km）で、「ひので」SOT の 2006 年の水星の太陽面通過の動画から求め、他の測定（SDO/HMI 959.90″、日食の光度曲線 959.99″、SOHO/MDI 960.12″）とも合います。金星は太陽の前では固体表面より大きく見え、既定は可視光の円盤 6,131 km（雲頂ともや）、X 線では 6,202 km です（Reale et al. 2015）。NASA の値（959.63″・8.41″・3.36″）、IAU の値、任意の値も選べ、接触ごとに半径が 1″ 大きいと何秒動くかを表示します
 - **月の半径**: NASA 方式（外接 k=0.2725076、内接 k=0.272281）で月縁の山・谷の平均的な影響を近似。平均半径・任意値も選択可
 - **衛星**: SGP4（TLE）、2 体＋J2 永年摂動（軌道要素）、地球固定点（静止衛星）、Horizons の位置・速度のエルミート補間。地球の遮蔽は WGS84 楕円体の縁の局所半径（緯度はその日の地球の極から）＋指定した大気高度で、太陽の方向は地球の座標系での方向（地球の速度による光行差を加えたもの）で判定。Horizons の表は補間の誤差が 10 m 以下になる刻みで取得（地球や月に近い軌道・フライバイで粗い刻みを指定したときは細かくして注意を表示）
+- **CCSDS**: OEM は Hermite・Lagrange 補間。OPM・OCM の状態と TDM で決めた軌道は、変形 Chebyshev–Picard 反復による数値積分（EGM96 の 8 次までの重力場、DE440 の太陽と月、指数関数モデルの大気抵抗、地球の影を含む太陽輻射圧、瞬時の軌道制御）。TDM の軌道決定は光の伝わる時間を含む観測モデルの重み付きバッチ最小二乗（4σ を超える観測を除外、往復の全長で書かれた距離は自動で半分に）
 
 ### 制限事項
 
 - 月縁の地形（凹凸）は考慮していないため、実際の接触時刻は地上で ±1〜3 秒程度（特に皆既の始まり・終わり）、低軌道の衛星から見た食で ±0.1〜0.4 秒ずれることがあります。
 - 将来・過去の ΔT は不確かです。時刻そのものよりも「食が見える場所（経度）」に影響します。
 - TLE は元期から日数が経つと位置誤差が大きくなります（画面に警告を表示します）。数か月以上先の衛星からの予報は目安としてください。CelesTrak からは最新の TLE しか取得できないため、過去の現象を衛星から計算するときは当時の TLE を貼り付けるか、「NASA SSCWeb」（衛星 ID で指定。例: hinode）を使ってください。
+- CCSDS の OPM・OCM・TDM から伝搬するときの大気の密度は平均的な太陽活動の値です。低軌道では太陽活動によって数日で数 km の差が出ることがあるため、精度が必要なときは運用機関の OEM（軌道暦）を使ってください。TDM の周波数・位相の観測と、メッセージの共分散は使いません。
 - 大気差は太陽高度の表示と「見えるか」の判定に使い、円盤の変形は描画していません（接触時刻には影響しません）。
-- 初回の Python 環境の準備と暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他はオフラインで動作します。
+- 初回の Python 環境の準備と暦ダウンロード、CelesTrak・JPL Horizons・NASA SSCWeb の利用、地図の「詳細地図」にはインターネット接続が必要です。その他（CCSDS のメッセージも）はオフラインで動作します。
 
 ## ファイル構成
 
@@ -212,7 +217,10 @@ run.py                      起動スクリプト（Python から直接起動す
 eclipsecalc/
   context.py                暦・時刻系の読み込み（暦の自動ダウンロード）
   net.py                    HTTPS 通信（OS の証明書ストアで検証）
-  observers.py              観測者モデル（地上・TLE・軌道要素・静止・Horizons・SSCWeb）
+  observers.py              観測者モデル（地上・TLE・軌道要素・静止・Horizons・SSCWeb・CCSDS）
+  ccsds.py                  CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）と追跡データメッセージ（TDM）の読み取り
+  propagate.py              軌道の数値積分（重力場・太陽と月・大気抵抗・太陽輻射圧・軌道制御）
+  od.py                     TDM の観測からの軌道決定
   conjunctions.py           新月・内合の探索（候補時間帯）
   local.py                  観測者ごとの接触時刻・最大・可視性の計算
   shadow.py                 ITRS での半影/本影円錐
@@ -228,6 +236,7 @@ tests/test_orbit_planning.py  太陽同期軌道・昇交点地方時・位相�
 tests/test_saved_result.py  保存した結果を開いたときの詳細の再計算のテスト
 tests/test_geometry.py      太陽の北が上の座標・接触時刻の感度・画像の時刻・地球による太陽の遮蔽のテスト
 tests/test_ui_i18n.py       画面の文言の 6 言語の訳の漏れのテスト
+tests/test_ccsds.py         CCSDS のメッセージの読み取り・軌道の伝搬・軌道決定のテスト
 tools/hinode_ql.py          「ひので」の QL 動画の読み取り（コマ・撮影時刻・座標軸を文字認識で読む。ffmpeg が必要）
 tools/validate_hinode_ql.py 「ひので」の QL 動画での検証
 tools/validate_hinode_images.py  「ひので」の広報画像での検証
@@ -248,9 +257,10 @@ build/ dist/                配布用 ZIP の作業場所と出力先（git 管�
 ### API（抜粋）
 
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
-  - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"global"}`
+  - observer 例: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"ccsds","text":"CCSDS_OPM_VERS = 3.0 …"}`, `{"type":"global"}`
   - 軌道要素（`kepler`）では `"sso": true`（傾斜角を自動計算）、`"ltan_h": 18.0`（昇交点の地方時で軌道面を指定）も使えます
-- `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler` または `tle` の衛星の平均近点角を変えて一括計算（期間 1 年以内）
+- `POST /api/phase_sweep` … `/api/search` と同じ形式に `"step_deg": 10` を加え、`kepler`・`tle`（OMM・TLE だけの `ccsds` も）の衛星の平均近点角を変えて一括計算（期間 1 年以内）
+- `POST /api/ccsds/inspect` … `{"text": "CCSDS のメッセージ", "object": "…", "stations": "…"}` で、メッセージの内容・天体・TDM の参加者と、観測者の解釈を返す（画面の「内容を確認」）
 - `POST /api/ephemeris/download?name=de440.bsp` … JPL 暦を `data/` にダウンロード（画面の「de440.bsp を追加」）
 - `POST /api/shutdown` … 計算機を終了（Mac 版アプリの「終了」。`run.py --app` で起動したときだけ有効）
 - `GET /api/page/stream` … 画面が開いている間つなぎ続けるイベントストリーム。`run.py` がブラウザを開いて起動したときは、これがすべて切れて 10 秒たつと終了します（`--no-browser` では終了しません）
@@ -260,7 +270,7 @@ build/ dist/                配布用 ZIP の作業場所と出力先（git 管�
 
 ## データとライブラリ
 
-JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、NASA SSCWeb（衛星の過去軌道）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
+JPL DE440 暦・JPL Horizons（NASA/JPL）、CelesTrak（TLE）、NASA SSCWeb（衛星の過去軌道）、EGM96 重力場モデル（NASA・NGA。8 次までの係数）、CCSDS 502.0-B-3（軌道データメッセージ）・503.0-B-2（追跡データメッセージ）、Skyfield（MIT）、sgp4（MIT）、Leaflet（BSD-2）、Natural Earth（パブリックドメイン）、OpenStreetMap（ODbL、詳細地図表示時）。
 
 ## ライセンス
 

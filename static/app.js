@@ -34,6 +34,9 @@ const state = {
   cmp: null,                       // the rows of "観測画像と比べる"
   fullContacts: null,              // the contact tables with the values for images (null: by the event)
   sunRPrev: null,                  // the solar radius model chosen before "数値で指定"
+  ccsdsFiles: null,                // [{name, text}] of opened CCSDS files (null: the text box is used)
+  ccsdsInfo: null, ccsdsReq: 0,    // the last /api/ccsds/inspect answer, and its request counter
+  ccsdsObject: '',                 // the object chosen (kept until the list of objects is known)
 };
 
 /* ------------------------------------------------------------------ */
@@ -288,6 +291,17 @@ async function init() {
   }));
   $('#fetchTle').addEventListener('click', fetchTle);
   $('#sscId').addEventListener('change', () => showSscInfo(true));
+  $('#ccsdsOpen').addEventListener('click', () => $('#ccsdsFile').click());
+  $('#ccsdsFile').addEventListener('change', (ev) => {
+    const files = [...ev.target.files];
+    ev.target.value = '';
+    if (files.length) openCcsdsFiles(files);
+  });
+  $('#ccsdsCheck').addEventListener('click', () => inspectCcsds());
+  $('#ccsdsClear').addEventListener('click', () => { setCcsdsFiles(null); inspectCcsds(); });
+  $('#ccsdsText').addEventListener('input', scheduleCcsdsInspect);
+  $('#ccsdsObject').addEventListener('change', () => { state.ccsdsObject = $('#ccsdsObject').value; inspectCcsds(); });
+  $('#ccsdsStations').addEventListener('change', () => inspectCcsds());
   $$('#kInput button').forEach((b) => b.addEventListener('click', () => setKeplerInput(b.dataset.kin)));
   ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE'].forEach((q) => {
     $(q).addEventListener('change', updateKeplerForm);
@@ -371,6 +385,8 @@ function changeLanguage(lang) {
   updateCoverage();
   if (state.sscSats) showSscInfo(false);
   if (state.tleInfo && !$('#satInfo').hidden) renderTleInfo();
+  if (state.ccsdsFiles) setCcsdsFiles(state.ccsdsFiles);
+  if (state.ccsdsInfo) inspectCcsds();      // the answer of the server is in the language of the page
   state.layerControls.forEach(relabelLayerControl);
   if (state.sweep) renderSweep();
   else if (state.result) renderResults();
@@ -514,6 +530,133 @@ function showSscInfo(setName) {
   box.innerHTML = `<b>${esc(s.name)}</b><br>` +
     esc(t('軌道データ: {start} 〜 {end}（{res} 秒間隔）', { start: s.start.slice(0, 10), end: s.end.slice(0, 10), res: s.resolution_s }));
 }
+/* ------------------------------------------------------------------ */
+/* CCSDS messages (OEM, OPM, OMM, OCM, TDM)                            */
+/* ------------------------------------------------------------------ */
+const CCSDS_INLINE_MAX = 300000;      // characters shown in the text box; larger files are kept aside
+function ccsdsTexts() {
+  if (state.ccsdsFiles) return state.ccsdsFiles.map((f) => f.text);
+  const s = $('#ccsdsText').value;
+  return s.trim() ? [s] : [];
+}
+function fmtSize(n) { return n < 1e6 ? `${Math.max(1, Math.round(n / 1e3))} KB` : `${(n / 1e6).toFixed(1)} MB`; }
+/* Files opened (or messages of a saved result) are kept aside instead of in the text box. */
+function setCcsdsFiles(files) {
+  state.ccsdsFiles = files && files.length ? files : null;
+  const ta = $('#ccsdsText'), box = $('#ccsdsFiles');
+  if (ta.dataset.ph == null) ta.dataset.ph = ta.placeholder;
+  box.hidden = !state.ccsdsFiles;
+  $('#ccsdsClear').hidden = !state.ccsdsFiles;
+  ta.disabled = !!state.ccsdsFiles;
+  if (state.ccsdsFiles) {
+    ta.value = '';
+    ta.placeholder = t('ファイルのメッセージを使います（「ファイルを外す」で貼り付けに戻ります）');
+    box.textContent = t('ファイル: {list}', { list: state.ccsdsFiles.map((f) => `${f.name} (${fmtSize(f.text.length)})`).join(listSep()) });
+  } else ta.placeholder = ta.dataset.ph;
+}
+async function openCcsdsFiles(list) {
+  const files = await Promise.all(list.map(async (f) => ({ name: f.name, text: await f.text() })));
+  if (files.length === 1 && files[0].text.length <= CCSDS_INLINE_MAX) {
+    setCcsdsFiles(null);
+    $('#ccsdsText').value = files[0].text;
+  } else setCcsdsFiles(files);
+  inspectCcsds();
+}
+let ccsdsTimer = null;
+function scheduleCcsdsInspect() { clearTimeout(ccsdsTimer); ccsdsTimer = setTimeout(() => inspectCcsds(), 800); }
+/* What the messages hold (/api/ccsds/inspect): shown under the box, with the choice of the object and,
+   for a TDM, the positions of the stations to enter. */
+async function inspectCcsds() {
+  clearTimeout(ccsdsTimer);
+  const box = $('#ccsdsInfo'), texts = ccsdsTexts(), req = ++state.ccsdsReq;
+  if (!texts.length) {
+    state.ccsdsInfo = null;
+    box.hidden = true;
+    $('#ccsdsObjectWrap').hidden = true;
+    $('#ccsdsStationsWrap').hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = '<span class="spinner"></span>' + esc(t('メッセージを読んでいます…'));
+  try {
+    const d = await api('/api/ccsds/inspect', {
+      text: texts.length === 1 ? texts[0] : texts, object: state.ccsdsObject, stations: $('#ccsdsStations').value,
+      settings: { ephemeris: $('#ephem').value },
+    });
+    if (req !== state.ccsdsReq) return;
+    state.ccsdsInfo = d;
+    renderCcsdsInfo();
+  } catch (err) {
+    if (req !== state.ccsdsReq) return;
+    state.ccsdsInfo = null;
+    box.innerHTML = `<span style="color:var(--err)">${esc(err.message)}</span>`;
+  }
+}
+/* The period of the segments of a message (the times as written: the earliest start, the latest end). */
+function segmentsSpan(segs) {
+  const spans = segs.map((g) => g.span).filter(Boolean);
+  if (!spans.length) return '';
+  return span(spans.map((s) => s[0]).sort()[0], spans.map((s) => s[1]).sort().pop());
+}
+function ccsdsMessageLine(m) {
+  const items = [[m.message, m.version].filter(Boolean).join(' ') + (['XML', 'JSON', 'CSV'].includes(m.format) ? ` (${m.format})` : '')];
+  if (m.object) items.push(m.object);
+  const segs = m.segments || m.traj || [];
+  if (m.message === 'OEM' || m.message === 'OCM') {
+    const n = segs.reduce((a, g) => a + (g.n_states || 0), 0);
+    const frames = [...new Set(segs.map((g) => [g.ref_frame, g.center].filter(Boolean).join(' / ')))].filter(Boolean);
+    items.push(...frames, t('状態 {n} 個', { n }));
+    const system = m.time_system || (segs[0] && segs[0].time_system);
+    if (segmentsSpan(segs)) items.push(segmentsSpan(segs) + (system ? ` ${system}` : ''));
+  } else if (m.message === 'TDM') {
+    const n = segs.reduce((a, g) => a + (g.n_records || 0), 0);
+    items.push(t('観測 {n} 件', { n }), Object.keys(m.data_types || {}).join(' '), segmentsSpan(segs));
+  } else if (m.epoch) {
+    items.push(t('元期 {v}', { v: m.epoch }) + (m.time_system ? ` ${m.time_system}` : ''));
+    if (m.ref_frame) items.push([m.ref_frame, m.center].filter(Boolean).join(' / '));
+    if (m.maneuvers) items.push(t('軌道制御 {n} 回', { n: m.maneuvers }));
+  }
+  return items.filter(Boolean).join(sep());
+}
+function renderCcsdsInfo() {
+  const d = state.ccsdsInfo, box = $('#ccsdsInfo');
+  if (!d) return;
+  // the object to compute: an object of the orbit messages, or the spacecraft among the TDM participants
+  const choices = d.tdm ? d.participants.map((p) => [p, p]) : d.objects.map((o) => [o.label, o.id || o.norad || o.name || o.label]);
+  const sel = $('#ccsdsObject');
+  $('#ccsdsObjectWrap').hidden = choices.length < 2;
+  sel.replaceChildren(el('option', { value: '' }, t('― 自動で選ぶ ―')), ...choices.map(([label, v]) => el('option', { value: v }, label)));
+  sel.value = choices.some(([, v]) => v === state.ccsdsObject) ? state.ccsdsObject : '';
+  $('#ccsdsStationsWrap').hidden = !d.tdm;
+  const lines = d.messages.map((m) => `<div>${esc(ccsdsMessageLine(m))}</div>`);
+  if (d.tdm) {
+    lines.push(`<div>${esc(t('参加者: {list}', { list: d.participants.join(listSep()) }))}</div>`);
+    if (d.missing_stations.length && d.missing_stations.length >= d.participants.length) {
+      lines.push(`<div>${esc(t('衛星以外の参加者（観測局）の位置を下に入力してください'))}</div>`);
+    } else if (d.missing_stations.length > 1) {
+      lines.push(`<div>${esc(t('位置が入力されていない参加者: {list}（衛星は 1 つだけにしてください）', { list: d.missing_stations.join(listSep()) }))}</div>`);
+    }
+    lines.push(`<div class="muted">${esc(t('TDM の軌道は「計算する」で観測から決めます'))}</div>`);
+  }
+  if (d.observer) lines.push(`<div><b>${esc(observerText(d.observer))}</b></div>`);
+  (d.notes || []).forEach((w) => lines.push(`<div>⚠ ${esc(w)}</div>`));
+  if (d.error) lines.push(`<div style="color:var(--err)">${esc(d.error)}</div>`);
+  box.innerHTML = lines.join('');
+  box.hidden = false;
+}
+/* The orbit determined from a TDM, after a computation. */
+function showOdResult(o) {
+  if (!o || o.model !== 'ccsds' || !o.od) return;
+  const od = o.od, names = { azel: t('角度'), radec: t('角度'), range: t('距離'), doppler: t('ドップラー') };
+  const rms = Object.entries(od.types || {}).filter(([, v]) => v.rms != null)
+    .map(([k, v]) => `${names[k] || k} ${v.rms.toPrecision(3)} ${v.unit === 'arcsec' ? '″' : v.unit}`);
+  const text = t('軌道決定: 観測 {n} 件（除外 {r} 件）、残差 RMS {rms}', { n: od.n_used, r: od.n_rejected, rms: rms.join(listSep()) }) +
+    (od.sigma_pos_km != null ? sep() + t('位置の推定誤差（1σ）{v} km', { v: od.sigma_pos_km.toPrecision(2) }) : '');
+  const box = $('#ccsdsInfo');
+  box.hidden = false;
+  box.querySelectorAll('.od-result').forEach((x) => x.remove());
+  box.append(el('div', { class: 'od-result' }, el('b', {}, observerText(o))), el('div', { class: 'od-result' }, text));
+}
 /* A UTC time as cli.py accepts it (2027-1-1, 2027-01-01 5:30, ...Z) -> 'YYYY-MM-DDTHH:MM:SS' of the form. */
 function formUtc(s) {
   const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(String(s).trim());
@@ -534,7 +677,18 @@ function applySatSpec(spec) {
   else if (spec.type === 'geo') { setSatMode('geo'); $('#geoLon').value = spec.lon; }
   else if (spec.type === 'horizons') { setSatMode('horizons'); $('#hzId').value = spec.command; $('#hzStep').value = spec.step_min; }
   else if (spec.type === 'sscweb') { $('#sscId').value = spec.id; setSatMode('sscweb'); }
-  else if (spec.type === 'tle') {
+  else if (spec.type === 'ccsds') {
+    setSatMode('ccsds');
+    const texts = (Array.isArray(spec.text) ? spec.text : [spec.text || '']).map(String);
+    if (texts.length === 1 && texts[0].length <= CCSDS_INLINE_MAX) {
+      setCcsdsFiles(null);
+      $('#ccsdsText').value = texts[0];
+    } else setCcsdsFiles(texts.map((text, i) => ({ name: t('メッセージ {n}', { n: i + 1 }), text })));
+    const st = spec.stations;
+    $('#ccsdsStations').value = Array.isArray(st) ? st.map((s) => `${s.name} ${s.lat} ${s.lon} ${s.elevation_m ?? 0}`).join('\n') : (st || '');
+    state.ccsdsObject = spec.object || '';
+    inspectCcsds();
+  } else if (spec.type === 'tle') {
     setSatMode('tle');
     const line2 = spec.m_deg != null ? tleWithMeanAnomaly(spec.line2, spec.m_deg) : spec.line2;   // one phase of a sweep
     $('#tleText').value = [spec.name, spec.line1, line2].filter(Boolean).join('\n');
@@ -770,6 +924,13 @@ function buildRequest() {
       const id = $('#sscId').value.trim().toLowerCase();
       if (!id) throw new Error(t('NASA SSCWeb の衛星 ID を入力してください（例: hinode）'));
       observer = { type: 'sscweb', id, name };
+    } else if (m === 'ccsds') {
+      const texts = ccsdsTexts();
+      if (!texts.length) throw new Error(t('CCSDS のメッセージを貼り付けるか、ファイルを開いてください'));
+      observer = { type: 'ccsds', text: texts.length === 1 ? texts[0] : texts, name };
+      if (state.ccsdsObject) observer.object = state.ccsdsObject;
+      const st = $('#ccsdsStations').value.trim();
+      if (st) observer.stations = st;
     } else {
       observer = { type: 'horizons', command: $('#hzId').value.trim(), step_min: num('#hzStep', 5), name };
     }
@@ -807,6 +968,7 @@ async function runSearch() {
   const seq = ++state.listSeq;
   const msg = req.observer.type === 'horizons' ? t('JPL Horizons から軌道を取得して計算中…') :
     req.observer.type === 'sscweb' ? t('NASA SSCWeb から軌道を取得して計算中…') :
+    req.observer.type === 'ccsds' && state.ccsdsInfo && state.ccsdsInfo.tdm ? t('TDM の観測から軌道を決めて計算中…') :
     req.observer.type === 'celestrak' ? t('CelesTrak から TLE を取得して計算中…') : t('計算中…');
   setStatus(st, req.sweepStep ? t('平均近点角を {step}° ずつ変えて計算中…', { step: req.sweepStep }) : msg, 'busy');
   try {
@@ -828,6 +990,7 @@ async function runSearch() {
     const r = await api('/api/search', req);
     if (seq !== state.listSeq) return;
     r.request = savedRequest(req, r);
+    showOdResult(r.observer);
     state.result = r;
     state.sweep = null;
     state.saved = null;
@@ -887,6 +1050,7 @@ function observerText(o) {
   if (o.kind === 'global') return t('地球全体');
   if (o.kind === 'ground') return o.name + paren(fmtLatLon(o.lat, o.lon) + sep() + t('標高 {v} m', { v: Math.round(o.elevation_m) }));
   if (o.kind === 'geocenter') return t('地球中心');
+  if (o.model === 'ccsds') return o.name + paren(ccsdsItems(o).join(sep()));
   const model = { tle: 'TLE/SGP4', kepler: t('軌道要素'), fixed: t('地球固定位置'), horizons: 'JPL Horizons', sscweb: 'NASA SSCWeb' }[o.model] || '';
   const items = [model];
   if (o.perigee_km != null) items.push(t('高度 {lo}〜{hi} km', { lo: o.perigee_km.toFixed(0), hi: o.apogee_km.toFixed(0) }));
@@ -899,6 +1063,19 @@ function observerText(o) {
   }
   if (o.epoch) items.push(t('元期 {v}', { v: fmtDT(o.epoch) }));
   return o.name + paren(items.join(sep()));
+}
+
+/* The interpretation of a CCSDS message (as cli.py's header of the tables). */
+function ccsdsItems(o) {
+  const items = [['CCSDS', o.message, o.version].filter(Boolean).join(' ') + (o.message === 'OMM' ? ' (SGP4)' : '')];
+  if (o.perigee_km != null) items.push(t('高度 {lo}〜{hi} km', { lo: o.perigee_km.toFixed(0), hi: o.apogee_km.toFixed(0) }));
+  if (o.period_min) items.push(t('周期 {p} 分', { p: o.period_min.toFixed(1) }));
+  if (o.i_deg != null) items.push(t('傾斜角 {v}°', { v: o.i_deg.toFixed(2) }));
+  if (o.start && o.end) items.push(t('軌道データ {period}', { period: span(fmtDT(o.start), fmtDT(o.end)) }), t('状態 {n} 個', { n: o.n_states }));
+  if (o.maneuvers) items.push(t('軌道制御 {n} 回', { n: o.maneuvers }));
+  if (o.od) items.push(t('TDM の観測 {n} 件から軌道決定', { n: o.od.n_used }));
+  if (o.epoch) items.push(t('元期 {v}', { v: fmtDT(o.epoch) }));
+  return items;
 }
 
 function renderResults() {

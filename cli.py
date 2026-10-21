@@ -10,6 +10,8 @@ The observer is chosen by the options that are given (exactly one kind):
     --geo-lon DEG                               ideal geostationary satellite
     --horizons ID [--horizons-step MIN]         spacecraft from JPL Horizons
     --sscweb ID                                 past orbit from NASA SSCWeb
+    --ccsds FILE [--ccsds-object NAME] [--station NAME=LAT,LON[,M]]
+                                                CCSDS OEM / OPM / OMM / OCM / TDM (KVN or XML)
     --lat --lon [--elev] | --city NAME          point on the ground
     --global                                    whole Earth (where on Earth an eclipse is seen)
     --request FILE                              a JSON request (same shape as the web API)
@@ -70,6 +72,7 @@ TYPE_JA = {'total': '皆既日食', 'annular': '金環日食', 'hybrid': '金環
 CONTACT_JA = {'C1': '第1接触', 'C2': '第2接触', 'MAX': '最大', 'C3': '第3接触', 'C4': '第4接触'}
 ORBIT_ARGS = ('epoch', 'a', 'e', 'i', 'raan', 'alt', 'perigee_alt', 'apogee_alt', 'sso', 'ltan')
 ORBIT_ONLY = ('argp', 'm', 'no_j2')
+CCSDS_ONLY = ('ccsds_object', 'station', 'stations')
 LANG_ENV = 'ECLIPSECALC_LANG'
 
 
@@ -188,6 +191,7 @@ def _epilog():
         (tr('静止衛星'), tr('--geo-lon 経度')),
         ('JPL Horizons', tr('--horizons ID（例 -170 = JWST）')),
         ('NASA SSCWeb', tr('--sscweb ID（例 hinode。過去の軌道）')),
+        ('CCSDS', tr('--ccsds ファイル（OEM・OPM・OMM・OCM・TDM。KVN・XML。TDM には観測局の位置 --station を添える）')),
         (tr('地上の地点'), tr('--lat --lon（と --elev）または --city 地点名')),
         (tr('地球全体'), '--global'),
         (tr('JSON で指定'), tr('--request ファイル（Web API と同じ形。--format json の出力の "request" をそのまま使えます）')),
@@ -208,6 +212,8 @@ def _epilog():
         f'  python cli.py --city {tr("東京")} --start 2026-01-01 --end 2056-01-01 --phenomena moon --tz 9 --detail',
         '  python cli.py --global --start 2026-01-01 --end 2036-01-01 --format csv -o list.csv',
         '  python cli.py --sscweb hinode --phenomena mercury --at "8-Nov-2006 19:13:37.498 UT"',
+        '  python cli.py --ccsds orbit.oem --start 2027-08-01 --end 2027-08-03 --phenomena moon',
+        '  python cli.py --ccsds track.tdm --station USUDA=36.1325,138.3628,1456 --start 2027-08-01 --end 2027-08-03',
         '',
         tr('生成 AI から使うときは --format json を付けてください（詳しくは docs/cli.md）。'),
         tr('終了コード: 0 = 計算した, 1 = 入力を計算できなかった, 2 = 引数の誤り'),
@@ -250,6 +256,19 @@ def build_parser():
                    help=tr('Horizons から取得する位置の刻み (分)（既定 60。地球近傍の衛星は 1〜2）'))
     o.add_argument('--sscweb', metavar='ID',
                    help=tr('NASA SSCWeb の衛星 ID（例 hinode, iris, iss）。過去の軌道。--list-sscweb で一覧'))
+
+    c = ap.add_argument_group(tr('観測者: CCSDS のメッセージ（OEM・OPM・OMM・OCM・TDM）'))
+    c.add_argument('--ccsds', action='append', metavar='FILE',
+                   help=tr('CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）または追跡データメッセージ（TDM）のファイル'
+                           '（KVN・XML。OMM は CelesTrak の JSON・CSV も可。- で標準入力）。繰り返すと複数のファイルを合わせて使う'
+                           '（TDM と同じ衛星の OPM・OMM・TLE を一緒に渡すと、それを軌道決定の初期値にする）'))
+    c.add_argument('--ccsds-object', metavar='NAME',
+                   help=tr('ファイルに複数の天体があるとき、使う天体の名前・国際標識・NORAD 番号（TDM では衛星の参加者名）'))
+    c.add_argument('--station', action='append', metavar='NAME=LAT,LON[,M]',
+                   help=tr('TDM の観測局の位置（名前=緯度,経度,標高 m）。TDM には観測局の位置が書かれていないため、'
+                           '参加者（PARTICIPANT_n）のうち衛星以外の局ごとに指定する。繰り返し可'))
+    c.add_argument('--stations', metavar='FILE',
+                   help=tr('TDM の観測局の位置のファイル。1 行に「名前 緯度 経度 標高(m)」。# から行末までは注釈'))
 
     gr = ap.add_argument_group(tr('観測者: 地上の地点（WGS84）・地球全体'))
     gr.add_argument('--lat', type=float, metavar='DEG', help=tr('緯度 (°)。北緯 +／南緯 −'))
@@ -345,6 +364,8 @@ def _modes(args):
         modes.append('horizons')
     if _given(args, 'sscweb'):
         modes.append('sscweb')
+    if _given(args, 'ccsds'):
+        modes.append('ccsds')
     if any(_given(args, k) for k in ('lat', 'lon', 'city')):
         modes.append('ground')
     if args.global_:
@@ -371,14 +392,14 @@ def parse_args(argv):
     if len(modes) != 1:
         raise UsageError(tr('観測者を 1 つだけ指定してください: 軌道要素（--epoch …）、TLE（--tle / --norad）、'
                             '静止衛星（--geo-lon）、JPL Horizons（--horizons）、NASA SSCWeb（--sscweb）、'
-                            '地上の地点（--lat --lon / --city）、地球全体（--global）、JSON（--request）')
+                            'CCSDS（--ccsds）、地上の地点（--lat --lon / --city）、地球全体（--global）、JSON（--request）')
                          + (tr('（指定されたもの: {modes}）', modes=', '.join(modes)) if modes else ''))
     args.mode = modes[0]
     args.at_mode = bool(args.at or args.at_file)
     if args.at_mode and (args.sweep is not None or args.detail):
         raise UsageError(tr('--at と --at-file は --sweep・--detail と同時には使えません'))
     if args.mode == 'request':
-        clash = [k for k in ORBIT_ONLY + ('elev', 'horizons_step', 'name', 'start', 'end', 'phenomena', 'sweep',
+        clash = [k for k in ORBIT_ONLY + CCSDS_ONLY + ('elev', 'horizons_step', 'name', 'start', 'end', 'phenomena', 'sweep',
                                           'ephemeris', 'delta_t', 'sun_radius', 'planet_radius', 'atm', 'min_sun_alt',
                                           'no_refraction', 'include_invisible') if _given(args, k)]
         if clash:
@@ -397,8 +418,13 @@ def parse_args(argv):
         raise UsageError(tr('--elev は地上の地点（--lat --lon / --city）だけで使えます'))
     if _given(args, 'horizons_step') and args.mode != 'horizons':
         raise UsageError(tr('--horizons-step は JPL Horizons（--horizons）だけで使えます'))
-    if _given(args, 'sweep') and args.mode not in ('kepler', 'tle'):
-        raise UsageError(tr('--sweep は軌道要素または TLE で指定した衛星だけで使えます'))
+    if args.mode != 'ccsds' and any(_given(args, k) for k in CCSDS_ONLY):
+        raise UsageError(tr('{opts} は CCSDS のメッセージ（--ccsds）だけで使えます',
+                            opts=' '.join('--' + k.replace('_', '-') for k in CCSDS_ONLY if _given(args, k))))
+    if args.mode == 'ccsds':
+        _station_items(args)
+    if _given(args, 'sweep') and args.mode not in ('kepler', 'tle', 'ccsds'):
+        raise UsageError(tr('--sweep は軌道要素・TLE・OMM（--ccsds）で指定した衛星だけで使えます'))
     if args.mode == 'tle' and _given(args, 'tle') and _given(args, 'norad'):
         raise UsageError(tr('--tle と --norad はどちらか一方だけ指定してください'))
     if args.mode == 'ground':
@@ -521,6 +547,55 @@ def _celestrak(norad, name, log):
     return {'type': 'tle', 'line1': l1, 'line2': l2, 'name': name or nm, 'norad': int(norad)}
 
 
+def _station_items(args):
+    """--station NAME=LAT,LON[,M] -> [{'name', 'lat', 'lon', 'elevation_m'}] (checked with the other options)."""
+    rows = []
+    for item in args.station or []:
+        name, sep, rest = item.rpartition('=')
+        try:
+            vals = [float(x) for x in rest.replace(' ', '').split(',')]
+        except ValueError:
+            vals = []
+        if not sep or not name.strip() or len(vals) not in (2, 3) or not all(map(math.isfinite, vals)):
+            raise UsageError(tr('--station は 名前=緯度,経度,標高(m) の形で指定してください（例 USUDA=36.1325,138.3628,1456）'))
+        rows.append({'name': name.strip(), 'lat': vals[0], 'lon': vals[1],
+                     'elevation_m': vals[2] if len(vals) == 3 else 0.0})
+    return rows
+
+
+def _station_rows(args):
+    """--station NAME=LAT,LON[,M] and --stations FILE -> [{'name', 'lat', 'lon', 'elevation_m'}]."""
+    rows = _station_items(args)
+    if args.stations:
+        from eclipsecalc.observers import ObserverError
+        from eclipsecalc.od import parse_stations
+        try:
+            text = _read_text(args.stations)
+        except OSError as exc:
+            raise InputError(tr('観測局のファイルを読めません: {exc}', exc=exc))
+        try:
+            rows += [{'name': n, 'lat': la, 'lon': lo, 'elevation_m': h} for n, la, lo, h in parse_stations(text).values()]
+        except ObserverError as exc:
+            raise InputError(str(exc))
+    return rows
+
+
+def _ccsds_spec(args, name):
+    texts = []
+    for path in args.ccsds:
+        try:
+            texts.append(_read_text(path))
+        except OSError as exc:
+            raise InputError(tr('CCSDS のメッセージのファイルを読めません: {exc}', exc=exc))
+    spec = {'type': 'ccsds', 'text': texts[0] if len(texts) == 1 else texts, 'name': name}
+    if args.ccsds_object:
+        spec['object'] = args.ccsds_object
+    stations = _station_rows(args)
+    if stations:
+        spec['stations'] = stations
+    return spec
+
+
 def observer_from_args(args, log):
     """The observer as the web API's JSON spec."""
     name = args.name or ''
@@ -552,6 +627,8 @@ def observer_from_args(args, log):
                 'step_min': 60 if args.horizons_step is None else args.horizons_step, 'name': name}
     if args.mode == 'sscweb':
         return {'type': 'sscweb', 'id': args.sscweb, 'name': name}
+    if args.mode == 'ccsds':
+        return _ccsds_spec(args, name)
     if args.mode == 'global':
         return {'type': 'global'}
     if args.city is not None:
@@ -614,6 +691,11 @@ def _with_radii(settings):
         if settings.get(k) in (None, ''):
             settings[k] = getattr(default, k)
     return settings
+
+
+def _mean_elements_only(spec):
+    from eclipsecalc.ccsds import mean_elements_only
+    return mean_elements_only(spec)
 
 
 def _not_json(name):
@@ -713,8 +795,10 @@ def build_request(args, log):
         raise InputError(tr('現象は moon, mercury, venus から選んでください（指定: {given}）',
                             given=', '.join(map(str, bad)) or tr('なし')))
     req['phenomena'] = list(dict.fromkeys(ph))      # each once (moon,moon would list every eclipse twice)
-    if req.get('step_deg') is not None and req['observer'].get('type') not in ('kepler', 'tle'):
-        raise InputError(tr('平均近点角を変えた一括計算（step_deg）は軌道要素または TLE で指定した衛星だけで使えます'))
+    if req.get('step_deg') is not None and req['observer'].get('type') not in ('kepler', 'tle') and not (
+            req['observer'].get('type') == 'ccsds' and _mean_elements_only(req['observer'])):
+        raise InputError(tr('--sweep は軌道要素・TLE・OMM（--ccsds）で指定した衛星だけで使えます') if args.sweep is not None
+                         else tr('平均近点角を変えた一括計算（step_deg）は軌道要素・TLE・OMM で指定した衛星だけで使えます'))
     if req.get('times') is not None:
         if req.get('step_deg') is not None:
             raise InputError(tr('--at と --at-file は --sweep・--detail と同時には使えません'))
@@ -815,7 +899,7 @@ def preflight(req, obs):
     farthest from its epoch) -> list of warnings."""
     from eclipsecalc import server
     from eclipsecalc.local import tle_decay
-    from eclipsecalc.observers import ObserverError, TLEObserver
+    from eclipsecalc.observers import EphemerisObserver, ObserverError, PropagatedObserver, SGP4Observer
     kw = {k: req[k] for k in ('phenomena', 'observer', 'start', 'end', 'settings')}
     with _api_errors():
         ctx, _, jd_a, jd_b, _ = server._parse_request(server.SearchRequest(**kw))
@@ -823,16 +907,24 @@ def preflight(req, obs):
         raise InputError(tr('人工衛星の観測者では期間を 20 年以内にしてください'))
     if req.get('step_deg') is not None and jd_b - jd_a > server.SWEEP_MAX_DAYS:
         raise InputError(tr('位相を変えた一括計算では期間を 1 年以内にしてください'))
-    warnings = []
-    if isinstance(obs, TLEObserver):        # the re-entry that SGP4 predicts
+    warnings = list(getattr(obs, 'notes', None) or [])
+    if isinstance(obs, SGP4Observer):        # the re-entry that SGP4 predicts
         try:
-            _, warnings = tle_decay(ctx, obs, jd_a, jd_b)
+            _, w = tle_decay(ctx, obs, jd_a, jd_b)
         except ObserverError as exc:
             raise InputError(str(exc))
+        warnings += w
+    elif isinstance(obs, (EphemerisObserver, PropagatedObserver)):      # the period the orbit data cover
+        try:
+            _, _, w = obs.limit_period(ctx, jd_a, jd_b, 0.0)
+        except ObserverError as exc:
+            raise InputError(str(exc))
+        warnings += [x for x in w if x not in warnings]
     epoch = getattr(obs, 'epoch_jd', None)
     if epoch is None:
         return warnings
-    return warnings + obs.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
+    more = obs.warnings_for(ctx, jd_a if abs(jd_a - epoch) > abs(jd_b - epoch) else jd_b)
+    return warnings + [x for x in more if x not in warnings]
 
 
 def calculate(req, debug=False):
@@ -983,6 +1075,8 @@ def observer_text(o):
                                   + tr('標高 {v} m', v=round(o['elevation_m'])))
     if model == 'fixed':
         items = [tr('地球固定位置'), _latlon(o['lat'], o['lon']), tr('高度 {v} km', v=f'{o["height_km"]:,.0f}')]
+    elif model == 'ccsds':
+        items = _ccsds_items(o)
     elif model == 'horizons':
         items = [f'JPL Horizons {o["command"]}', tr('位置の刻み {v} 分', v=o['step_min'])]
     else:
@@ -1002,6 +1096,31 @@ def observer_text(o):
     if o.get('epoch'):
         items.append(tr('元期 {v}', v=_time(o['epoch'], 0, '%Y-%m-%d %H:%M:%S') + ' UTC'))
     return o['name'] + _paren(_sep().join(items))
+
+
+def _ccsds_items(o):
+    """The interpretation of a CCSDS message in the header of the tables."""
+    msg = o.get('message', '')
+    items = [' '.join(x for x in ('CCSDS', msg, o.get('version') or '') if x)]
+    if msg == 'OMM':
+        items[0] += ' (SGP4)'
+    if o.get('perigee_km') is not None:
+        items.append(tr('高度 {lo}〜{hi} km', lo=f'{o["perigee_km"]:,.0f}', hi=f'{o["apogee_km"]:,.0f}'))
+    if o.get('period_min'):
+        items.append(tr('周期 {p} 分', p=f'{o["period_min"]:.1f}'))
+    if o.get('i_deg') is not None:
+        items.append(tr('傾斜角 {v}°', v=f'{o["i_deg"]:.2f}'))
+    if o.get('start') and o.get('end'):
+        items.append(tr('軌道データ {period}', period=_span(_time(o['start'], 0, '%Y-%m-%d %H:%M'),
+                                                         _time(o['end'], 0, '%Y-%m-%d %H:%M')) + ' UTC'))
+        items.append(tr('状態 {n} 個', n=o.get('n_states')))
+    if o.get('maneuvers'):
+        items.append(tr('軌道制御 {n} 回', n=o['maneuvers']))
+    od = o.get('od')
+    if od:
+        rms = [f'{k} {v["rms"]:.3g} {v["unit"]}' for k, v in od.get('types', {}).items() if v.get('rms') is not None]
+        items.append(tr('TDM から軌道決定（観測 {n} 件、残差 RMS {rms}）', n=od.get('n_used'), rms=', '.join(rms)))
+    return items
 
 
 def _model(value, names):

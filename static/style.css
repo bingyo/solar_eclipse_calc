@@ -87,7 +87,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .field textarea { font-family: ui-monospace, Consolas, monospace; font-size: 12px; resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid #f6c27b; border-color: var(--accent); }
-.field input:disabled { background: #f3f5f9; color: var(--muted); }
+.field input:disabled, .field textarea:disabled { background: #f3f5f9; color: var(--muted); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 0.8fr; gap: 0 10px; }
 .row { display: flex; gap: 10px; align-items: flex-end; }
@@ -132,6 +132,9 @@ button.small { padding: 5px 10px; font-size: 12px; }
 .pickmap { height: 260px; border-radius: 10px; margin-top: 8px; border: 1px solid var(--line); }
 .satinfo { background: var(--blue-soft); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #23406f; margin-top: 6px; }
 .satinfo b { color: #13294b; }
+.ccsds-row { align-items: center; margin: 6px 0 4px; }
+#ccsdsInfo div + div { margin-top: 3px; }
+#ccsdsInfo .od-result { border-top: 1px solid rgba(35,64,111,.15); padding-top: 4px; }
 
 .quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick button { font-size: 12px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }

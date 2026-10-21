@@ -85,6 +85,7 @@
             <button type="button" data-mode="geo">静止衛星</button>
             <button type="button" data-mode="horizons">JPL Horizons</button>
             <button type="button" data-mode="sscweb">NASA SSCWeb</button>
+            <button type="button" data-mode="ccsds" title="CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）と追跡データメッセージ（TDM）">CCSDS</button>
           </div>
           <div class="sat-pane" data-sat="celestrak">
             <div class="row">
@@ -155,6 +156,23 @@
             <datalist id="sscList"></datalist>
             <div id="sscInfo" class="satinfo" hidden></div>
             <p class="hint">NASA SSCWeb（衛星状況センター）が公開している科学衛星の過去の軌道（おもに 1 分間隔）を使います。CelesTrak からは最新の TLE しか取れないため、過去に衛星から見えた日食・太陽面通過を調べるときに使います（例: hinode ひので、iris、iss）。軌道データのない期間は自動的に除きます。</p>
+          </div>
+          <div class="sat-pane" data-sat="ccsds" hidden>
+            <label class="field">CCSDS のメッセージ（OEM・OPM・OMM・OCM・TDM）
+              <textarea id="ccsdsText" rows="7" spellcheck="false" placeholder="CCSDS_OPM_VERS = 3.0&#10;CREATION_DATE = 2027-07-30T00:00:00&#10;ORIGINATOR = JAXA&#10;OBJECT_NAME = …&#10;REF_FRAME = EME2000&#10;TIME_SYSTEM = UTC&#10;EPOCH = 2027-07-30T12:00:00&#10;X = …"></textarea></label>
+            <div class="row gap ccsds-row">
+              <button type="button" class="secondary small" id="ccsdsOpen">ファイルを開く</button>
+              <input type="file" id="ccsdsFile" multiple hidden accept=".oem,.opm,.omm,.ocm,.tdm,.kvn,.xml,.txt,.json,.csv">
+              <button type="button" class="secondary small" id="ccsdsCheck">内容を確認</button>
+              <button type="button" class="link" id="ccsdsClear" hidden>ファイルを外す</button>
+            </div>
+            <div id="ccsdsFiles" class="hint" hidden></div>
+            <label class="field" id="ccsdsObjectWrap" hidden>対象の天体<select id="ccsdsObject"></select></label>
+            <label class="field" id="ccsdsStationsWrap" hidden>観測局の位置（TDM）
+              <textarea id="ccsdsStations" rows="3" spellcheck="false" placeholder="USUDA 36.1325 138.3628 1456"></textarea>
+              <small>1 行に「名前 緯度 経度 標高(m)」。TDM には観測局の位置が書かれていないため、衛星以外の参加者ごとに入力します</small></label>
+            <div id="ccsdsInfo" class="satinfo" hidden></div>
+            <p class="hint">CCSDS（宇宙データシステム諮問委員会）の国際標準の形式で、JAXA などの宇宙機関が軌道の受け渡しに使っています。OEM（軌道暦）は書かれた状態を補間し、OPM・OCM の状態ベクトルは数値積分（地球の重力場・太陽と月の引力、値があれば大気抵抗・太陽輻射圧と軌道制御）で伝搬し、OMM（平均要素）は SGP4 で、TDM（追跡データ）は観測局の位置を添えて軌道を決めてから計算します。KVN・XML（複数のメッセージをまとめた NDM も可）に対応し、OMM は CelesTrak の JSON・CSV も読めます。</p>
           </div>
           <label class="field">衛星名（任意）<input id="satName" type="text"></label>
           <div id="satInfo" class="satinfo" hidden></div>
@@ -250,7 +268,7 @@
       </div>
       <ul class="features">
         <li><b>高精度</b>: JPL DE440 暦、光行時間・ΔT・地球楕円体（WGS84）を厳密に扱い、接触時刻を 0.1 ms まで追い込みます。</li>
-        <li><b>人工衛星から</b>: TLE（SGP4）、軌道要素、静止衛星、JPL Horizons の探査機軌道、NASA SSCWeb の過去軌道に対応。地球に隠される時間も考慮します。</li>
+        <li><b>人工衛星から</b>: TLE（SGP4）、軌道要素、静止衛星、JPL Horizons の探査機軌道、NASA SSCWeb の過去軌道、CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）と追跡データメッセージ（TDM）に対応。地球に隠される時間も考慮します。</li>
         <li><b>地図</b>: 皆既帯・金環帯の経路と限界線、部分食の食分分布、太陽面通過の可視地域を表示します。</li>
       </ul>
     </div>
@@ -388,9 +406,11 @@
     <h3>基本の流れ</h3>
     <ol>
       <li>計算したい現象（日食・水星・金星）にチェックを入れます。</li>
-      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID で指定します。打ち上げ前の衛星は「軌道要素」に計画値を入れ、「平均近点角を変えて一括計算」を使うと、衛星が軌道上のどこにいても起こりうる結果の範囲が分かります。「地球全体」は世界のどこかで見られる現象を探します。</li>
+      <li>観測者を選びます。「地上の地点」は緯度・経度・標高、「人工衛星」は NORAD 番号・TLE・軌道要素・静止経度・JPL Horizons ID・NASA SSCWeb の衛星 ID・CCSDS のメッセージで指定します。打ち上げ前の衛星は「軌道要素」に計画値を入れ、「平均近点角を変えて一括計算」を使うと、衛星が軌道上のどこにいても起こりうる結果の範囲が分かります。「地球全体」は世界のどこかで見られる現象を探します。</li>
       <li>期間を指定して「計算する」。一覧の行をクリックすると詳細が開きます。</li>
     </ol>
+    <h3>CCSDS のメッセージ</h3>
+    <p>「人工衛星」の「CCSDS」に、CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）や追跡データメッセージ（TDM）を貼り付けるか、ファイルを開きます。OEM は書かれた状態を補間し、OPM と OCM の状態ベクトルは数値積分で軌道を伝搬し、OMM は SGP4 で計算します。TDM には観測局の位置が書かれていないため、衛星以外の参加者（観測局）の緯度・経度・標高を入力すると、角度・距離・ドップラーの観測から軌道を決めて計算します（同じ衛星の OPM・OMM・TLE を一緒に入れると、それを初期値にします）。「内容を確認」で、読み取った内容と軌道の大きさを計算の前に確かめられます。</p>
     <h3>結果の保存と見返し</h3>
     <p>一覧の「結果を保存」で、一覧と計算条件を JSON ファイルに保存します。上の「保存した結果を開く」でそのファイルを選ぶと、一覧が保存したときのまま表示され、左の設定も保存した条件に戻ります。
       一覧の行をクリックすると、保存した計算条件でその現象の詳細（接触時刻・動画・グラフ・地図）を計算し直して表示します。詳細の「データ」タブの「JSON をダウンロード」で保存した 1 件の現象や、cli.py の <code>--format json</code> の出力も開けます。</p>

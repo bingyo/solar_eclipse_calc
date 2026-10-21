@@ -38,7 +38,7 @@ from .constants import (AU_KM, DAY_S, MERCURY_RADIUS, MOON_K_EXTERNAL, MOON_K_IN
 from .conjunctions import BODY_MIN_DISTANCE_KM, BODY_MIN_RATE, find_conjunctions, geocentric_min_separation
 from .geometry import angle_between, magnitude, norm, obscuration
 from .i18n import span, tr
-from .observers import HorizonsObserver, ObserverError, SSCWebObserver, TLEObserver
+from .observers import HorizonsObserver, ObserverError, SGP4Observer, SSCWebObserver
 from .saros import saros_number
 from .shadow import Shadow, sun_moon_itrs
 from .timeutil import iso_utc
@@ -417,11 +417,16 @@ class LocalSearch:
             if not self.observer.surveyed:
                 self.observer.survey(self.jd_a, self.jd_b)
             self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
-        elif isinstance(self.observer, TLEObserver):
+        elif isinstance(self.observer, SGP4Observer):
             self.jd_b, w = tle_decay(ctx, self.observer, self.jd_a, self.jd_b, margin)
+            self.warnings += [x for x in list(self.observer.notes) + w if x not in self.warnings]
+        else:      # orbit data of limited extent (CCSDS ephemerides, propagated state vectors)
+            self.jd_a, self.jd_b, w = self.observer.limit_period(ctx, self.jd_a, self.jd_b, margin)
             self.warnings += [x for x in w if x not in self.warnings]
+            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
         wins, _ = candidate_windows(ctx, self.observer, self.body, self.jd_a - margin,
                                     self.jd_b + margin, self.p)
+        wins = self.observer.clip_windows(wins)
         self.observer.prepare(ctx, wins)
         windows = [(a - self.jd0, b - self.jd0, self.h0) for a, b in wins]
         ev = E.geom
@@ -792,7 +797,10 @@ class LocalSearch:
         pad = max(dur * 0.08, 90.0 / DAY_S)
         lo, hi = x1 - pad, x4 + pad
         jd = getattr(self.observer.vf, 'jd', None)
-        if jd is not None and jd.size:      # tabulated orbits (Horizons, SSCWeb) end where their data ends
+        iv = self.observer.interval_at(e['jd_max'])
+        if iv is not None:                  # CCSDS orbit data end where their data (or propagation) ends
+            lo, hi = max(lo, iv[0] - self.jd0 + 1e-7), min(hi, iv[1] - self.jd0 - 1e-7)
+        elif jd is not None and jd.size:    # tabulated orbits (Horizons, SSCWeb) end where their data ends
             lo, hi = max(lo, jd[0] - self.jd0 + 1e-7), min(hi, jd[-1] - self.jd0 - 1e-7)
         x = np.linspace(lo, hi, n)
         d = self.details(x)

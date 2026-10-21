@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, i18n
+from . import __version__, ccsds, i18n
 from .constants import (DAY_S, MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MOON_K_INTERNAL,
                         MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, SUN_RADIUS_OBSERVED,
                         VENUS_RADIUS, VENUS_RADIUS_NASA, VENUS_RADIUS_VISIBLE, VENUS_RADIUS_XRAY, WGS84_A)
@@ -30,7 +30,8 @@ from .global_eclipse import search_global
 from .i18n import span, tr
 from .local import LocalSearch, Params
 from .observers import (GeocenterObserver, GroundObserver, HorizonsObserver, NetworkError, ObserverError,
-                        SSCWebObserver, TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
+                        SGP4Observer, SSCWebObserver, TLEObserver, build_observer, fetch_tle_celestrak,
+                        ssc_satellites)
 from .presets import SATELLITES, cities
 from .timeutil import iso_from_jd, parse_obs_time, parse_utc
 
@@ -340,6 +341,31 @@ def tle(norad: int):
     return d
 
 
+class CCSDSRequest(BaseModel):
+    '''A CCSDS message to look into before computing (the page's 「内容を確認」).  Typed loosely so
+    that wrong input gets the translated messages of ccsds.py instead of a 422.'''
+    text: Any = None
+    object: Any = None
+    stations: Any = None
+    settings: dict = {}
+
+
+@app.post('/api/ccsds/inspect')
+def ccsds_inspect(req: CCSDSRequest):
+    '''What a CCSDS input holds (messages, objects, the TDM participants whose positions are needed)
+    and, without a TDM, the observer it gives.'''
+    with _compute_lock:
+        try:
+            ctx, _ = _settings(req.settings)
+            out = ccsds.inspect(ctx, req.text, str(req.object or ''), req.stations)
+        except ObserverError as exc:
+            raise _bad_input(exc)
+        except Exception as exc:
+            traceback.print_exc()
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
+    return _clean(out)
+
+
 @app.get('/api/sscweb/satellites')
 def sscweb_satellites():
     try:
@@ -468,8 +494,9 @@ def phase_sweep(req: SweepRequest):
     t0 = time.time()
     ctx, params, jd_a, jd_b, phen = _parse_request(req)
     spec = dict(req.observer)
-    if spec.get('type') not in ('kepler', 'tle'):
-        raise HTTPException(400, tr('位相を変えた一括計算は「軌道要素」または TLE で指定した衛星だけで使えます'))
+    if spec.get('type') not in ('kepler', 'tle') and not (spec.get('type') == 'ccsds'
+                                                         and ccsds.mean_elements_only(spec)):
+        raise HTTPException(400, tr('位相を変えた一括計算は「軌道要素」・TLE・OMM で指定した衛星だけで使えます'))
     step = float(req.step_deg)
     if not 5.0 <= step <= 90.0:
         raise HTTPException(400, tr('位相の刻みは 5〜90° で指定してください'))
@@ -761,7 +788,7 @@ def at_observer_checks(ctx, observer, jd):
     '''The checks of the observer at the times that need no orbit data from a service (the re-entry
     that SGP4 predicts for a TLE) -> warnings (an old TLE judged at the time farthest from its epoch).'''
     lo, hi = float(jd.min()), float(jd.max())
-    if isinstance(observer, TLEObserver):
+    if isinstance(observer, SGP4Observer):
         jd_d = observer.decay_jd(hi + 0.01)
         if jd_d is not None:
             raise ObserverError(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、指定した時刻は計算できません',

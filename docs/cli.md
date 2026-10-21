@@ -28,7 +28,7 @@ python cli.py --help
 ## 生成 AI が計算するときの手順
 
 1. **観測者を決める**（下の表）。人から受け取った情報をなるべくそのままの形で渡し、AI が別の形式に換算しないようにします（換算の誤りを避けるため）。
-2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。
+2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。CCSDS のメッセージでは、`observer` の `message`（OEM・OPM など）・`object_name`・`ref_frame`・`time_system`・データの期間（`start`・`end`）を、TDM なら軌道決定の結果（`od`）も確かめます。
 3. **計算する**: `--format json` で実行し、終了コードと `ok` を確認します。人の言語に合わせて `--lang`（例 `--lang en`）を付けると、`warnings` や `error` をそのまま伝えられます。`warnings` があれば必ず人に伝えます（例: TLE の元期から日数が経っていて誤差が大きい）。接触時刻まで必要なら `--detail` を付けます。
    TLE の元期から何週間も先の現象は、衛星が軌道上のどこにいるかがほとんど分からなくなるため（大気の抵抗や軌道変更）、`--sweep 10` も実行して、位置による結果の幅（時刻・回数・食分の範囲）を一緒に伝えてください。
 4. **報告する**: 時刻は UTC で返るので、人の地域の時刻に直して伝えます（日本時間 = UTC+9）。表で見せるときは `--format table --tz 9` が便利です。計算条件（出力の `request`）を残しておくと、`--request` で同じ計算を再現できます。
@@ -42,7 +42,10 @@ python cli.py --help
 | 軌道6要素（元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角） | `--epoch --a --e --i --raan --argp --m` |
 | 計画中の軌道（高度・太陽同期・昇交点の地方時など） | `--epoch` と `--alt`（円軌道）または `--perigee-alt --apogee-alt`、`--i` または `--sso`、`--raan` または `--ltan` |
 | 打ち上げ前で、軌道上の位置（位相）が決まっていない | 上の軌道要素に `--sweep 10`（平均近点角を 10° 刻みで一括計算） |
-| TLE の元期から何週間も先の現象 | `--tle` に `--sweep 10`（TLE の平均近点角を 10° 刻みで置き換えて一括計算） |
+| TLE・OMM の元期から何週間も先の現象 | `--tle`（または OMM の `--ccsds`）に `--sweep 10`（平均近点角を 10° 刻みで置き換えて一括計算） |
+| CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM。JAXA などの宇宙機関が軌道の受け渡しに使う国際標準の形式。KVN または XML） | ファイルに保存して `--ccsds ファイル`（値を取り出さずにそのまま渡します。複数のファイルは `--ccsds` を繰り返します。天体が複数あれば `--ccsds-object` に名前・国際標識・NORAD 番号） |
+| CelesTrak・Space-Track の OMM（JSON・CSV） | `--ccsds ファイル` |
+| 追跡データメッセージ（TDM。地上局で測った角度・距離・ドップラー） | `--ccsds ファイル` と、観測局の位置 `--station 名前=緯度,経度,標高m`（衛星以外の参加者ごとに繰り返す）または `--stations ファイル`。同じ衛星の OPM・OMM・TLE があれば `--ccsds` で一緒に渡すと、軌道決定の初期値になります |
 | 静止衛星の経度 | `--geo-lon 140.7` |
 | 探査機・宇宙望遠鏡（JWST、SOHO など） | `--horizons -170`（JPL Horizons の ID。位置の刻み `--horizons-step`（既定 60 分）は、地球の近くを回る衛星・月を回る探査機・地球や月の近くを通る探査機では位置の補間の誤差が 10 m 以下になるまで自動で細かくし、`warnings` で知らせます） |
 | 科学衛星が過去に見た現象（ひので など） | `--sscweb hinode`（ID は `--list-sscweb` で確認） |
@@ -61,6 +64,33 @@ python cli.py --help
 - 元期・期間は **UTC** です。日本時間で与えられたら 9 時間引きます（2027-08-02 09:00 JST = 2027-08-02T00:00:00 UTC）。
 - 角度はすべて度（°）、距離は km、標高は m です。経度は東経 +／西経 −、緯度は北緯 +／南緯 −。
 
+### CCSDS のメッセージについての注意
+
+CCSDS（宇宙データシステム諮問委員会）の軌道データメッセージ（ODM、CCSDS 502.0-B-3 の OEM・OPM・OMM・OCM）と追跡データメッセージ（TDM、CCSDS 503.0-B-2）を読みます。形式は KVN（`CCSDS_OEM_VERS = 3.0` などで始まる文字）と XML（複数のメッセージを NDM でまとめたものも可）で、OMM は CelesTrak・Space-Track の JSON・CSV も読めます。TLE を一緒に入れることもできます。
+
+```bash
+python cli.py --ccsds iss.oem --start 2027-08-01 --end 2027-08-03 --dry-run --format json
+python cli.py --ccsds pass.tdm --station USUDA=36.1325,138.3628,1456 --station KATSUURA=35.2025,140.3075,50 \
+    --start 2027-08-01 --end 2027-08-03 --format json
+```
+
+| メッセージ | 計算のしかた |
+|---|---|
+| OEM（軌道暦） | 書かれた状態を `INTERPOLATION`（HERMITE・LAGRANGE・LINEAR）と `INTERPOLATION_DEGREE` で補間します。データの期間（`USEABLE_START_TIME`〜`USEABLE_STOP_TIME`）の外とセグメントの間の途切れは計算せず、`warnings` で知らせます。状態の間隔が粗く、補間の誤差が 100 m を超えそうなときも知らせます（推定値は `interpolation_error_km`） |
+| OPM（状態ベクトル） | 状態ベクトルを数値積分で伝搬します。力は地球の重力場（EGM96 の 8 次まで）、太陽と月の引力（DE440）、`MASS`・`DRAG_AREA`・`DRAG_COEFF` があれば大気抵抗（平均的な太陽活動の指数関数モデル）、`SOLAR_RAD_AREA`・`SOLAR_RAD_COEFF` があれば太陽輻射圧（地球の影を含む）、`MAN_*` の軌道制御（瞬時の速度変化。時間のある噴射はその中央の時刻）。元期から前後 1,000 周・20 年まで伝搬し、高度 100 km を下回るとそこで止めます。ケプラー要素と共分散は使いません。同じ天体の OPM が複数あれば、それぞれ隣の元期との中間まで使います |
+| OMM（平均要素） | TLE と同じく SGP4 で計算します（`MEAN_ELEMENT_THEORY = SGP4`、`REF_FRAME = TEME`、`TIME_SYSTEM = UTC`）。`--sweep` も使えます |
+| OCM（軌道総合） | `TRAJ` の状態の並び（`CARTP`・`CARTPV`・`CARTPVA`、接触要素の `KEPLERIAN`・`KEPLERIANMEAN`）は OEM と同じく補間し、状態が 1 つだけのブロックは OPM と同じく伝搬します（`PHYS` の質量・面積・係数で大気抵抗と太陽輻射圧、`MAN` の `DV_X`・`DV_Y`・`DV_Z` で軌道制御）。時刻は絶対時刻か `EPOCH_TZERO` からの秒です |
+| TDM（追跡データ） | 観測から軌道を決め（重み付き最小二乗の軌道決定）、OPM と同じく伝搬します。使う観測は `ANGLE_1`・`ANGLE_2`（`ANGLE_TYPE` が AZEL か RADEC）、`RANGE`（km か秒。片道と往復。`RANGE_MODULUS`・送受信の遅延・補正を考え、往復の全長で書かれた値は自動で半分にして `warnings` で知らせます）、`DOPPLER_INSTANTANEOUS`・`DOPPLER_INTEGRATED`（距離の変化率 km/s）です。光の伝わる時間を考え、4σ を超える観測は除きます。周波数・位相・差分の観測は使いません。初期値は同じ衛星の OPM・OMM・TLE があればそれ、なければ角度と距離の観測から、角度だけなら Gauss の方法で求めます |
+
+- **TDM の観測局**: TDM には観測局の位置が書かれていない（運用の取り決めで別に決まる）ため、衛星以外の参加者（`PARTICIPANT_n`）ごとに緯度・経度・標高を `--station 名前=緯度,経度,標高m` で渡すか、1 行に `名前 緯度 経度 標高(m)` を書いたファイルを `--stations` で渡します（`#` から行末までは注釈）。位置を渡さなかった参加者が 1 つだけなら、それを衛星とします。参加者が多いときは `--ccsds-object` で衛星を選びます。
+- **座標系**（`REF_FRAME`・`TRAJ_REF_FRAME`）: EME2000（J2000）、GCRF・ICRF、TEME、TOD、MOD、J2000_ECLIPTIC、地球固定の ITRF（ITRF2014 など）・ECEF と、極運動を含まない EFG・PEF・TDR。TOD・MOD・TEME は `REF_FRAME_EPOCH` も使います。**中心**（`CENTER_NAME`）: EARTH、MOON、SUN、SOLAR SYSTEM BARYCENTER、EARTH BARYCENTER、惑星（の重心）。地球以外の中心では、太陽・惑星・月の引力（点質量）だけで伝搬します。
+- **時刻系**（`TIME_SYSTEM`）: UTC、TAI、TT（TDT）、GPS、GST、QZSST、BDT、TDB（ET）、TCB、TCG、UT1。時刻は `2027-07-30T12:00:00` と通日の `2027-211T12:00:00` のどちらでもよく、UTC のうるう秒（`:60`）も書けます。
+- **同じ天体のメッセージが複数あるとき**は OEM、OCM、OPM、OMM、TLE の順に 1 種類を使い、使わなかった種類は `warnings` で知らせます（OMM・TLE が複数なら元期が最も新しいもの）。
+- **大きさの上限**: 入力 64 MB、状態 200 万個、TDM の観測 2 万件。
+- **精度の目安**: OEM は書かれた状態の精度です。OPM・OCM の伝搬は、ISS（2008 年）で SGP4 と 1 日で 3 km 以内です。大気の密度は平均的な太陽活動の値なので、低軌道では太陽活動によって数日で数 km の差が出ることがあります（`warnings` に入ります）。TDM の軌道決定の精度は観測の誤差と期間によります（`od.sigma_pos_km` が位置の推定誤差 1σ。観測の期間が周期より短いと `warnings` で知らせます）。
+
+画面の「内容を確認」は Web API の `POST /api/ccsds/inspect` に `{"text": "…", "object": "…", "stations": "…"}`（`object`・`stations` は省略可）を送り、メッセージの一覧（`messages`）、選べる天体（`objects`）、TDM の参加者（`participants`）と位置がまだない参加者（`missing_stations`）、TDM でなければ観測者の解釈（`observer`、注意 `notes`。計算できないときは `error`）を受け取ります。読めない入力は 400 です。
+
 ### 計算できる範囲
 
 | 項目 | 範囲 |
@@ -69,6 +99,7 @@ python cli.py --help
 | 人工衛星の期間 | 20 年以内（`--sweep` は 1 年以内） |
 | TLE | 元期から離れるほど誤差が大きくなります（7 日超・30 日超で `warnings` に注意が入ります）。現象の数日前の TLE を使うと秒単位の精度になります。何週間も先なら `--sweep` で位置による幅を確かめます |
 | JPL Horizons・SSCWeb | 各サービスが軌道データを提供している期間のみ。範囲外は `warnings` に入るか、エラーになります |
+| CCSDS | OEM・OCM の状態の並びは書かれた期間のみ。OPM・OCM の状態と TDM の軌道決定は元期から前後 1,000 周（低軌道で約 2 か月）・20 年まで。範囲外は `warnings` に入るか、エラーになります |
 
 ### 半径の選び方（`--sun-radius`、`--planet-radius`）
 
@@ -116,10 +147,11 @@ python cli.py --request request.json --format json
 | `geo` | `lon` |
 | `horizons` | `command`（ID）、`step_min` |
 | `sscweb` | `id` |
+| `ccsds` | `text`（メッセージの文字列。複数のファイルは文字列の配列）、`object`（天体の名前・国際標識・NORAD 番号。TDM では衛星の参加者名）、`stations`（TDM の観測局。`名前 緯度 経度 標高(m)` の行の文字列、または `{"name", "lat", "lon", "elevation_m"}` の配列） |
 | `ground` | `lat`、`lon`、`elevation_m` |
 | `global` | （なし） |
 
-`step_deg`（5〜90）を加えると、`kepler` と `tle` で平均近点角を変えた一括計算になります。
+`step_deg`（5〜90）を加えると、`kepler` と `tle`、OMM か TLE だけの `ccsds` で平均近点角を変えた一括計算になります。
 `times`（時刻の文字列の配列）を加えると、現象を探さずにその時刻の位置を計算します（`--at` と同じ。`measured`・`exposure_s` も使えます。`start`・`end` は省略でき、`phenomena` は 1 つ）。`--request` に `--at`・`--at-file`・`--exposure` を加えると、JSON の時刻の代わりにそれを使います。
 `settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`。省略すると画面の既定値です（半径は上の「半径の選び方」の既定。以前の `request` の半径は同じ節の注意を参照）。
 
@@ -132,7 +164,7 @@ python cli.py --request request.json --format json
 | `ok` | `true` |
 | `lang` | メッセージ（`warnings`、既定の観測者名など）の言語（`--lang`） |
 | `request` | 計算に使った条件（`--request` にそのまま渡せる） |
-| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準） |
+| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準）。CCSDS なら `model: "ccsds"` と `message`（OEM・OPM・OMM・OCM・TDM）、`version`、`format`（KVN・XML・JSON・CSV）、`object_name`、`object_id`、`ref_frame`、`center`、`time_system`。OEM・OCM の状態の並びは `start`・`end`（データの期間）、`n_states`、`segments`、`interpolation_error_km`、OMM は TLE と同じ要素、OPM・OCM の状態と TDM は元期の接触軌道要素（`a_km` など。GCRS 基準）、`forces`（伝搬に使った力）、`drag`・`srp`（C·A/m、m²/kg）、`maneuvers`、`state_gcrs`（元期の位置・速度、km・km/s）。TDM はさらに `target`（衛星）、`stations`、`apriori`（初期値に使ったメッセージ）と `od`（軌道決定: `n_used`・`n_rejected`、観測の種類ごとの `types`（`n`、`rejected`、残差の `rms` と `unit`、往復を半分にした `factor`）、`sigma_pos_km`・`sigma_vel_km_s`（推定誤差 1σ）、`arc_s`（観測の期間、秒）、`first_guess`（`apriori`・`positions`・`gauss`）） |
 | `events` | 現象の一覧（最大の時刻順。下の表） |
 | `warnings` | 注意（文字列の配列）。人に伝えてください。TLE の古さの注意にある日数は、通常の計算では見つかった現象のうち元期から最も遠いものまでの日数、`--dry-run` と `--sweep` では期間の端のうち元期から遠いほうまでの日数です |
 | `start`、`end`、`ephemeris`、`delta_t_mid_s`、`params` | 期間、暦、期間中央の ΔT（秒）、計算に使った半径などの設定 |
@@ -268,9 +300,9 @@ python cli.py --sscweb hinode --phenomena mercury --start 2006-11-08 --end 2006-
 
 計算を検証したいときは、次の方法があります。
 
-- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと、`--at` が接触と同じ位置を返すこと）、`python tests/test_geometry.py`（P 角・太陽の北が上の位置・接触の時刻の半径への感度・うるう秒など）、`python tests/test_orbit_planning.py`、`python tests/test_hinode.py`（「ひので」の実観測との比較。2006 年の水星の太陽面通過の接触は画像から測った時刻と 1.5 秒以内。要インターネット）。どれも全項目が `PASS` になることを確かめます。
+- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと、`--at` が接触と同じ位置を返すこと）、`python tests/test_geometry.py`（P 角・太陽の北が上の位置・接触の時刻の半径への感度・うるう秒など）、`python tests/test_orbit_planning.py`、`python tests/test_ccsds.py`（CCSDS のメッセージ: OMM と TLE の一致、OEM の補間と現象、OPM・OCM の伝搬と軌道制御、TDM からの軌道決定、誤った入力のメッセージ）、`python tests/test_hinode.py`（「ひので」の実観測との比較。2006 年の水星の太陽面通過の接触は画像から測った時刻と 1.5 秒以内。要インターネット）。どれも全項目が `PASS` になることを確かめます。
 - **観測画像との比較**: 画像の撮影時刻を `--at` で渡し、画像で測った位置を `--at-file` の `X Y` に書くと、O−C（″）と時間の差 `oc_dt`（秒）が出ます（[観測画像と比べる](#観測画像と比べる--at)）。
 - **地球全体の結果**: `--global` の日食の時刻・γ・食分・中心食の継続時間は、NASA の日食カタログ（Espenak & Meeus）と比べられます（一致の程度は [README](../README.ja.md) の「精度と検証」）。
 - **地上の結果**: 同じ日食を `--global` で計算し、その地点が中心食帯の中にあるか、最大の時刻が `p1`〜`p4` に入っているかなどで整合を確かめられます。
-- **衛星の結果**: 衛星の位置の誤差がそのまま時刻の誤差になります（低軌道で沿軌道 7.5 km ≒ 1 秒）。TLE なら元期が現象に近いもので計算し直して差を見ます。打ち上げ前や TLE の元期から何週間も先なら、`--sweep` で位相による結果の幅を示します。
+- **衛星の結果**: 衛星の位置の誤差がそのまま時刻の誤差になります（低軌道で沿軌道 7.5 km ≒ 1 秒）。TLE なら元期が現象に近いもので計算し直して差を見ます。CCSDS の OPM・TDM なら、同じ衛星の OEM や TLE で計算した結果と比べられます。打ち上げ前や TLE の元期から何週間も先なら、`--sweep` で位相による結果の幅を示します。
 - **入力の解釈**: `--dry-run` の `observer` を人から受け取った情報と照合します。
