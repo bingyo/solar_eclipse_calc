@@ -28,9 +28,12 @@ tick marks are on whole pixels, so one frame's scale is uncertain by ~0.2 %
 axes agree with the XRT plate scale (1.0286"/px) to 0.1 %.  The origin of the
 axes follows the pointing: a few arcsec off in general, ~25" during eclipses
 (the Sun sensor sees a partial Sun) and 1,886" in X in the XRT movies of
-2019-07-02 21:43-22:13 (TR0-0020/0021), so measure the Sun's centre from its
-limb.  The XRT QL images of 2025-2026 are turned by 0.7-1.6 deg from the solar
-P angle (0.4 deg or less in 2017-2024).
+2019-07-02 21:43-22:13 (TR0-0020/0021) and about -3,300" in some frames of
+2007-03-19 02:48-03:04 (TR0-0011; the image itself does not move), so measure
+the Sun's centre from its limb.  The XRT QL images of 2025-2026 are turned by
+0.7-1.6 deg from the solar P angle (0.4 deg or less in 2007-2024).  Rows lost
+in the telemetry are black bands across the whole field, and some frames are
+entirely dark or very short exposures: mask them before looking for the Moon.
 
 Usage:  python tools/hinode_ql.py --selftest
         python tools/hinode_ql.py 2006-11-08            (list the products)

@@ -153,7 +153,7 @@ Enter the planned values in "Orbital elements" (the altitude and, for a sun-sync
 - the range of the time of maximum (from the table and chart of the results by phase, the details of each case can be opened too)
 
 Example: the total solar eclipse of 2027-08-02 seen from a 680 km sun-synchronous orbit with the ascending node at 18:00 is a partial eclipse met 2–3 times for every phase, but the greatest magnitude varies widely with the phase, from 0.42 to 1.03, and only 2 of the 36 cases are total.
-After launch, fetch the latest TLE by NORAD number and compute again; computing once more a few days before the event gives times to the second (in [the validation with Hinode](docs/hinode_validation.md) (in Japanese), the difference was 5–20 s with orbital elements from 3–4 weeks before, and about 1 s with the orbit just before the event).
+After launch, fetch the latest TLE by NORAD number and compute again; computing once more a few days before the event gives times to the second (in [the validation with Hinode](docs/hinode_validation.md) (in Japanese), the difference was 1–19 s with orbital elements from 2–4 weeks before, and about 1–2 s with the orbit just before the event).
 
 ## Accuracy and validation
 
@@ -180,7 +180,7 @@ The solar eclipses and transits that Hinode (altitude about 680 km) met in orbit
 | Compared with | Result |
 |---|---|
 | Contacts of the 2006 transit of Mercury measured in the SOT G-band quick-look movies (a frame every 6.4 s) | Observed 19:12:25.7 / 19:14:25.6 / 00:08:01.5 / 00:10:00.2 UT; the tool (default radius) differs by +0.1 / +1.3 / +1.2 / +0.5 s. The visible solar limb fitted to the movies is 959.96″ at 1 AU, which is now the default: the IAU 2015 nominal radius used before (959.23″, the photosphere at τ = 1) gave contacts 8–10 s off |
-| Position of the Moon in the XRT quick-look movies (2017–2026, 16 events, 28 passes, 1,373 frames) | −1.45 to +1.73 s from the actual events (mean +0.26 s, scatter between events 0.93 s ≈ 7 km along track); magnitudes within 0.004; the number and times of the passes, the eclipse of 2025-02-28 seen only from orbit and the passes in the Earth's shadow as computed |
+| Position of the Moon in the XRT quick-look movies (2007–2026, 31 events, 55 passes, 2,626 frames) | With short exposures, −1.45 to +2.34 s from the actual events (mean of 22 events +0.44 s, scatter 0.91 s ≈ 7 km along track); +0.7 to +3.0 s with the long exposures of some filters (the frame time is the start of the exposure); magnitudes within 0.004 (2017–2026); the number and times of the passes, the eclipses of 2007-02-17 and 2025-02-28 seen only from orbit and the passes in the Earth's shadow as computed |
 | Position of the Moon in X-ray telescope press images (2014, 2016, 2017) | 0.4–3.5 s from the actual event (equivalent to an along-track error of 3–28 km in the orbit). The rotation of the images agrees with the position angle of the Sun's rotation axis within 0.4° |
 | Predictions by the National Astronomical Observatory of Japan (Mitsuru Sôma) for 8 events, 20 passes | An almost constant offset for each event (from the different orbital elements). With it removed, the residuals are 0.2–0.65 s RMS |
 | Observation reports of 11 events (magnitude, image times, eclipses that happened only in orbit, the 1st contact of Venus falling in the Earth's shadow, etc.) | All consistent |

@@ -15,7 +15,9 @@ section 1):
   radius (visible limb, 959.96" at 1 AU), NASA's 959.63" and the IAU 2015
   nominal 695,700 km.  A joint fit of d(t) of all frames gives the radius of
   the visible limb, a time offset and the scale factor of the QL axes.
-* eclipses: XRT movies of 2017-08-21, 2020-06-21, 2022-10-25 and 2025-03-29.
+* eclipses: XRT movies of 2007-02-17 (an eclipse seen only from orbit),
+  2007-03-19 (total in orbit), 2011-01-04 (annular), 2013-05-10, 2017-08-21,
+  2020-06-21, 2022-10-25 and 2025-03-29.
   In every frame with the Moon on the Sun the centres of the lunar disk and
   of the X-ray Sun are fitted with circles of the computed angular radii (the
   radius of the X-ray limb is calibrated on frames of the same movie without
@@ -23,11 +25,11 @@ section 1):
   (seconds by which the actual Hinode was ahead of the SSCWeb orbit; 1 s =
   7.5 km) and the image rotation theta (expected: the solar P angle).  The
   frame time is the exposure start: the long exposures of the brighter movie
-  of a pair give a larger s (2020-06-21).
+  of a pair give a larger s (2020-06-21; Ti poly against Al mesh 2013-05-10).
 
 Usage:  python tools/validate_hinode_ql.py [mercury|eclipses]
 Needs ffmpeg (FFMPEG, the PATH or C:\\ffmpeg\\bin).  On the first run the
-movies (about 15 MB) are downloaded from hinode.nao.ac.jp into
+movies (about 25 MB) are downloaded from hinode.nao.ac.jp into
 data/cache/hinode_ql/ and Hinode's orbit from NASA SSCWeb; then the run takes
 about 5 minutes.
 """
@@ -422,7 +424,12 @@ def mercury_2006():
 
 
 # --- 2017-2025 eclipses (XRT) ----------------------------------------------------------
-XRT_MOVIES = (   # QL movie, role in the pair of movies started 3-6 s apart (by brightness), maxima of the passes
+XRT_MOVIES = (   # QL movie, role in a pair of movies taken together (longer exposure = brighter), maxima of the passes
+    ('XRT_AMM20070217160100_162607.mpg', 'single', ('2007-02-17T16:10',)),     # seen only from orbit
+    ('XRT_APM20070319024759_030354.mpg', 'single', ('2007-03-19T02:55',)),     # total in orbit
+    ('XRT_TIM20110104090615_092549.mpg', 'single', ('2011-01-04T09:16',)),     # annular in orbit
+    ('XRT_AMM20130510013905_182335.mpg', 'short', ('2013-05-10T01:48',)),      # Al mesh and Ti poly together
+    ('XRT_TIM20130510013857_182407.mpg', 'long', ('2013-05-10T01:48',)),
     ('XRT_APM20170821061950_185419.mpg', 'short', ('2017-08-21T16:57',)),
     ('XRT_APM20200621090843_092939.mpg', 'short', ('2020-06-21T09:16',)),
     ('XRT_APM20200621090846_092912.mpg', 'long', ('2020-06-21T09:16',)),
@@ -610,7 +617,7 @@ def wmean(vals):
 
 
 def eclipses():
-    print('Eclipses 2017-2025: XRT QL movies, Moon-Sun offsets -> orbit time-shift s and image rotation theta')
+    print('Eclipses 2007-2025: XRT QL movies, Moon-Sun offsets -> orbit time-shift s and image rotation theta')
     print('  pass (max, UTC)   movie                  role    p75  frames  limb off.  s (s)                     theta-P  rms    k')
     preds, results = {}, []
     for fname, role, maxima in XRT_MOVIES:
