@@ -4,7 +4,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-RUN useradd --system --no-create-home --home-dir /app eclipsecalc
+# data/ は ADD より先に作る: ADD --chmod が作る親ディレクトリには x が付かないことがあり（BuildKit の版による、
+# moby/buildkit#5943）、そうなると実行用のユーザーが暦を読めず起動できない。data/cache は CelesTrak・SSCWeb の一覧の保存先
+RUN useradd --system --no-create-home --home-dir /app eclipsecalc \
+    && mkdir -p data/cache && chmod 755 data && chown eclipsecalc data/cache
 
 # JPL 暦（de440s = 1849〜2150 年、de440 = 1550〜2650 年）を入れておき、起動のたびのダウンロードをなくす
 ADD --chmod=644 https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s.bsp data/de440s.bsp
@@ -16,10 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY run.py cli.py ./
 COPY eclipsecalc eclipsecalc
 COPY static static
-# バイトコードを先に作って起動を速くする。data/cache は CelesTrak・SSCWeb の一覧の保存先
-RUN python -m compileall -q eclipsecalc run.py cli.py && mkdir -p data/cache && chown eclipsecalc data/cache
+# バイトコードを先に作って起動を速くする
+RUN python -m compileall -q eclipsecalc run.py cli.py
 
 USER eclipsecalc
+# 実行用のユーザーで暦を読み込めることと data/cache に書けることを、ビルドの段階で確かめる
+RUN python -c "from eclipsecalc.context import get_context; get_context('de440s.bsp'); get_context('de440.bsp')" \
+    && test -w data/cache
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 CMD ["python", "run.py", "--host", "0.0.0.0", "--port", "8080", "--no-browser"]

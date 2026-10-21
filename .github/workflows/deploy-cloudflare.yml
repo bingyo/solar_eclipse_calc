@@ -56,7 +56,9 @@ jobs:
 
       - name: Show the container log
         if: failure() && steps.secrets.outputs.skip != 'true'
-        run: docker logs eclipsecalc || true
+        run: |
+          docker ps -a --filter name=eclipsecalc || true
+          docker logs eclipsecalc || true
 
       - uses: actions/setup-node@v5
         if: steps.secrets.outputs.skip != 'true'
