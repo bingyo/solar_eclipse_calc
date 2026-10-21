@@ -2150,7 +2150,9 @@ function drawDisk() {
   if ($('#showGrid').checked) {
     const fs = Math.round(W / (field ? 42 : 32));
     g.font = `bold ${fs}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    const [ox, oy, r1, r2] = field ? [W - fs * 6.6, fs * 5.8, fs * 0.3, fs * 2] : [cx, cy, rs * 1.22, rs * 1.45];
+    // closer to the Sun when the angle ticks take the edges of the view
+    const [ox, oy, r1, r2] = field ? [W - fs * 6.6, fs * 5.8, fs * 0.3, fs * 2]
+      : axes ? [cx, cy, rs * 1.1, rs * 1.27] : [cx, cy, rs * 1.22, rs * 1.45];
     if (field) {
       g.fillStyle = 'rgba(0,0,0,.5)';
       g.beginPath(); g.arc(ox, oy, fs * 5.1, 0, 2 * Math.PI); g.fill();

@@ -10,7 +10,7 @@ The observer can be **any place on the ground**, **an artificial satellite (TLE 
 | | |
 |---|---|
 | ![The total solar eclipse of 2 August 2027 seen from Luxor](docs/images/en/luxor_view.png) | ![The annular eclipse of 4 January 2011 seen in orbit by Hinode](docs/images/en/hinode_view.png) |
-| **Seen from the ground**: the total solar eclipse of 2 August 2027 at Luxor (Egypt). Totality lasts 6 min 22.6 s, and the progress of the eclipse can be played as an animation | **Seen from a satellite**: the annular eclipse that the solar observatory Hinode saw in orbit on 4 January 2011 |
+| **Seen from the ground**: the total solar eclipse of 2 August 2027 at Luxor (Egypt). Totality lasts 6 min 18.9 s, and the progress of the eclipse can be played as an animation | **Seen from a satellite**: the annular eclipse that the solar observatory Hinode saw in orbit on 4 January 2011, with solar north up and arcsecond ticks as in images of Hinode or SDO |
 | ![List of the solar eclipses and transits in the world from 2026 to 2035](docs/images/en/global_list.png) | ![Results for a satellite before launch, summarised by mean anomaly](docs/images/en/prelaunch_sweep.png) |
 | **List**: the solar eclipses and transits in the world from 2026 to 2035 (type, magnitude, duration of the central eclipse, Saros number) | **Planning before launch**: the eclipse of 2 August 2027 seen from a 680 km sun-synchronous orbit, computed for each position of the satellite (mean anomaly) |
 
