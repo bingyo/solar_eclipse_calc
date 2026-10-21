@@ -12,7 +12,8 @@ Two kinds of reference data are used:
   checks that offset and, more strictly, the scatter around it, which
   reflects the geometry of the computation itself.
 * Facts reported from the actual observations (eclipse magnitude, times of
-  images taken during the eclipse, Earth-shadow interruptions).
+  images taken during the eclipse, Earth-shadow interruptions) and the
+  contacts of the 2006 Mercury transit measured in the quick-look movies.
 
 Run with  python tests/test_hinode.py  (needs internet on the first run;
 SSCWeb data are cached in data/cache/).  The image measurements that tie
@@ -26,7 +27,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from eclipsecalc.constants import MOON_K_EXTERNAL, WGS84_A  # noqa: E402
+from eclipsecalc.constants import MOON_K_EXTERNAL, SUN_RADIUS_IAU2015, VENUS_RADIUS, WGS84_A  # noqa: E402
 from eclipsecalc.context import get_context  # noqa: E402
 from eclipsecalc.global_eclipse import search_global  # noqa: E402
 from eclipsecalc.local import LocalSearch, Params  # noqa: E402
@@ -34,11 +35,11 @@ from eclipsecalc.observers import SSCWebObserver  # noqa: E402
 from eclipsecalc.timeutil import parse_utc  # noqa: E402
 
 CTX = get_context()
-# Soma's figures use R_sun = 696,000 km (e.g. 975.89" on 2011-01-04) and a
-# single lunar radius for all contacts.
+# Soma's figures use R_sun = 696,000 km (e.g. 975.89" on 2011-01-04), a
+# single lunar radius for all contacts and the solid radius of Venus.
 SOMA_PARAMS = Params(include_invisible=True, sun_radius_km=696_000.0,
                      moon_radius_ext_km=MOON_K_EXTERNAL * WGS84_A,
-                     moon_radius_int_km=MOON_K_EXTERNAL * WGS84_A)
+                     moon_radius_int_km=MOON_K_EXTERNAL * WGS84_A, venus_radius_km=VENUS_RADIUS)
 
 HINODE = 'https://hinode.nao.ac.jp/news/topics/'
 ISAS = 'https://www.isas.jaxa.jp/home/solar/'
@@ -153,13 +154,21 @@ def test_soma_predictions():
 
 # --- facts from the actual observations --------------------------------------
 def test_2006_mercury_transit():
-    # SOT stills: no Mercury yet at 19:12:27; centre half-way through the limb
-    # at 19:13:02; at C3 time 00:08:02 Mercury had just begun to leave.
-    e = hinode('mercury', '2006-11-08T18:00', '2006-11-09T01:30', Params(include_invisible=True))[0]
-    c = contacts(e)
-    assert c['C1'] > jd('2006-11-08', '19:12:27')
+    # Contacts measured in the SOT/FG G-band quick-look movies (exposure times to the ms,
+    # tools/hinode_ql.py): 19:12:25.7, 19:14:25.6, 00:08:01.5, 00:10:00.2 UT (+-0.4-1 s).  They
+    # are those of the visible solar limb (the default radius, 959.96" at 1 AU); the IAU 2015
+    # (photospheric) radius gives contacts 8-10 s off.  SOT stills: Mercury partly on the disk
+    # at 19:13:02; at 00:08:02 it had just begun to leave.
+    observed = {'C1': '2006-11-08T19:12:25.7', 'C2': '2006-11-08T19:14:25.6',
+                'C3': '2006-11-09T00:08:01.5', 'C4': '2006-11-09T00:10:00.2'}
+    span = ('2006-11-08T18:00', '2006-11-09T01:30')
+    c = contacts(hinode('mercury', *span, Params(include_invisible=True))[0])
+    for lab, t in observed.items():
+        assert abs(c[lab] - parse_utc(CTX, t)) * 86400 <= 1.5, (lab, (c[lab] - parse_utc(CTX, t)) * 86400)
     assert c['C1'] < jd('2006-11-08', '19:13:02') < c['C2']
     assert c['C3'] < jd('2006-11-09', '00:08:02') < c['C3'] + 30 / 86400
+    iau = contacts(hinode('mercury', *span, Params(include_invisible=True, sun_radius_km=SUN_RADIUS_IAU2015))[0])
+    assert all(abs(iau[lab] - parse_utc(CTX, t)) * 86400 > 7 for lab, t in observed.items())
 
 
 def test_2007_02_17_orbit_only_eclipse():

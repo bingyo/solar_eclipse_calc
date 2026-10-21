@@ -131,8 +131,9 @@ The `Dockerfile` also works anywhere else Docker runs (`docker build -t eclipsec
 The results (switch between the start page and the results with "Start page" / "Results" at the top; "↑ Back to the list" in the details returns to the list):
 
 - **List**: date, type, time of maximum, magnitude / distance between centres, duration, visibility (eclipse in progress at sunrise or sunset, hidden by the Earth) and Saros. Filter by type, save as CSV. **"Save results" saves the list and the settings, and "Open saved results" at the top right shows them again later on the same page** (the list is shown as it was saved; clicking a row recomputes the details, animation and map with the saved settings. The output of `cli.py --format json` can be opened too)
-- **Overview**: a description in plain language, the key values, and for the 1st to 4th contacts the time, Sun altitude/azimuth, position angle P / vertex angle V and the sub-satellite point
-- **View (animation)**: plays the discs of the Sun and the Moon or planet at true scale (zenith up / celestial north up / Earth down). Also shows the horizon, the limb of the Earth seen from a satellite and the corona during totality
+- **Overview**: a description in plain language, the key values, and for the 1st to 4th contacts the time, Sun altitude/azimuth, position angle (from celestial north / from solar north), vertex angle V, the sub-satellite point, the solar-north-up X, Y (″) and the distance from the solar limb; **how the contact times change with the radii** (seconds per +1″ of the apparent radius of the Sun and of the Moon or planet); a table of the intervals when the Sun is visible from a satellite
+- **View (animation)**: plays the discs of the Sun and the Moon or planet at true scale (zenith up / celestial north up / Earth down / **solar north up**, the orientation of Hinode or SDO images), with arcsecond ticks and zoom (whole Sun down to 30″; the ingress and egress of a transit of Mercury become visible). Also shows the horizon, the limb of the Earth seen from a satellite and the corona during totality
+- **Time and comparison with images**: enter the time of an image (forms like `21-Aug-2017 16:53:59.204 UT` are accepted) to get the position of the Moon or planet at that instant (solar-north-up X, Y), its distance from the limb and the magnitude, to the millisecond. With measured positions it tabulates observed − computed (in ″ and as a time along the motion), at mid-exposure if the exposure time is given (`cli.py --at` does the same)
 - **Charts**: magnitude and obscuration (for transits, the distance between centres), and the Sun's altitude or its "angle above the Earth's limb"
 - **Eclipse diagram**: one figure with the path of the Moon or planet across the Sun, the discs at the 1st contact, maximum and 4th contact, the times and positions of the contacts (in arcseconds from the centre of the Sun) and the key values (celestial north up / the Sun's rotation axis north up; saved as PNG or SVG)
 - **Map**: central line, northern and southern limits of the path of totality or annularity, the umbra every 10 minutes, limits of the partial eclipse, distribution of the greatest magnitude (only while the Sun is above the horizon), the region where a transit is visible, and the satellite's ground track. **Click the map to compute the circumstances at that place**
@@ -157,7 +158,7 @@ After launch, fetch the latest TLE by NORAD number and compute again; computing 
 ## Accuracy and validation
 
 Comparison with the values published by NASA (Espenak & Meeus); reproducible with `python tests/test_validation.py`.
-For the contact times the same radii as NASA are used (Sun 959.63″, Venus 8.41″ and Mercury 3.36″ at 1 AU).
+For the contact times the same radii as NASA are used (Sun 959.63″, Venus 8.41″ and Mercury 3.36″ at 1 AU). The defaults of the tool are the radii of the limb and disc actually seen (Sun 959.96″, Venus 6,131 km; see below), which move the contacts of transits by several seconds from NASA's.
 
 | Phenomenon | Item | NASA | This tool |
 |---|---|---|---|
@@ -174,15 +175,17 @@ In addition, the limits of the path of totality obtained with the "shadow cone" 
 
 ### Comparison with observations by the solar observatory Hinode
 
-The solar eclipses and transits that Hinode (altitude about 680 km) met in orbit in 2006–2017 were computed from its past orbit in NASA SSCWeb and checked against the actual images and the predictions of the National Astronomical Observatory of Japan (`python tests/test_hinode.py`; the images are measured with `python tools/validate_hinode_images.py`. Details in [docs/hinode_validation.md](docs/hinode_validation.md), in Japanese).
+The solar eclipses and transits that Hinode (altitude about 680 km) met in orbit in 2006–2026 were computed from its past orbit in NASA SSCWeb and checked against the actual images — above all the [quick-look movies of the Hinode Science Center at NAOJ](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/), whose frames carry the exposure time to the millisecond — and against the predictions of the National Astronomical Observatory of Japan (`python tests/test_hinode.py`; the movies are measured with `python tools/validate_hinode_ql.py`, which needs ffmpeg, and the press images with `python tools/validate_hinode_images.py`. Details in [docs/hinode_validation.md](docs/hinode_validation.md), in Japanese).
 
 | Compared with | Result |
 |---|---|
-| Position of the Moon in X-ray telescope images (2014, 2016, 2017) | 0.4–3.5 s from the actual event (equivalent to an along-track error of 3–28 km in the orbit). The rotation of the images agrees with the position angle of the Sun's rotation axis within 0.4° |
+| Contacts of the 2006 transit of Mercury measured in the SOT G-band quick-look movies (a frame every 6.4 s) | Observed 19:12:25.7 / 19:14:25.6 / 00:08:01.5 / 00:10:00.2 UT; the tool (default radius) differs by +0.1 / +1.3 / +1.2 / +0.5 s. The visible solar limb fitted to the movies is 959.96″ at 1 AU, which is now the default: the IAU 2015 nominal radius used before (959.23″, the photosphere at τ = 1) gave contacts 8–10 s off |
+| Position of the Moon in the XRT quick-look movies (2017–2026, 16 events, 28 passes, 1,373 frames) | −1.45 to +1.73 s from the actual events (mean +0.26 s, scatter between events 0.93 s ≈ 7 km along track); magnitudes within 0.004; the number and times of the passes, the eclipse of 2025-02-28 seen only from orbit and the passes in the Earth's shadow as computed |
+| Position of the Moon in X-ray telescope press images (2014, 2016, 2017) | 0.4–3.5 s from the actual event (equivalent to an along-track error of 3–28 km in the orbit). The rotation of the images agrees with the position angle of the Sun's rotation axis within 0.4° |
 | Predictions by the National Astronomical Observatory of Japan (Mitsuru Sôma) for 8 events, 20 passes | An almost constant offset for each event (from the different orbital elements). With it removed, the residuals are 0.2–0.65 s RMS |
 | Observation reports of 11 events (magnitude, image times, eclipses that happened only in orbit, the 1st contact of Venus falling in the Earth's shadow, etc.) | All consistent |
 
-The accuracy of eclipses computed for a satellite in low orbit is set almost entirely by the accuracy of the satellite's orbit (7.5 km along track ≈ 1 s).
+The accuracy of eclipses computed for a satellite in low orbit is set almost entirely by the accuracy of the satellite's orbit (7.5 km along track ≈ 1 s). For transits the orbit matters little (1 s along track moves the contacts by 0.05 s), and the radius taken for the Sun decides the contact times (10–12 s per arcsecond for Mercury, 13–19 s for Venus).
 
 ### How it computes
 
@@ -191,12 +194,13 @@ The accuracy of eclipses computed for a satellite in low orbit is set almost ent
 - **Contacts**: from the apparent radii of the Sun and the Moon (planet) and the angular distance between their centres as seen by the observer. Aberration acts on all directions as a conformal map and does not change contacts (the tangency of circles), so contacts are found from BCRS directions (positions of the bodies), and altitude, azimuth and position angles are computed from apparent positions
 - **Search**: candidate windows are narrowed down with the geocentric conjunctions (new Moon, inferior conjunction), and the window width is set from the observer's largest parallax. A branch-and-bound scan with a Lipschitz constant from the actual angular velocities of both bodies makes sure that short eclipses (a few minutes for a satellite in low orbit) are not missed. Contacts are converged to 0.1 ms by bisection, and the maximum by golden-section search
 - **Eclipses over the whole Earth**: the geocentric apparent positions of the Sun and the Moon are converted to ITRS (Earth-fixed coordinates), and the intersections of the penumbral and umbral cones tangent to the Sun and the Moon with the WGS84 ellipsoid are computed directly (equivalent to Besselian elements). The limit lines are found as envelopes of the shadow outlines (the points on the outline where the time derivative of the boundary is zero)
+- **Radii of the Sun and the planets**: contacts happen at the limb actually seen (the inflection point of the limb darkening), about 0.33 Mm outside the photosphere at τ = 1 that defines the IAU 2015 nominal radius. The default is the visible limb, 959.96″ at 1 AU (696,231 km), from the Hinode SOT movies of the 2006 transit of Mercury and in line with other measurements (SDO/HMI 959.90″, eclipse light curves 959.99″, SOHO/MDI 960.12″). Venus in front of the Sun is larger than its solid surface: 6,131 km in visible light (cloud tops and haze) by default, 6,202 km in X-rays (Reale et al. 2015). The NASA values (959.63″, 8.41″, 3.36″), the IAU values and any value can also be chosen, and every contact shows how many seconds it moves per +1″ of the radii
 - **Radius of the Moon**: the NASA convention (k = 0.2725076 for external contacts, k = 0.272281 for internal ones) approximates the average effect of the mountains and valleys on the lunar limb. The mean radius or any value can also be chosen
-- **Satellites**: SGP4 (TLE), two-body motion plus J2 secular perturbations (orbital elements), a point fixed to the Earth (geostationary satellite), Hermite interpolation of Horizons positions and velocities. Being hidden by the Earth is judged from the local radius of the WGS84 ellipsoid at the limb plus the given height of the atmosphere
+- **Satellites**: SGP4 (TLE), two-body motion plus J2 secular perturbations (orbital elements), a point fixed to the Earth (geostationary satellite), Hermite interpolation of Horizons positions and velocities. Being hidden by the Earth is judged from the local radius of the WGS84 ellipsoid at the limb (latitude from the pole of date) plus the given height of the atmosphere, with the Sun's direction in the Earth's frame (aberrated by the Earth's velocity). Horizons tables are fetched with a step fine enough for an interpolation error below 10 m (a coarser step asked for an orbit close to the Earth or the Moon, or for a flyby, is made finer, with a warning)
 
 ### Limitations
 
-- The topography (unevenness) of the lunar limb is not taken into account, so the actual contact times can differ by about ±1–2 s (especially the beginning and end of totality).
+- The topography (unevenness) of the lunar limb is not taken into account, so the actual contact times can differ by about ±1–3 s on the ground (especially the beginning and end of totality) and ±0.1–0.4 s from a satellite in low orbit.
 - Future and past ΔT are uncertain. This affects "where (at which longitude) the eclipse is seen" more than the times themselves.
 - The position error of a TLE grows with time after its epoch (the page shows a warning). Take predictions for a satellite months or more ahead as a guide only. CelesTrak provides only the latest TLE, so to compute past events from a satellite, paste a TLE from that time or use "NASA SSCWeb" (given by satellite ID, e.g. hinode).
 - Atmospheric refraction is used for the displayed Sun altitude and for judging visibility; the flattening of the discs is not drawn (it does not affect the contact times).
@@ -224,7 +228,11 @@ tests/test_validation.py    Comparison with the values published by NASA
 tests/test_hinode.py        Comparison with the predictions and observation reports for Hinode
 tests/test_orbit_planning.py  Tests of sun-synchronous orbits, local time of the ascending node and the sweep over phases
 tests/test_saved_result.py  Tests of recomputing the details when saved results are opened
-tools/validate_hinode_images.py  Validation with Hinode's images
+tests/test_geometry.py      Tests of the solar-north-up coordinates, contact sensitivities, image times and the Earth's occultation of the Sun
+tests/test_ui_i18n.py       Test that every text of the page has its 6 translations
+tools/hinode_ql.py          Reading the Hinode quick-look movies (frames, exposure times and axes by character recognition; needs ffmpeg)
+tools/validate_hinode_ql.py Validation with the Hinode quick-look movies
+tools/validate_hinode_images.py  Validation with Hinode's press images
 tools/build_bundles.py      Building the distribution ZIPs with Python, the libraries and the ephemeris
 packaging/macos/            The start-up part of the Mac app (launcher.c, launch.sh) and a sample of the signing settings
 Dockerfile                  Container of the page (with Python, the libraries and the ephemerides de440s and de440)

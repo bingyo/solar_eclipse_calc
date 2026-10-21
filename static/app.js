@@ -30,6 +30,10 @@ const state = {
   tleInfo: null, downloadable: [], layerControls: [],
   tleReq: 0, satAutoName: '',     // the latest TLE fetch; the satellite name the page filled in (not typed)
   listSeq: 0, detailSeq: 0,       // bumped when another list / detail is shown, so that a late answer is dropped
+  exact: null,                     // {t, row}: the viewer shows the exact values of a contact or of /at (not interpolated)
+  cmp: null,                       // the rows of "観測画像と比べる"
+  fullContacts: null,              // the contact tables with the values for images (null: by the event)
+  sunRPrev: null,                  // the solar radius model chosen before "数値で指定"
 };
 
 /* ------------------------------------------------------------------ */
@@ -58,34 +62,60 @@ function parts(date, opts, local = false) {
   for (const p of dtf(opts, local).formatToParts(date)) o[p.type] = p.value;
   return o;
 }
-function toDate(iso) { return iso instanceof Date ? iso : new Date(iso); }
+/* The server writes a time in a leap second as 23:59:60.xxx, which Date cannot hold: it is
+   taken as the end of 23:59:59 (the exact text is shown where the UTC is shown, fmtUtc). */
+function toDate(iso) {
+  if (iso instanceof Date) return iso;
+  const d = new Date(iso);
+  if (!isNaN(d) || typeof iso !== 'string') return d;
+  const m = /^(.*T\d\d:\d\d):60(\.\d+)?Z?$/.exec(iso);
+  return m ? new Date(m[1] + ':59.999Z') : d;
+}
+function msOf(iso) { return toDate(iso).getTime(); }
+/* The time rounded to `digits` decimals of a second (to the minute with digits = -1), so that
+   12:34:59.96 is shown as 12:35:00.0 (with the date of the rounded time). */
+function roundTime(iso, digits = 0) {
+  const unit = digits < 0 ? 60000 : Math.pow(10, 3 - Math.min(3, digits));
+  return new Date(Math.round(msOf(iso) / unit) * unit);
+}
 function fmtDate(iso) {
   if (!iso) return '—';
   if (LANG !== 'ja') return dtf({ year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' }, true).format(toDate(iso));
   const p = parts(toDate(iso), { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
   return `${p.year}年${+p.month}月${+p.day}日(${p.weekday})`;
 }
-function fmtDateShort(iso) {
+function fmtDateShort(iso, digits = null) {
   if (!iso) return '—';
-  const p = parts(toDate(iso), { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const p = parts(digits == null ? toDate(iso) : roundTime(iso, digits), { year: 'numeric', month: '2-digit', day: '2-digit' });
   return `${p.year}/${p.month}/${p.day}`;
 }
 function fmtTime(iso, digits = 0) {
   if (!iso) return '—';
-  const d = toDate(iso);
+  const d = roundTime(iso, digits);
   const p = parts(d, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   let s = `${p.hour}:${p.minute}:${p.second}`;
   if (digits > 0) {
-    const ms = d.getUTCMilliseconds();
-    s += '.' + String(Math.floor(ms / Math.pow(10, 3 - digits))).padStart(digits, '0');
+    const ms = ((d.getTime() % 1000) + 1000) % 1000;
+    s += '.' + String(Math.round(ms / Math.pow(10, 3 - digits))).padStart(digits, '0');
   }
   return s;
 }
 function fmtHM(iso) {
-  const p = parts(toDate(iso), { hour: '2-digit', minute: '2-digit' });
+  const p = parts(roundTime(iso, -1), { hour: '2-digit', minute: '2-digit' });
   return `${p.hour}:${p.minute}`;
 }
-function fmtDT(iso, digits = 0) { return iso ? `${fmtDateShort(iso)} ${fmtTime(iso, digits)}` : '—'; }
+function fmtDT(iso, digits = 0) { return iso ? `${fmtDateShort(iso, digits)} ${fmtTime(iso, digits)}` : '—'; }
+/* The UTC date and time to the millisecond as the server gives it ("2017-08-21 16:53:59.204"). */
+function fmtUtc(iso) { return iso ? String(iso).replace('T', ' ').replace(/Z$/, '') : '—'; }
+/* "（UT 8月21日）" when the date in the shown time zone is not the date in UT, else ''. */
+function utDateNote(iso) {
+  if (!iso || tzId() === 'UTC') return '';
+  const d = toDate(iso);
+  const p = parts(d, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  if (`${p.year}-${p.month}-${p.day}` === d.toISOString().slice(0, 10)) return '';
+  const md = new Intl.DateTimeFormat(langLocale(), { timeZone: 'UTC', month: wideScript() ? 'long' : 'short', day: 'numeric' }).format(d);
+  return paren(t('UT {date}', { date: md }));
+}
 function tzLabel(iso) {
   if (tzId() === 'UTC') return 'UTC';
   const p = parts(toDate(iso || Date.now()), { timeZoneName: 'short', hour: '2-digit' }, true);
@@ -111,6 +141,17 @@ const f1 = (v) => (v == null ? '—' : Number(v).toFixed(1));
 const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
 const f4 = (v) => (v == null ? '—' : Number(v).toFixed(4));
 const pct = (v, d = 1) => (v == null ? '—' : (100 * v).toFixed(d) + '%');
+/* A value with its sign: +1.2 / −1.2 (the minus sign, as in tables) */
+function signed(v, d = 1) {
+  if (v == null || !isFinite(v)) return '—';
+  const s = Math.abs(v).toFixed(d);
+  return (+s === 0 ? '±' : v > 0 ? '+' : '−') + s;
+}
+const AU_KM = 149597870.7, RAD2ARCSEC = 180 * 3600 / Math.PI;
+/* A radius in km and its angle at 1 AU (″) */
+const kmToArcsec = (km) => km / AU_KM * RAD2ARCSEC;
+const arcsecToKm = (as) => as / RAD2ARCSEC * AU_KM;
+function fmtInt(v) { return Math.round(v).toLocaleString(langLocale()); }
 // the sign is judged after rounding (no "南緯 0.00°" for -0.001), as cli.py
 function fmtLat(v) { if (v == null) return '—'; const a = Math.abs(v).toFixed(2); return v >= 0 || +a === 0 ? t('北緯 {v}°', { v: a }) : t('南緯 {v}°', { v: a }); }
 function fmtLon(v) { if (v == null) return '—'; const a = Math.abs(v).toFixed(2); return v >= 0 || +a === 0 ? t('東経 {v}°', { v: a }) : t('西経 {v}°', { v: a }); }
@@ -256,7 +297,21 @@ async function init() {
   $('#pickToggle').addEventListener('click', togglePickMap);
   $$('#quickRange button').forEach((b) => b.addEventListener('click', () => quickRange(b)));
   $('#dtMode').addEventListener('change', () => { $('#dtValue').disabled = $('#dtMode').value !== 'manual'; });
-  $('#sunR').addEventListener('change', () => { $('#sunRCustomWrap').hidden = $('#sunR').value !== 'custom'; });
+  $('#sunR').addEventListener('change', () => {
+    const v = $('#sunR').value, wrap = $('#sunRCustomWrap');
+    if (v === 'custom' && wrap.hidden) {     // start from the model chosen before
+      const prev = state.sunRPrev && state.info.radius_presets.sun[state.sunRPrev];
+      if (prev) setSunRCustom(prev);
+    }
+    wrap.hidden = v !== 'custom';
+    if (v !== 'custom') state.sunRPrev = v;
+  });
+  state.sunRPrev = $('#sunR').value;
+  // the custom solar radius in km or as the angle at 1 AU (the value is converted)
+  $('#sunRUnit').addEventListener('change', () => {
+    const v = parseFloat($('#sunRCustom').value);      // in the unit chosen before
+    if (isFinite(v)) setSunRCustom($('#sunRUnit').value === 'as' ? v : arcsecToKm(v));
+  });
   $('#moonR').addEventListener('change', () => { $('#moonRCustomWrap').hidden = $('#moonR').value !== 'custom'; });
   $('#form').addEventListener('submit', (ev) => { ev.preventDefault(); runSearch(); });
   $('#helpBtn').addEventListener('click', () => $('#helpDlg').showModal());
@@ -643,6 +698,36 @@ function updatePickMarker() {
 /* building the request                                                */
 /* ------------------------------------------------------------------ */
 function num(id, def = 0) { const v = parseFloat($(id).value); return isFinite(v) ? v : def; }
+/* The radius models (/api/info radius_presets): the preset of a solar radius (km), and of the
+   radii of Mercury and Venus (`p`: settings or params), or null for other values. */
+const nearKm = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-6;
+function sunModel(km) {
+  const rp = state.info.radius_presets.sun;
+  return Object.keys(rp).find((k) => nearKm(rp[k], km)) || null;
+}
+function planetModel(p) {
+  const rp = state.info.radius_presets;
+  return Object.keys(rp.venus).find((k) => nearKm(rp.mercury[k], p.mercury_radius_km) && nearKm(rp.venus[k], p.venus_radius_km)) || null;
+}
+const SUN_MODEL_NAMES = { observed: '観測される縁', nasa: 'NASA 互換', iau2015: 'IAU 2015 公称値' };
+const PLANET_MODEL_NAMES = { observed: '観測される円盤', iau: 'IAU 固体表面', nasa: 'NASA 互換', xray: 'X 線の円盤' };
+/* The custom solar radius box set to `km`, in the unit chosen there. */
+function setSunRCustom(km) {
+  $('#sunRCustom').value = $('#sunRUnit').value === 'as' ? +kmToArcsec(km).toFixed(4) : +km.toFixed(1);
+}
+/* "太陽半径 696,231 km（観測される縁・1 AU で 959.96″）" */
+function sunModelText(p) {
+  const m = state.info ? sunModel(p.sun_radius_km) : null;
+  const v = { km: fmtInt(p.sun_radius_km), as: kmToArcsec(p.sun_radius_km).toFixed(2) };
+  return m ? t('太陽半径 {km} km（{model}・1 AU で {as}″）', { ...v, model: t(SUN_MODEL_NAMES[m]) }) : t('太陽半径 {km} km（1 AU で {as}″）', v);
+}
+/* "金星半径 6131.0 km（観測される円盤）"; the Moon's two radii */
+function bodyModelText(body, p) {
+  if (body === 'moon') return t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) });
+  const s = t('{body}半径 {v} km', { body: bodyJa(body), v: (body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) });
+  const m = state.info ? planetModel(p) : null;
+  return m ? s + paren(t(PLANET_MODEL_NAMES[m])) : s;
+}
 function buildRequest() {
   const phenomena = $$('input[name=ph]:checked').map((i) => i.value);
   let observer;
@@ -695,13 +780,13 @@ function buildRequest() {
   const plSel = $('#planetR').value;
   const radius = (id) => {
     const v = num(id, NaN);
-    if (!(v > 0)) throw new Error(t('太陽・月の半径は正の数（km）で入力してください'));
+    if (!(v > 0)) throw new Error(t('太陽・月の半径は正の数で入力してください'));
     return v;
   };
   const settings = {
     ephemeris: $('#ephem').value,
     delta_t: $('#dtMode').value === 'manual' && $('#dtValue').value !== '' ? num('#dtValue') : null,
-    sun_radius_km: sunSel === 'custom' ? radius('#sunRCustom') : rp.sun[sunSel],
+    sun_radius_km: sunSel !== 'custom' ? rp.sun[sunSel] : $('#sunRUnit').value === 'as' ? arcsecToKm(radius('#sunRCustom')) : radius('#sunRCustom'),
     moon_radius_ext_km: moonSel === 'custom' ? radius('#moonRExt') : rp.moon[moonSel][0],
     moon_radius_int_km: moonSel === 'custom' ? radius('#moonRInt') : rp.moon[moonSel][1],
     mercury_radius_km: rp.mercury[plSel], venus_radius_km: rp.venus[plSel],
@@ -1015,14 +1100,19 @@ function downloadSweepCsv() {
   saveFile('phase_sweep.csv', toCsv(rows), 'text/csv');
 }
 
+/* The date in the shown time zone, with the UT date under it when that is another day. */
+function dateCell(iso) {
+  const ut = utDateNote(iso);
+  return el('td', {}, fmtDate(iso), ut && el('span', { class: 'sub' }, ut));
+}
 function globalRow(e, isT) {
   if (isT) {
-    return [el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
+    return [dateCell(e.max), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
       el('td', { class: 'num' }, t('中心間 {v}″', { v: f1(e.min_sep_arcsec) })), el('td', {}, '—'), el('td', { class: 'num' }, fmtDur(e.duration_s)),
       el('td', {}, '—'), el('td', { class: 'muted' }, t('地球中心から見た値')), el('td', {}, '—')];
   }
   return [
-    el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
+    dateCell(e.max), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
     el('td', { class: 'num' }, f4(e.magnitude)), el('td', { class: 'num' }, (e.gamma >= 0 ? '+' : '') + f4(e.gamma)),
     el('td', { class: 'num' }, e.type === 'partial' ? '—' : fmtDur(e.central_duration_s, true)),
     el('td', { class: 'num' }, e.path_width_km ? km(e.path_width_km.toFixed(0)) : '—'),
@@ -1057,7 +1147,7 @@ function localRow(e, isT, kind) {
   if (kind === 'ground' && e.sun_alt_max != null) pos = t('高度 {v}°', { v: e.sun_alt_max.toFixed(0) }) + sep() + azName(e.sun_az_max);
   if (kind === 'space' && e.sat_lat_max != null) pos = fmtLatLon(e.sat_lat_max, e.sat_lon_max) + sep() + km(e.sat_alt_km_max.toFixed(0));
   return [
-    el('td', {}, fmtDate(e.max)), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
+    dateCell(e.max), el('td', {}, badge(e)), el('td', { class: 'num' }, `${fmtTime(e.max)} ${tzLabel(e.max)}`),
     el('td', { class: 'num' }, scale), el('td', { class: 'num' }, obs), el('td', { class: 'num' }, dur),
     el('td', { class: 'num' }, pos), visCell(e, kind), el('td', { class: 'num' }, e.saros ?? '—'),
   ];
@@ -1145,6 +1235,19 @@ async function openSavedFile(file) {
     setStatus(st, err.message, 'err');
   }
 }
+/* A saved request with the settings its results were computed with: cli.py writes in "settings"
+   only the options given, and the defaults (the radii) change between versions, so the values
+   used (`params` of the result or the detail) fill the others; then the form and /api/restore
+   give the saved numbers. */
+const PARAM_KEYS = ['sun_radius_km', 'moon_radius_ext_km', 'moon_radius_int_km', 'mercury_radius_km', 'venus_radius_km',
+  'min_sun_alt_deg', 'refraction', 'earth_atm_km'];
+function withParams(req, params) {
+  if (!req || typeof req !== 'object' || !params || typeof params !== 'object') return req;
+  if (req.settings != null && typeof req.settings !== 'object') return req;
+  const s = { ...(req.settings || {}) };
+  for (const k of PARAM_KEYS) if ((s[k] == null || s[k] === '') && params[k] != null) s[k] = params[k];
+  return { ...req, settings: s };
+}
 function openSavedResult(data, name) {
   state.listSeq++;
   state.mapData = {};     // the ids saved1, saved2, ... of another file named other events
@@ -1160,7 +1263,8 @@ function openSavedResult(data, name) {
       }
     }
   } else data.events.forEach(tag);
-  const { tool, version, saved_at: savedAt, ok, request, ...r } = data;
+  const { tool, version, saved_at: savedAt, ok, request: req, ...r } = data;
+  const request = withParams(req, data.params);
   r.request = request;
   if (r.elapsed_s == null) r.elapsed_s = 0;
   state.saved = { request, events, name, savedAt, tool };
@@ -1186,7 +1290,8 @@ function openSavedEvent(data, name) {
   const d = data.event;
   delete d.serverId;
   d.id = 'saved1';
-  state.saved = { request: d.request || data.request, events: new Map([[d.id, d]]), name, savedAt: data.saved_at, tool: data.tool };
+  const request = withParams(d.request || data.request, d.params || (data.local && data.local.params));     // a global event has the radii in its local view
+  state.saved = { request, events: new Map([[d.id, d]]), name, savedAt: data.saved_at, tool: data.tool };
   if (state.saved.request) {
     try { applyRequestToForm(state.saved.request); } catch (err) { console.warn(err); }
   }
@@ -1250,6 +1355,13 @@ async function liveId(id) {
   if (!s.serverId) await liveDetail(id);
   return s.serverId;
 }
+/* The server's id of the event `d` of the detail (an event of a list has another id once
+   computed again by liveDetail). */
+async function detailServerId(d) {
+  const s = state.saved && state.saved.events.get(d.id);
+  const e = s ? null : listEvent(d.id);
+  return s ? liveId(d.id) : (e && e.serverId) || d.id;
+}
 /* Set the form to a saved request, so that it can be changed and computed again. */
 function applyRequestToForm(req) {
   const ph = req.phenomena || ['moon', 'mercury', 'venus'];
@@ -1288,15 +1400,18 @@ function applyRequestToForm(req) {
   $('#dtValue').disabled = !manual;
   const rp = state.info.radius_presets;
   const near = (a, b) => Math.abs(a - b) < 1e-6;
-  const sun = Object.keys(rp.sun).find((k) => near(rp.sun[k], s.sun_radius_km));
+  const sun = sunModel(s.sun_radius_km);
   $('#sunR').value = sun || 'custom';
-  if (!sun) $('#sunRCustom').value = s.sun_radius_km;
+  if (!sun) { $('#sunRUnit').value = 'km'; $('#sunRCustom').value = s.sun_radius_km; }
+  else state.sunRPrev = sun;
   $('#sunRCustomWrap').hidden = !!sun;
   const moon = Object.keys(rp.moon).find((k) => near(rp.moon[k][0], s.moon_radius_ext_km) && near(rp.moon[k][1], s.moon_radius_int_km));
   $('#moonR').value = moon || 'custom';
   if (!moon) { $('#moonRExt').value = s.moon_radius_ext_km; $('#moonRInt').value = s.moon_radius_int_km; }
   $('#moonRCustomWrap').hidden = !!moon;
-  $('#planetR').value = Object.keys(rp.mercury).find((k) => near(rp.mercury[k], s.mercury_radius_km)) || 'iau';
+  // the planets' radii have no custom value: the nearest preset (both radii, else Venus, else Mercury)
+  $('#planetR').value = planetModel(s) || Object.keys(rp.venus).find((k) => near(rp.venus[k], s.venus_radius_km))
+    || Object.keys(rp.mercury).find((k) => near(rp.mercury[k], s.mercury_radius_km)) || 'observed';
   $('#minAlt').value = s.min_sun_alt_deg;
   $('#atm').value = s.earth_atm_km;
   $('#refraction').checked = !!s.refraction;
@@ -1364,9 +1479,13 @@ async function openDetail(id, { root = false, push = false } = {}) {
     if (seq === state.detailSeq) setStatus(st, err.message, 'err');
   }
 }
+/* The view at the place of the greatest eclipse of the global event `d` (/api/local). */
+async function geLocal(d) {
+  return api('/api/local', { event_id: await detailServerId(d), lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: t('最大食の地点') });
+}
 async function loadGeLocal(d) {
   try {
-    const r = await api('/api/local', { event_id: await liveId(d.id), lat: d.ge_lat, lon: d.ge_lon, elevation_m: 0, name: t('最大食の地点') });
+    const r = await geLocal(d);
     if (state.detail !== d || !r.found) return;
     state.local = r;
     renderOverview();
@@ -1402,7 +1521,7 @@ function renderDetailAll(reset) {
   const d = state.detail;
   if (!d) return;
   const obs = d.kind === 'global' ? null : d.observer;
-  $('#detailTitle').textContent = t('{date} の{type}', { date: fmtDate(d.max), type: typeLabel(d) });
+  $('#detailTitle').textContent = t('{date} の{type}', { date: fmtDate(d.max) + utDateNote(d.max), type: typeLabel(d) });
   $('#detailSub').textContent = d.kind === 'global' ? t('地球全体での状況') : t('観測者: {obs}', { obs: observerText(obs) });
   renderOverview();
   setupViewer(reset);
@@ -1507,7 +1626,7 @@ function renderOverview() {
       el('dt', {}, 'ΔT'), el('dd', {}, t('{v} 秒', { v: d.delta_t_s.toFixed(2) })));
     box.append(el('div', { class: 'section-title' }, t('その他')), kv);
     box.append(el('div', { class: 'section-title' }, t('最大食の地点での見え方')));
-    if (state.local) box.append(contactTable(state.local));
+    if (state.local) box.append(...[contactTable(state.local), radiusEffects(state.local)].filter(Boolean));
     else box.append(el('p', { class: 'muted' }, el('span', { class: 'spinner' }), t('計算中…')));
     box.append(el('p', { class: 'note' }, t('「地図」タブで地図上の好きな地点をクリックすると、その地点での見え方（時刻・食分）を計算できます。')));
     return;
@@ -1536,45 +1655,171 @@ function renderOverview() {
   if (d.observer_kind === 'space') ms.push(metric(t('見える時間の割合'), pct(d.vis_fraction, 0), t('太陽が地球に隠されない時間')));
   box.append(el('div', { class: 'metrics' }, ms));
   box.append(el('div', { class: 'section-title' }, t('接触時刻と状況')));
-  box.append(contactTable(d));
+  box.append(...[contactTable(d), limbNote(d), radiusEffects(d), d.observer_kind === 'space' && visibleIntervals(d)].filter(Boolean));
   const p = d.params;
+  const cP = cmax && cmax.p_angle != null ? cmax.p_angle : null;
   const kv = el('dl', { class: 'kv' },
     el('dt', {}, t('暦')), el('dd', {}, d.ephemeris),
     el('dt', {}, t('ΔT（TT−UT）')), el('dd', {}, t('{v} 秒', { v: d.delta_t_s.toFixed(2) })),
     el('dt', {}, t('太陽の視直径（最大時）')), el('dd', {}, `${f1(d.sun_diameter_arcsec)}″`),
     el('dt', {}, t('{body}の視直径（最大時）', { body: bodyJa(d.body) })), el('dd', {}, `${f1(d.body_diameter_arcsec)}″`),
+    cP != null && el('dt', {}, t('太陽の P 角（自転軸、最大時）')), cP != null && el('dd', {}, `${signed(cP, 2)}°`),
     moon && el('dt', {}, t('サロス番号')), moon && el('dd', {}, d.saros ?? '—'),
-    el('dt', {}, t('計算モデル')), el('dd', {}, t('太陽半径 {v} km', { v: p.sun_radius_km.toFixed(0) }) + sep() + (moon
-      ? t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) })
-      : t('{body}半径 {v} km', { body: bodyJa(d.body), v: (d.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) }))),
+    el('dt', {}, t('計算モデル')), el('dd', {}, sunModelText(p) + sep() + bodyModelText(d.body, p)),
   );
   box.append(el('div', { class: 'section-title' }, t('計算条件')), kv);
   if (d.c1_cut || d.c4_cut) box.append(el('p', { class: 'note' }, t('※ 計算期間の端にかかっているため、一部の接触時刻は期間の端の値です。')));
 }
 
+/* Solar-north-up X / Y (″, toward solar west / north), the P angle (°) and the position angle from
+   solar north of a contact (or of a row of /api/event/{id}/at); from ξ, η and the P angle of
+   solarP() for results saved before the server gave them. */
+function hpcOf(c) {
+  const P = c.p_angle != null ? c.p_angle : solarP(msOf(c.time));
+  const paSolar = c.pa_solar != null ? c.pa_solar : c.pa != null ? (((c.pa - P) % 360) + 360) % 360 : null;
+  if (c.hpc_x != null) return { x: c.hpc_x, y: c.hpc_y, P, paSolar };
+  const r = P * Math.PI / 180, cp = Math.cos(r), sp = Math.sin(r);
+  return { x: -(c.xi * cp - c.eta * sp), y: c.xi * sp + c.eta * cp, P, paSolar };
+}
+/* Distance of the body's centre from the Sun's limb (″, positive outside the disk) and in units
+   of the body's radius (+1 at the first contact, −1 at the second). */
+function limbDist(c) {
+  const d = c.limb_dist != null ? c.limb_dist : c.sep_arcsec - c.rho_s;
+  return [d, c.rho_b > 0 ? d / c.rho_b : null];
+}
+function limbCell(c, body) {
+  const [d, n] = limbDist(c);
+  return el('td', {}, `${signed(d, 2)}″`, n != null && el('span', { class: 'sub' }, t('{body}の半径の {n} 倍', { body: bodyJa(body), n: signed(n, 2) })));
+}
+/* Whether the contact tables show the values to compare with images (UTC to the millisecond, the
+   solar-north-up X, Y, ...): chosen with the box above the table; at first for transits and for
+   spacecraft and the geocentre. */
+function fullContacts(d) {
+  return state.fullContacts ?? (d.body !== 'moon' || d.observer_kind !== 'ground');
+}
 function contactTable(d) {
-  const kind = d.observer_kind;
+  const kind = d.observer_kind, moon = d.body === 'moon', full = fullContacts(d);
   const head = [t('接触'), t('時刻（{tz}）', { tz: tzLabel(d.max) })];
+  if (full) head.push(t('UTC（ミリ秒まで）'));
   if (kind === 'ground') head.push(t('太陽高度'), t('方位'));
   if (kind === 'space') head.push(t('衛星直下点'), t('高度'), t('地球の縁からの太陽の離角'));
-  head.push(t('位置角 P'));
+  head.push(t('位置角（天の北から）'));
+  if (full) head.push(t('位置角（太陽の北から）'));
   if (kind === 'ground') head.push(t('天頂角 V'));
-  head.push(d.body === 'moon' ? t('食分') : t('中心間距離'), t('観測'));
+  if (full) head.push(t('X, Y（太陽の北が上, ″）'));
+  head.push(moon ? t('食分') : t('中心間距離'));
+  if (full && !moon) head.push(t('太陽の縁からの距離（外側が +）'));
+  head.push(t('観測'));
   const rows = d.contacts.map((c) => {
     const [n, sub] = contactName(c.label, d);
+    const h = full ? hpcOf(c) : null;
     const cells = [el('td', { class: 'lbl' }, n, sub && el('span', { class: 'sub' }, sub)),
-      el('td', {}, fmtTime(c.time, 1), dayDiff(c.time, d.max) ? el('span', { class: 'sub' }, fmtDateShort(c.time)) : null)];
+      el('td', {}, fmtTime(c.time, 1), dayDiff(c.time, d.max) ? el('span', { class: 'sub' }, fmtDateShort(c.time, 1)) : null)];
+    if (full) cells.push(el('td', {}, fmtUtc(c.time)));
     if (kind === 'ground') cells.push(el('td', {}, `${c.sun_alt.toFixed(1)}°`), el('td', {}, `${c.sun_az.toFixed(1)}°` + paren(azName(c.sun_az))));
     if (kind === 'space') cells.push(el('td', {}, fmtLatLon(c.sat_lat, c.sat_lon)), el('td', {}, km(c.sat_alt_km.toFixed(0))), el('td', {}, `${c.vis.toFixed(1)}°`));
     cells.push(el('td', {}, `${c.pa.toFixed(1)}°`));
+    if (full) cells.push(el('td', {}, h.paSolar == null ? '—' : `${h.paSolar.toFixed(1)}°`));
     if (kind === 'ground') cells.push(el('td', {}, `${c.v_angle.toFixed(1)}°`));
-    cells.push(el('td', {}, d.body === 'moon' ? f4(c.magnitude) : `${f1(c.sep_arcsec)}″`));
+    if (full) cells.push(el('td', {}, `${h.x.toFixed(2)}, ${h.y.toFixed(2)}`));
+    cells.push(el('td', {}, moon ? f4(c.magnitude) : `${(+c.sep_arcsec).toFixed(full ? 2 : 1)}″`));
+    if (full && !moon) cells.push(limbCell(c, d.body));
     const visTxt = kind === 'geocenter' ? '—' : c.visible ? el('span', { class: 'pill ok' }, t('見える'))
       : el('span', { class: 'pill no' }, kind === 'ground' ? t('地平線下') : t('地球に隠れる'));
     cells.push(el('td', {}, visTxt));
     return el('tr', { class: c.label === 'MAX' ? 'max' : '' }, cells);
   });
-  return el('div', { class: 'table-scroll' }, el('table', { class: 'contacts' }, el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, rows)));
+  const toggle = el('label', { class: 'check table-opt' },
+    el('input', { type: 'checkbox', checked: full, onchange: (ev) => { state.fullContacts = ev.target.checked; renderOverview(); } }),
+    t('画像と比べるための値（UTC のミリ秒・太陽の北が上の X, Y・太陽の縁からの距離）を表示'));
+  return el('div', {}, toggle, el('div', { class: 'table-scroll' },
+    el('table', { class: 'contacts' }, el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, rows))));
+}
+/* The contacts at which the Sun is partly below the horizon or behind the Earth's limb (whether
+   the Sun is seen is decided by its centre), or null. */
+function limbNote(d) {
+  const kind = d.observer_kind;
+  if (kind !== 'ground' && kind !== 'space') return null;
+  const near = d.contacts.filter((c) => c.label !== 'MAX' && c.vis != null && c.rho_s && Math.abs(c.vis) * 3600 < c.rho_s);
+  if (!near.length) return null;
+  const list = [...new Set(near.map((c) => contactName(c.label, d)[0]))].join(listSep());
+  return el('p', { class: 'note warn-note' }, kind === 'ground'
+    ? t('※ {list}のとき、太陽の一部が地平線（太陽高度の下限）の下にあります。見えるかどうかは太陽の中心で判定しています。', { list })
+    : t('※ {list}のとき、太陽の一部が地球の縁（大気の遮蔽高度 {atm} km を含む）に隠れています。見えるかどうかは太陽の中心で判定しています。',
+      { list, atm: d.params ? d.params.earth_atm_km : 0 }));
+}
+const MOON_MODEL_NAMES = { nasa: 'NASA方式', mean: '平均半径 1737.4 km' };
+/* How the contact times change with the radii: per +1″ of the angular radius of the Sun and of
+   the body (dt_drs, dt_drb of the server), and with the other radius models of the settings
+   (to first order, from the same values). */
+function radiusEffects(d) {
+  const cs = d.contacts.filter((c) => c.label !== 'MAX');
+  if (!state.info || !d.params || !cs.some((c) => c.dt_drs != null)) return null;
+  const p = d.params, rp = state.info.radius_presets, moon = d.body === 'moon', body = bodyJa(d.body);
+  const inner = (c) => c.label === 'C2' || c.label === 'C3';
+  const rows = [[t('太陽の半径が 1″ 大きいと'), cs.map((c) => c.dt_drs)]];
+  for (const [k, km] of Object.entries(rp.sun)) {
+    if (nearKm(km, p.sun_radius_km)) continue;
+    rows.push([t('太陽半径を {model}（{as}″）にすると', { model: t(SUN_MODEL_NAMES[k] || k), as: kmToArcsec(km).toFixed(2) }),
+      cs.map((c) => (c.dt_drs == null ? null : c.dt_drs * c.rho_s * (km / p.sun_radius_km - 1)))]);
+  }
+  rows.push([t('{body}の半径が 1″ 大きいと', { body }), cs.map((c) => c.dt_drb)]);
+  if (moon) {
+    for (const [k, [ext, int]] of Object.entries(rp.moon)) {
+      if (nearKm(ext, p.moon_radius_ext_km) && nearKm(int, p.moon_radius_int_km)) continue;
+      rows.push([t('月半径を {model} にすると', { model: t(MOON_MODEL_NAMES[k] || k) }), cs.map((c) => (c.dt_drb == null ? null : inner(c)
+        ? c.dt_drb * c.rho_b_int * (int / p.moon_radius_int_km - 1) : c.dt_drb * c.rho_b * (ext / p.moon_radius_ext_km - 1)))]);
+    }
+  } else {
+    const cur = d.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km;
+    const seen = new Set([cur.toFixed(3)]);      // Mercury has the same radius in three models
+    for (const [k, km] of Object.entries(rp[d.body] || {})) {
+      if (seen.has(km.toFixed(3))) continue;
+      seen.add(km.toFixed(3));
+      rows.push([t('{body}半径を {model}（{km} km）にすると', { body, model: t(PLANET_MODEL_NAMES[k] || k), km: km.toFixed(1) }),
+        cs.map((c) => (c.dt_drb == null ? null : c.dt_drb * c.rho_b * (km / cur - 1)))]);
+    }
+  }
+  const fmt = (v) => (v == null || !isFinite(v) ? '—' : t('{s}秒', { s: signed(v, 1) }));
+  const table = el('table', { class: 'contacts' },
+    el('thead', {}, el('tr', {}, el('th', {}, ''), cs.map((c) => el('th', {}, contactName(c.label, d)[0])))),
+    el('tbody', {}, rows.map(([k, vs]) => el('tr', {}, el('td', { class: 'lbl' }, k), vs.map((v) => el('td', {}, fmt(v)))))));
+  return el('details', { class: 'radius-fx', open: !moon },
+    el('summary', {}, t('半径による接触時刻の変化')),
+    el('div', { class: 'table-scroll' }, table),
+    el('p', { class: 'note' }, t('今の計算条件（{model}）からの差です。ほかの半径の値は、1″ あたりの変化から求めた近似値です。',
+      { model: sunModelText(p) + sep() + bodyModelText(d.body, p) })));
+}
+/* The intervals in which the Sun is seen from a spacecraft (not hidden by the Earth), with the time
+   its disk takes to cross the Earth's limb at each end (± half of it about the time of its centre). */
+function visibleIntervals(d) {
+  const iv = d.visible_intervals || [];
+  if (!iv.length || !(d.vis_fraction < 0.999)) return null;
+  const s = d.timeseries, t0 = s ? msOf(s.t0) : 0;
+  const ends = [d.c1, d.c4].filter(Boolean).map(msOf);
+  const cross = (iso) => {
+    const ms = msOf(iso);
+    if (!s || !s.vis || ends.some((e) => Math.abs(e - ms) < 2)) return null;    // an end of the event, not the limb
+    const tt = (ms - t0) / 1000, i = s.dt_s.findIndex((x) => x >= tt);
+    if (i < 1 || i > s.dt_s.length - 2) return null;
+    const rate = (s.vis[i + 1] - s.vis[i - 1]) / (s.dt_s[i + 1] - s.dt_s[i - 1]);      // °/s
+    return rate ? s.rho_s[i] / 3600 / Math.abs(rate) : null;
+  };
+  const cell = (iso) => {
+    const w = cross(iso);
+    return el('td', {}, fmtTime(iso, 1), w != null && el('span', { class: 'sub' }, t('太陽の円盤が縁を横切る ±{s}', { s: fmtDur(w, true) })));
+  };
+  const tz = tzLabel(d.max);
+  const head = ['#', t('見え始め（{tz}）', { tz }), t('見え終わり（{tz}）', { tz }), t('長さ'), t('見え始め（UTC）'), t('見え終わり（UTC）')];
+  const table = el('table', { class: 'contacts' },
+    el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))),
+    el('tbody', {}, iv.map(([a, b], i) => el('tr', {}, el('td', {}, String(i + 1)), cell(a), cell(b),
+      el('td', {}, fmtDur((msOf(b) - msOf(a)) / 1000, true)), el('td', {}, fmtUtc(a)), el('td', {}, fmtUtc(b))))));
+  return el('div', {},
+    el('div', { class: 'section-title' }, t('太陽が見える時間帯（地球に隠されない時間）')),
+    el('div', { class: 'table-scroll' }, table),
+    el('p', { class: 'note' }, t('見えるかどうかは、太陽の中心が地球の縁（大気の遮蔽高度 {atm} km を含む）より上にあるかで判定しています。',
+      { atm: d.params ? d.params.earth_atm_km : 0 })));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1591,11 +1836,15 @@ function initViewer() {
   $('#playBtn').addEventListener('click', () => { state.playing ? pause() : play(); });
   $('#timeSlider').addEventListener('input', () => {
     const ts = state.series; if (!ts) return;
+    state.exact = null;
     state.t = ts.dur * (+$('#timeSlider').value / 1000);
     drawDisk(); updateCursor();
   });
-  $('#orient').addEventListener('change', drawDisk);
-  $('#showGrid').addEventListener('change', drawDisk);
+  for (const q of ['#orient', '#zoom', '#showGrid', '#showAxes']) $(q).addEventListener('change', drawDisk);
+  $('#atBtn').addEventListener('click', showTimeAt);
+  $('#atTime').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); showTimeAt(); } });
+  $('#cmpBtn').addEventListener('click', runCompare);
+  $('#cmpCsv').addEventListener('click', downloadCompareCsv);
   window.addEventListener('resize', () => { if (currentTab() === 'view') { resizeCanvas(); drawDisk(); } });
 }
 function unwrapDeg(a) {
@@ -1610,9 +1859,11 @@ function unwrapDeg(a) {
 function setupViewer(reset = true) {
   const L = state.local;
   pause();
+  state.exact = null;
+  if (reset) clearCompare();
   if (!L || !L.timeseries) { state.series = null; drawDisk(); return; }
   const ts = L.timeseries;
-  const t0 = new Date(ts.t0).getTime();
+  const t0 = msOf(ts.t0);
   const s = { ...ts, t0ms: t0, dur: ts.dt_s[ts.dt_s.length - 1] };
   if (ts.parallactic) s.parallactic = unwrapDeg(ts.parallactic);
   if (ts.sun_az) s.sun_az = unwrapDeg(ts.sun_az);      // no jump through 180° between 359° and 1°
@@ -1622,17 +1873,23 @@ function setupViewer(reset = true) {
   const kind = L.observer_kind;
   const prev = o.value;
   o.innerHTML = '';
-  if (kind === 'ground') o.append(el('option', { value: 'zenith' }, t('天頂が上（見たままの向き）')));
-  o.append(el('option', { value: 'north' }, t('天の北が上（天文図の向き）')));
-  if (kind === 'space') o.append(el('option', { value: 'earth' }, t('地球の方向が下')));
+  const opt = (v, label) => o.append(el('option', { value: v }, label));
+  // the first one is chosen: as seen in the sky from the ground, as in solar images from space
+  const solar = () => opt('solar', t('太陽の北が上（ひので・SDO などの画像の向き）'));
+  if (kind === 'ground') opt('zenith', t('天頂が上（見たままの向き）'));
+  else solar();
+  opt('north', t('天の北が上（天文図の向き）'));
+  if (kind === 'ground') solar();
+  if (kind === 'space') opt('earth', t('地球の方向が下'));
   if ([...o.options].some((x) => x.value === prev) && !reset) o.value = prev;
-  // contact jump buttons
+  fillZoomOptions(L, reset);
+  // contact jump buttons: the exact values of the contact (not interpolated)
   const jb = $('#jumpBtns');
   jb.innerHTML = '';
   for (const c of L.contacts) {
     const [n] = contactName(c.label, L);
-    const tt = (new Date(c.time).getTime() - t0) / 1000;
-    jb.append(el('button', { type: 'button', onclick: () => setTime(tt) }, n));
+    const tt = (msOf(c.time) - t0) / 1000;
+    jb.append(el('button', { type: 'button', onclick: () => setTime(tt, c) }, n));
   }
   // default speed: whole event in ~20 s
   const target = s.dur / 20;
@@ -1640,21 +1897,36 @@ function setupViewer(reset = true) {
   for (const [v] of SPEEDS) if (Math.abs(Math.log(v / target)) < Math.abs(Math.log(best / target))) best = v;
   $('#speed').value = best;
   const cmax = L.contacts.find((c) => c.label === 'MAX');
-  state.t = (new Date(cmax.time).getTime() - t0) / 1000;
+  state.t = (msOf(cmax.time) - t0) / 1000;
+  state.exact = { t: state.t, row: cmax };
   $('#viewNote').textContent = kind === 'ground' ? t('空を見上げたときの見え方です（大きさは太陽が基準）。地平線は緑で表示します。')
     : kind === 'space' ? t('衛星から太陽方向を見た様子です。紺色の大きな円弧は地球の縁です。') : t('地球中心から見た様子です。');
   syncSlider();
+  if (!reset && state.cmp) renderCompare();
   if (currentTab() === 'view') { resizeCanvas(); drawDisk(); }
 }
-function setTime(t) {
+/* The field of view: the whole Sun, or a square of some arcseconds around the body (a transit) or
+   around the point of the Sun's limb of the nearest contact (an eclipse). */
+function fillZoomOptions(L, reset) {
+  const z = $('#zoom'), prev = z.value;
+  const what = L.body === 'moon' ? t('接触点を中心に') : t('{body}を中心に', { body: bodyJa(L.body) });
+  z.replaceChildren(el('option', { value: 'sun' }, t('太陽全体')),
+    ...[300, 120, 60, 30].map((v) => el('option', { value: String(v) }, t('{v}″ 四方（{what}）', { v, what }))));
+  z.value = !reset && [...z.options].some((x) => x.value === prev) ? prev : 'sun';
+}
+/* Show the time `tt` (s from the start of the animation); `row`: a contact or a row of
+   /api/event/{id}/at whose exact values are shown (its time may be outside the animation). */
+function setTime(tt, row = null) {
   const s = state.series; if (!s) return;
-  state.t = Math.max(0, Math.min(s.dur, t));
+  state.t = Math.max(0, Math.min(s.dur, tt));
+  state.exact = row ? { t: tt, row } : null;
   syncSlider(); drawDisk(); updateCursor();
 }
 function syncSlider() { const s = state.series; if (s) $('#timeSlider').value = Math.round(1000 * state.t / s.dur); }
 let _raf = null, _last = 0;
 function play() {
   const s = state.series; if (!s) return;
+  state.exact = null;
   if (state.t >= s.dur - 1e-6) state.t = 0;
   state.playing = true; $('#playBtn').textContent = '❚❚';
   _last = performance.now();
@@ -1678,14 +1950,48 @@ function sample(arr, t) {
   const f = x - i;
   return arr[i] * (1 - f) + arr[i + 1] * f;
 }
+/* The values at time t of the animation, interpolated in the time series. */
 function frame(t) {
   const s = state.series;
+  const tc = Math.max(0, Math.min(s.dur, t));
   const keys = ['xi', 'eta', 'rho_s', 'rho_b', 'rho_b_int', 'magnitude', 'obscuration', 'sep_arcsec', 'vis', 'sun_alt', 'sun_az', 'parallactic',
-    'earth_pa', 'earth_sep_deg', 'earth_radius_deg', 'earth_atm_deg', 'sat_lat', 'sat_alt_km'];
+    'earth_pa', 'earth_sep_deg', 'earth_radius_deg', 'earth_atm_deg', 'sat_lat', 'sat_alt_km', 'p_angle', 'hpc_x', 'hpc_y', 'limb_dist', 'limb_depth'];
   const f = {};
-  for (const k of keys) f[k] = sample(s[k], t);
-  if (s.sat_lon) { const i = Math.round(t / s.dur * (s.dt_s.length - 1)); f.sat_lon = s.sat_lon[i]; }
+  for (const k of keys) f[k] = sample(s[k], tc);
+  if (s.sat_lon) { const i = Math.round(tc / s.dur * (s.dt_s.length - 1)); f.sat_lon = s.sat_lon[i]; }
+  f.ms = s.t0ms + tc * 1000;
+  return derive(f);
+}
+/* The values that results saved by older versions do not have: the P angle, X / Y, the limb distance. */
+function derive(f) {
+  if (f.p_angle == null) f.p_angle = solarP(f.ms);
+  if (f.hpc_x == null) { const h = hpcOf(f); f.hpc_x = h.x; f.hpc_y = h.y; }
+  if (f.limb_dist == null) f.limb_dist = f.sep_arcsec - f.rho_s;
+  if (f.limb_depth == null) f.limb_depth = (f.rho_s - f.sep_arcsec) / f.rho_b;
   return f;
+}
+/* The frame of a contact or of a row of /api/event/{id}/at: the exact values of the server; those
+   that a row does not have (e.g. where the horizon is) from the animation. */
+function exactFrame(ex) {
+  const r = ex.row, s = state.series;
+  const f = frame(ex.t);
+  for (const [k, v] of Object.entries(r)) if (typeof v === 'number' && isFinite(v)) f[k] = v;
+  // derived from the exact values (below) when the row does not have them
+  for (const k of ['p_angle', 'hpc_x', 'hpc_y', 'limb_dist', 'limb_depth']) if (r[k] == null) f[k] = null;
+  if (r.xi == null && r.hpc_x != null && r.p_angle != null) {      // a row of /at has X / Y and the P angle
+    const P = r.p_angle * Math.PI / 180, a = -r.hpc_x, b = r.hpc_y;
+    f.xi = a * Math.cos(P) + b * Math.sin(P); f.eta = -a * Math.sin(P) + b * Math.cos(P);
+  }
+  if (r.vis == null && typeof r.visible === 'boolean') {
+    f.vis = r.visible ? 1 : -1;
+    f.visApprox = true;
+  }
+  f.outside = ex.t < -0.5 || ex.t > s.dur + 0.5;
+  // what the row lacks far from the animation is not drawn
+  f.noHorizon = f.outside && r.parallactic == null;
+  f.noEarth = f.outside && (r.earth_pa == null || r.earth_radius_deg == null);
+  f.ms = msOf(r.time); f.time = r.time; f.exact = true;
+  return derive(f);
 }
 function resizeCanvas() {
   const c = $('#diskCanvas');
@@ -1694,10 +2000,27 @@ function resizeCanvas() {
   const w = Math.max(200, Math.round(r.width * dpr));
   if (c.width !== w) { c.width = w; c.height = w; }
 }
+/* Position angle (°) of the direction up on the screen. */
 function refAngle(f, mode) {
   if (mode === 'zenith' && f.parallactic != null) return f.parallactic;
   if (mode === 'earth' && f.earth_pa != null) return f.earth_pa - 180;
+  if (mode === 'solar' && f.p_angle != null) return f.p_angle;
   return 0;
+}
+/* The middle of a zoomed view (ξ, η, ″): the body's centre for a transit; for an eclipse, the point
+   of the Sun's limb touched at the contact nearest in time. */
+function zoomCentre(f, L) {
+  if (L.body !== 'moon') return [f.xi, f.eta];
+  let best = null;
+  for (const c of L.contacts) {
+    if (c.label === 'MAX') continue;
+    const dt = Math.abs(msOf(c.time) - f.ms);
+    if (!best || dt < best.dt) best = { dt, c };
+  }
+  if (!best) return [f.xi, f.eta];
+  const c = best.c, d = Math.hypot(c.xi, c.eta) || 1;
+  const r = (c.label === 'C2' || c.label === 'C3') && c.rho_b_int > c.rho_s ? -c.rho_s : c.rho_s;
+  return [r * c.xi / d, r * c.eta / d];
 }
 function mix(a, b, t) {
   const pa = a.match(/\w\w/g).map((h) => parseInt(h, 16));
@@ -1707,7 +2030,7 @@ function mix(a, b, t) {
 function drawDisk() {
   const c = $('#diskCanvas');
   const g = c.getContext('2d');
-  const W = c.width, H = c.height, cx = W / 2, cy = H / 2;
+  const W = c.width, H = c.height;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, W, H);
   const s = state.series;
@@ -1715,17 +2038,24 @@ function drawDisk() {
   if (!s || !L) {
     g.fillStyle = '#0b0f19'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#9aa4b8'; g.font = `${Math.round(W / 30)}px sans-serif`; g.textAlign = 'center';
-    g.fillText(state.detail && state.detail.kind === 'global' ? t('最大食の地点での見え方を計算中…') : '', cx, cy);
+    g.fillText(state.detail && state.detail.kind === 'global' ? t('最大食の地点での見え方を計算中…') : '', W / 2, H / 2);
     $('#readout').innerHTML = '';
     return;
   }
   const mode = $('#orient').value || 'north';
-  const f = frame(state.t);
+  const f = state.exact ? exactFrame(state.exact) : frame(state.t);
   const kind = L.observer_kind;
-  const k = (Math.min(W, H) * 0.30) / f.rho_s;
+  const field = $('#zoom').value && $('#zoom').value !== 'sun' ? +$('#zoom').value : 0;     // width of the view (″), 0: the whole Sun
+  const k = field ? Math.min(W, H) / field : (Math.min(W, H) * 0.30) / f.rho_s;           // px per ″
   const ref = refAngle(f, mode) * Math.PI / 180;
-  const toScreen = (xi, eta, refA = ref) => [cx - k * (xi * Math.cos(refA) - eta * Math.sin(refA)), cy - k * (eta * Math.cos(refA) + xi * Math.sin(refA))];
+  // (ξ, η) from the Sun's centre -> offset on the screen (px, y down), the direction at position angle `refA` up
+  const off = (xi, eta, refA = ref) => [-k * (xi * Math.cos(refA) - eta * Math.sin(refA)), -k * (eta * Math.cos(refA) + xi * Math.sin(refA))];
+  // the Sun's centre on the screen: in the middle, or away from it so that the middle of a zoomed view is there
+  const [zx, zy] = field ? off(...zoomCentre(f, L)) : [0, 0];
+  const cx = W / 2 - zx, cy = H / 2 - zy;
+  const toScreen = (xi, eta, refA = ref) => { const [x, y] = off(xi, eta, refA); return [cx + x, cy + y]; };
   const totalPhase = L.body === 'moon' && f.rho_b_int > f.rho_s && f.sep_arcsec < f.rho_b_int - f.rho_s;
+  const far = Math.hypot(cx - W / 2, cy - H / 2) + 2 * W;      // reaches past the screen from the Sun's centre
 
   // sky
   let sky = '#000000';
@@ -1742,9 +2072,10 @@ function drawDisk() {
   g.setLineDash([2, 5]); g.lineWidth = Math.max(1, W / 500);
   g.beginPath();
   const n = s.dt_s.length;
+  const refAt = (i) => (mode === 'zenith' && s.parallactic ? s.parallactic[i] : mode === 'earth' && s.earth_pa ? s.earth_pa[i] - 180
+    : mode === 'solar' ? (s.p_angle ? s.p_angle[i] : f.p_angle) : 0);
   for (let i = 0; i < n; i += 2) {
-    const ra = (mode === 'zenith' && s.parallactic) ? s.parallactic[i] * Math.PI / 180 : (mode === 'earth' && s.earth_pa) ? (s.earth_pa[i] - 180) * Math.PI / 180 : 0;
-    const [x, y] = toScreen(s.xi[i], s.eta[i], ra);
+    const [x, y] = toScreen(s.xi[i], s.eta[i], refAt(i) * Math.PI / 180);
     i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
   }
   g.stroke(); g.restore();
@@ -1766,6 +2097,18 @@ function drawDisk() {
     sg.addColorStop(0, '#fffbe8'); sg.addColorStop(0.6, '#ffe7a3'); sg.addColorStop(0.9, '#ffbe55'); sg.addColorStop(1, '#f39b1d');
     g.fillStyle = sg; g.beginPath(); g.arc(cx, cy, rs, 0, 2 * Math.PI); g.fill();
   }
+  // the Sun's rotation axis across the disk, solar north marked (whole Sun)
+  if ($('#showGrid').checked && !field && f.p_angle != null && !totalPhase) {
+    const sig = f.p_angle * Math.PI / 180 - ref, ux = -Math.sin(sig), uy = -Math.cos(sig);
+    g.save();
+    g.strokeStyle = 'rgba(150,90,0,.45)'; g.lineWidth = Math.max(1, W / 600); g.setLineDash([6, 6]);
+    g.beginPath(); g.moveTo(cx - ux * rs, cy - uy * rs); g.lineTo(cx + ux * rs, cy + uy * rs); g.stroke();
+    g.setLineDash([]);
+    const fs = Math.round(W / 40);
+    g.font = `bold ${fs}px sans-serif`; g.fillStyle = 'rgba(122,75,0,.9)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(t('太陽の北'), cx + ux * rs * 0.82, cy + uy * rs * 0.82);
+    g.restore();
+  }
   // occulting body
   const [bx, by] = toScreen(f.xi, f.eta);
   const rb = f.rho_b * k;
@@ -1774,7 +2117,7 @@ function drawDisk() {
   if (L.body === 'moon') { g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1; g.stroke(); }
 
   // Earth limb (spacecraft)
-  if (kind === 'space' && f.earth_sep_deg != null && (f.earth_sep_deg - f.earth_atm_deg) * 3600 < f.rho_s * 4.5) {
+  if (kind === 'space' && !f.noEarth && f.earth_sep_deg != null && (f.earth_sep_deg - f.earth_atm_deg) * 3600 < f.rho_s * 4.5) {
     const sig = (f.earth_pa * Math.PI / 180) - ref;
     const D = f.earth_sep_deg * 3600 * k;
     const ex = cx - D * Math.sin(sig), ey = cy - D * Math.cos(sig);
@@ -1789,41 +2132,83 @@ function drawDisk() {
     g.strokeStyle = 'rgba(140,190,255,.9)'; g.lineWidth = Math.max(1.5, W / 300); g.stroke();
   }
   // horizon (ground)
-  if (kind === 'ground' && f.sun_alt != null && f.sun_alt * 3600 < f.rho_s * 4.5) {
+  if (kind === 'ground' && !f.noHorizon && f.sun_alt != null && f.sun_alt * 3600 < f.rho_s * 4.5) {
     const sigz = (f.parallactic * Math.PI / 180) - ref;
     g.save();
     g.translate(cx, cy); g.rotate(-sigz);
     const hy = f.sun_alt * 3600 * k;
     const gg = g.createLinearGradient(0, hy, 0, hy + W);
     gg.addColorStop(0, '#2f5d3a'); gg.addColorStop(1, '#14261a');
-    g.fillStyle = gg; g.fillRect(-2 * W, hy, 4 * W, 4 * W);
+    g.fillStyle = gg; g.fillRect(-far, hy, 2 * far, 2 * far);
     g.strokeStyle = '#9fd3a8'; g.lineWidth = Math.max(1, W / 400);
-    g.beginPath(); g.moveTo(-2 * W, hy); g.lineTo(2 * W, hy); g.stroke();
+    g.beginPath(); g.moveTo(-far, hy); g.lineTo(far, hy); g.stroke();
     g.restore();
   }
-  // orientation marks
+  const axes = $('#showAxes').checked;
+  if (axes) drawAxes(g, W, H, cx, cy, k, mode, ((refAngle(f, mode) - f.p_angle) % 360 + 540) % 360 - 180);
+  // orientation marks: around the Sun, or in a corner of a zoomed view (the solar north longer there)
   if ($('#showGrid').checked) {
-    const fs = Math.round(W / 32);
+    const fs = Math.round(W / (field ? 42 : 32));
     g.font = `bold ${fs}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    const arrow = (paDeg, label, color) => {
+    const [ox, oy, r1, r2] = field ? [W - fs * 6.6, fs * 5.8, fs * 0.3, fs * 2] : [cx, cy, rs * 1.22, rs * 1.45];
+    if (field) {
+      g.fillStyle = 'rgba(0,0,0,.5)';
+      g.beginPath(); g.arc(ox, oy, fs * 5.1, 0, 2 * Math.PI); g.fill();
+    }
+    const arrow = (paDeg, label, color, len = 1) => {
       const sig = paDeg * Math.PI / 180 - ref;
-      const r1 = rs * 1.22, r2 = rs * 1.45;
-      const x1 = cx - r1 * Math.sin(sig), y1 = cy - r1 * Math.cos(sig);
-      const x2 = cx - r2 * Math.sin(sig), y2 = cy - r2 * Math.cos(sig);
+      const x1 = ox - r1 * Math.sin(sig), y1 = oy - r1 * Math.cos(sig);
+      const x2 = ox - r2 * len * Math.sin(sig), y2 = oy - r2 * len * Math.cos(sig);
       g.strokeStyle = color; g.fillStyle = color; g.lineWidth = Math.max(1.5, W / 350);
       g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
-      g.fillText(label, cx - (r2 + fs) * Math.sin(sig), cy - (r2 + fs) * Math.cos(sig));
+      g.fillText(label, ox - (r2 * len + fs) * Math.sin(sig), oy - (r2 * len + fs) * Math.cos(sig));
     };
-    arrow(0, t('北'), 'rgba(255,255,255,.75)');
-    arrow(90, t('東'), 'rgba(255,255,255,.55)');
-    if (kind === 'ground' && f.parallactic != null) arrow(f.parallactic, t('天頂'), 'rgba(160,255,190,.9)');
-    if (kind === 'space' && f.earth_pa != null) arrow(f.earth_pa, t('地球'), 'rgba(140,190,255,.95)');
+    if (field && f.p_angle != null) arrow(f.p_angle, t('太陽の北'), 'rgba(255,209,102,.95)', 1.75);
+    arrow(0, t('北'), 'rgba(255,255,255,.8)');
+    arrow(90, t('東'), 'rgba(255,255,255,.6)');
+    if (kind === 'ground' && f.parallactic != null && !f.noHorizon) arrow(f.parallactic, t('天頂'), 'rgba(160,255,190,.9)');
+    if (kind === 'space' && f.earth_pa != null && !f.noEarth) arrow(f.earth_pa, t('地球'), 'rgba(140,190,255,.95)');
   }
-  // scale bar text
+  // scale text
   g.font = `${Math.round(W / 40)}px sans-serif`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   g.fillStyle = 'rgba(255,255,255,.7)';
-  g.fillText(t('太陽の視直径 {v}′', { v: (2 * f.rho_s / 60).toFixed(2) }), W * 0.03, H * 0.965);
-  updateReadout(f, totalPhase);
+  const scale = t('太陽の視直径 {v}′', { v: (2 * f.rho_s / 60).toFixed(2) }) + (field ? sep() + t('表示範囲 {v}″ 四方', { v: field }) : '');
+  g.fillText(scale, W * 0.03, H * (axes ? 0.92 : 0.965));
+  updateReadout(f);
+}
+/* Angle ticks (″) along the edges, from the Sun's centre with X to the right and Y up: with the
+   solar north up these are the helioprojective X / Y of solar images (Hinode, SDO), otherwise the
+   same turned with the view by `turn` degrees (from solar north toward east). */
+function drawAxes(g, W, H, cx, cy, k, mode, turn) {
+  const step = niceStep(W / k, 8);
+  const dec = step >= 1 ? 0 : Math.ceil(-Math.log10(step) - 1e-9);
+  const fs = Math.round(W / 46);
+  g.save();
+  g.font = `${fs}px sans-serif`; g.lineWidth = 1;
+  g.strokeStyle = 'rgba(255,255,255,.18)'; g.fillStyle = 'rgba(255,255,255,.85)';
+  g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 3;
+  const u0 = -cx / k, u1 = (W - cx) / k, v0 = (cy - H) / k, v1 = cy / k;      // ″ to the right, up
+  g.textAlign = 'center'; g.textBaseline = 'bottom';
+  for (let i = Math.ceil(u0 / step); i * step <= u1; i++) {
+    const x = cx + i * step * k;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H - fs * 1.4); g.stroke();
+    if (x > fs * 1.5 && x < W - fs * 1.5) g.fillText((i * step).toFixed(dec), x, H - 3);
+  }
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  for (let i = Math.ceil(v0 / step); i * step <= v1; i++) {
+    const y = cy - i * step * k;
+    g.beginPath(); g.moveTo(fs * 3.2, y); g.lineTo(W, y); g.stroke();
+    if (y > fs && y < H - fs * 2) g.fillText((i * step).toFixed(dec), 3, y);
+  }
+  // what the ticks are, on a dark band
+  const lines = mode === 'solar' ? [t('X・Y（″）: 太陽の中心から'), t('太陽の北が上（ひので・SDO の画像の座標）')]
+    : [t('X′・Y′（″）: 太陽の中心から画面の向きに'), t('画面の上は太陽の北から東回りに {a}°', { a: signed(turn, 1) })];
+  g.shadowBlur = 0;
+  g.fillStyle = 'rgba(0,0,0,.5)';
+  g.fillRect(fs * 3.2, 2, Math.max(...lines.map((x) => g.measureText(x).width)) + fs * 0.8, fs * 2.7);
+  g.fillStyle = 'rgba(255,255,255,.9)'; g.textBaseline = 'top';
+  lines.forEach((x, i) => g.fillText(x, fs * 3.6, 4 + i * fs * 1.3));
+  g.restore();
 }
 function phaseLabel(f, L) {
   if (L.body === 'moon') {
@@ -1836,24 +2221,187 @@ function phaseLabel(f, L) {
   if (f.sep_arcsec < f.rho_s - f.rho_b) return t('太陽面を通過中');
   return t('太陽の縁にかかっている');
 }
-function updateReadout(f, total) {
-  const s = state.series, L = state.local;
-  const now = new Date(s.t0ms + state.t * 1000);
-  const kind = L.observer_kind;
+function updateReadout(f) {
+  const L = state.local;
+  const kind = L.observer_kind, moon = L.body === 'moon', exact = !!f.exact;
   const visible = kind === 'geocenter' || f.vis > 0;
   const rows = [];
-  if (L.body === 'moon') {
+  if (moon) {
     rows.push([t('食分'), f.magnitude > 0 ? f.magnitude.toFixed(4) : '0'], [t('食面積率'), pct(Math.max(0, f.obscuration), 2)]);
-  } else rows.push([t('太陽中心からの距離'), `${f.sep_arcsec.toFixed(1)}″`]);
-  if (kind === 'ground') rows.push([t('太陽の高度・方位'), `${f.sun_alt.toFixed(1)}°${sep()}${(((f.sun_az % 360) + 360) % 360).toFixed(0)}°` + paren(azName(f.sun_az))]);
+  } else {
+    const n = f.rho_b > 0 ? f.limb_dist / f.rho_b : null;
+    rows.push([t('太陽中心からの距離'), `${f.sep_arcsec.toFixed(exact ? 2 : 1)}″`],
+      [t('太陽の縁からの距離（外側が +）'), `${signed(f.limb_dist, 2)}″` + (n != null ? paren(t('{body}の半径の {n} 倍', { body: bodyJa(L.body), n: signed(n, 2) })) : '')]);
+  }
+  const d = exact ? 2 : 1;
+  rows.push([t('X, Y（太陽の北が上, ″）'), `${f.hpc_x.toFixed(d)}, ${f.hpc_y.toFixed(d)}`]);
+  if (f.p_angle != null) rows.push([t('太陽の P 角（自転軸）'), `${signed(f.p_angle, 2)}°`]);
+  if (exact && f.pa != null) {
+    const paSolar = f.pa_solar != null ? f.pa_solar : (((f.pa - f.p_angle) % 360) + 360) % 360;
+    rows.push([t('位置角（天の北から）'), `${f.pa.toFixed(2)}°`], [t('位置角（太陽の北から）'), `${paSolar.toFixed(2)}°`]);
+  }
+  if (kind === 'ground' && f.sun_alt != null) rows.push([t('太陽の高度・方位'), `${f.sun_alt.toFixed(1)}°${sep()}${(((f.sun_az % 360) + 360) % 360).toFixed(0)}°` + paren(azName(f.sun_az))]);
   if (kind === 'space') {
-    rows.push([t('衛星直下点'), `${fmtLat(f.sat_lat)} ${fmtLon(f.sat_lon)}`], [t('衛星の高度'), km(f.sat_alt_km.toFixed(0))]);
-    rows.push([t('地球の縁からの太陽'), `${f.vis.toFixed(2)}°`]);
+    if (f.sat_lat != null && f.sat_lon != null) rows.push([t('衛星直下点'), `${fmtLat(f.sat_lat)} ${fmtLon(f.sat_lon)}`]);
+    if (f.sat_alt_km != null) rows.push([t('衛星の高度'), km(f.sat_alt_km.toFixed(0))]);
+    if (!f.visApprox) rows.push([t('地球の縁からの太陽'), `${f.vis.toFixed(2)}°`]);
   }
   rows.push([t('見えるか'), kind === 'geocenter' ? '—' : visible ? t('見える') : (kind === 'ground' ? t('地平線の下') : t('地球に隠れている'))]);
-  $('#readout').innerHTML = `<div class="t">${fmtTime(now.toISOString(), 1)} <small class="muted">${tzLabel(now)}</small></div>` +
-    `<div class="muted" style="font-size:12px">${fmtDate(now.toISOString())}</div>` +
-    `<span class="phase">${esc(phaseLabel(f, L))}</span><table>${rows.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</table>`;
+  const time = f.time || new Date(f.ms).toISOString();
+  const utc = exact ? fmtUtc(time) : fmtUtc(roundTime(time, 1).toISOString()).slice(0, -2);
+  $('#readout').innerHTML = `<div class="t">${fmtTime(time, exact ? 3 : 1)} <small class="muted">${esc(tzLabel(time))}</small></div>` +
+    `<div class="muted" style="font-size:12px">${esc(fmtDate(time))}${tzId() === 'UTC' ? '' : esc(sep() + 'UTC ' + utc)}</div>` +
+    `<span class="phase">${esc(phaseLabel(f, L))}</span> <span class="src${exact ? ' exact' : ''}">${esc(exact ? t('サーバーで計算した値') : t('動画用の補間値'))}</span>` +
+    (f.outside ? `<div class="hint">${esc(t('動画の範囲の外の時刻です（その時刻の値で描いています）。'))}</div>` : '') +
+    `<table>${rows.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</table>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* values at given times (POST /api/event/{id}/at)                     */
+/* ------------------------------------------------------------------ */
+/* The values of the event shown in the viewer at given times; the event of a list or of a saved
+   file is computed again when the server has forgotten it, and so is the view at the place of
+   the greatest eclipse of a global event (saved without the server's id). */
+async function eventAt(body) {
+  const L = state.local, d = state.detail;
+  if (!L) throw new Error(t('現象が選ばれていません'));
+  const at = (id) => api(`/api/event/${encodeURIComponent(id)}/at`, body);
+  const call = async () => {
+    if (L === d) return at(await detailServerId(d));
+    if (L.id) {
+      try { return await at(L.id); } catch (err) {
+        if (err.status !== 404) throw err;
+        L.id = null;
+      }
+    }
+    const r = await geLocal(d);
+    if (!r.found) throw new Error(t('この地点では食は起こりません。'));
+    L.id = r.id;
+    return at(r.id);
+  };
+  try { return await call(); } catch (err) {
+    if (err.status !== 404) throw err;
+    await liveDetail(d.id);
+    return call();
+  }
+}
+/* "時刻を指定": the values of the server at a time in UTC (e.g. that of an image). */
+async function showTimeAt() {
+  const st = $('#atStatus'), text = $('#atTime').value.trim(), L = state.local;
+  if (!state.series || !L) return;
+  if (!text) { setStatus(st, t('時刻を入力してください（UTC）'), 'err'); return; }
+  setStatus(st, t('計算中…'), 'busy');
+  try {
+    const r = await eventAt({ times: [text] });
+    if (state.local !== L || !state.series) return;      // another event meanwhile
+    const row = r.rows[0];
+    setTime((msOf(row.time) - state.series.t0ms) / 1000, row);
+    setStatus(st, (r.warnings || []).map((w) => '⚠ ' + w).join('\n'));
+  } catch (err) { if (state.local === L) setStatus(st, err.message, 'err'); }
+}
+/* "観測画像と比べる": one line per image, "TIME, X, Y" or "TIME" (also separated by tabs or ";", or
+   "TIME X Y" with spaces when X and Y are numbers); "#" starts a comment. */
+function parseCompare(text) {
+  const out = [];
+  const isNum = (v) => /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v);
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.replace(/#.*/, '').trim();
+    if (!line) return;
+    let f = line.split(/\s*[,;\t]\s*/);
+    while (f.length > 1 && f[f.length - 1] === '') f.pop();      // a comma at the end
+    if (f.length === 1) {
+      const w = line.split(/\s+/);
+      if (w.length >= 3 && isNum(w[w.length - 1]) && isNum(w[w.length - 2])) f = [w.slice(0, -2).join(' '), w[w.length - 2], w[w.length - 1]];
+    }
+    if (f.length === 1) out.push({ time: f[0], xy: null });
+    else if (f.length === 3 && isNum(f[1]) && isNum(f[2])) out.push({ time: f[0], xy: [+f[1], +f[2]] });
+    else throw new Error(t('{n} 行目「{line}」を読めません（「時刻, X, Y」または「時刻」の形で書いてください）', { n: i + 1, line: raw.trim() }));
+  });
+  return out;
+}
+const MAX_AT_TIMES = 2000;
+async function runCompare() {
+  const st = $('#cmpStatus'), L = state.local;
+  if (!state.series || !L) return;
+  let items;
+  try { items = parseCompare($('#cmpText').value); } catch (err) { setStatus(st, err.message, 'err'); return; }
+  if (!items.length) { setStatus(st, t('時刻を 1 行に 1 つずつ入力してください（UTC）'), 'err'); return; }
+  if (items.length > MAX_AT_TIMES) { setStatus(st, t('一度に計算できる時刻は {n} 個までです', { n: MAX_AT_TIMES }), 'err'); return; }
+  const body = { times: items.map((x) => x.time) };
+  if (items.some((x) => x.xy)) body.measured = items.map((x) => x.xy);
+  const exp = parseFloat($('#cmpExp').value);
+  if (isFinite(exp) && exp > 0) body.exposure_s = exp;
+  setStatus(st, t('計算中…'), 'busy');
+  try {
+    const r = await eventAt(body);
+    if (state.local !== L) return;
+    state.cmp = { rows: r.rows, measured: !!body.measured, exposure: body.exposure_s || 0, body: L.body };
+    renderCompare();
+    setStatus(st, [t('{n} 個の時刻を計算しました。行をクリックすると、その時刻の見え方を表示します。', { n: r.rows.length }),
+      ...(r.warnings || []).map((w) => '⚠ ' + w)].join('\n'));
+  } catch (err) { if (state.local === L) setStatus(st, err.message, 'err'); }
+}
+function clearCompare() {
+  state.cmp = null;
+  $('#cmpTable').innerHTML = '';
+  $('#cmpCsv').disabled = true;
+  setStatus($('#cmpStatus'), '');
+  setStatus($('#atStatus'), '');
+}
+function renderCompare() {
+  const c = state.cmp, tbl = $('#cmpTable');
+  tbl.innerHTML = '';
+  $('#cmpCsv').disabled = !c;
+  if (!c) return;
+  const moon = c.body === 'moon';
+  const head = [t('入力'), c.exposure ? t('UTC（露光の中央）') : 'UTC', t('太陽の P 角'), t('X（″）'), t('Y（″）'), t('太陽の縁からの距離（外側が +）')];
+  if (moon) head.push(t('食分'));
+  head.push(t('見えるか'));
+  if (c.measured) head.push(t('O−C X（″）'), t('O−C Y（″）'), t('O−C（時間）'));
+  const num = (v, d) => (v == null || !isFinite(v) ? '—' : (+v).toFixed(d));
+  const rows = c.rows.map((r) => {
+    const tr = el('tr', { class: 'click' },
+      el('td', {}, r.input ?? ''), el('td', {}, fmtUtc(r.time)), el('td', {}, `${signed(r.p_angle, 2)}°`),
+      el('td', {}, num(r.hpc_x, 2)), el('td', {}, num(r.hpc_y, 2)), limbCell(r, c.body),
+      moon && el('td', {}, f4(r.magnitude)),
+      el('td', {}, r.visible ? el('span', { class: 'pill ok' }, t('見える')) : el('span', { class: 'pill no' }, t('見えない'))),
+      c.measured && el('td', {}, r.oc_x == null ? '—' : signed(r.oc_x, 2)),
+      c.measured && el('td', {}, r.oc_y == null ? '—' : signed(r.oc_y, 2)),
+      c.measured && el('td', {}, r.oc_dt == null ? '—' : t('{s}秒', { s: signed(r.oc_dt, 2) })));
+    tr.addEventListener('click', () => {
+      const s = state.series;
+      if (!s) return;
+      setTime((msOf(r.time) - s.t0ms) / 1000, r);
+      $('#diskCanvas').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    return tr;
+  });
+  tbl.append(el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, rows));
+  if (c.measured) {
+    const m = c.rows.filter((r) => r.oc_x != null);
+    if (m.length) {
+      const stat = (k) => {
+        const v = m.map((r) => r[k]).filter((x) => x != null && isFinite(x));
+        const mean = v.reduce((a, b) => a + b, 0) / v.length;
+        const sd = v.length > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / (v.length - 1)) : null;
+        return [mean, sd];
+      };
+      const [x, sx] = stat('oc_x'), [y, sy] = stat('oc_y'), [dt, sdt] = stat('oc_dt');
+      const pm = (v, s, d) => signed(v, d) + (s != null ? ' ± ' + s.toFixed(d) : '');
+      tbl.append(el('tfoot', {}, el('tr', {}, el('td', { colspan: head.length },
+        t('O−C の平均 ± 標準偏差（{n} 枚）: X {x}″、Y {y}″、時間 {dt} 秒', { n: m.length, x: pm(x, sx, 2), y: pm(y, sy, 2), dt: pm(dt, sdt, 2) })))));
+    }
+  }
+  tbl.prepend(el('caption', {}, c.measured
+    ? t('O−C は画像で測った位置から計算した位置を引いた差です。O−C（時間）は、観測された位置が計算より運動の向きに何秒先に進んでいるかを表します。')
+    : t('X・Y は太陽の北が上の太陽の中心からの角度（″、X は西、Y は北が正）です。')));
+}
+function downloadCompareCsv() {
+  const c = state.cmp, L = state.local;
+  if (!c || !c.rows.length) return;
+  const keys = [...new Set(c.rows.flatMap((r) => Object.keys(r)))];
+  const rows = [keys, ...c.rows.map((r) => keys.map((k) => r[k]))];
+  saveFile(`eclipse_at_${(L ? L.max : c.rows[0].time).slice(0, 10)}.csv`, toCsv(rows), 'text/csv');
 }
 
 /* ------------------------------------------------------------------ */
@@ -1906,6 +2454,9 @@ function lineChart(box, cfg) {
     tx.textContent = fmtHM(new Date(ms).toISOString());
     root.append(tx);
   }
+  const tzt = svg('text', { x: W - pr, y: H - 3, 'text-anchor': 'end', 'font-size': 11, fill: '#7a8396' });
+  tzt.textContent = t('時刻（{tz}）', { tz: tzLabel(new Date(s.t0ms).toISOString()) });
+  root.append(tzt);
   root.append(svg('line', { x1: pl, x2: W - pr, y1: H - pb, y2: H - pb, stroke: '#9aa4b8' }));
   for (const h of cfg.hlines || []) {
     root.append(svg('line', { x1: pl, x2: W - pr, y1: Y(h.v), y2: Y(h.v), stroke: h.color, 'stroke-dasharray': '4 4' }));
@@ -1914,7 +2465,7 @@ function lineChart(box, cfg) {
   }
   // contacts
   for (const c of state.local.contacts) {
-    const tc = (new Date(c.time).getTime() - s.t0ms) / 1000;
+    const tc = (msOf(c.time) - s.t0ms) / 1000;
     root.append(svg('line', { x1: X(tc), x2: X(tc), y1: pt, y2: H - pb, stroke: c.label === 'MAX' ? '#e8850c' : '#b8c0cf', 'stroke-dasharray': '3 3' }));
     const tx = svg('text', { x: X(tc) + 3, y: pt + 11, 'font-size': 10, fill: '#7a8396' });
     tx.textContent = c.label === 'MAX' ? t('最大') : c.label; root.append(tx);
@@ -2026,6 +2577,12 @@ const SHEET_STYLE = {
   C2: { color: '#8a3fd1' }, C3: { color: '#8a3fd1' },
 };
 
+/* "太陽の半径が 1″ 大きいと: 第1接触 −11.9 秒、…" (dt_drs of the contacts), or '' */
+function sensitivityLine(d) {
+  const cs = d.contacts.filter((c) => c.label !== 'MAX' && c.dt_drs != null);
+  if (!cs.length) return '';
+  return t('太陽の半径が 1″ 大きいと: {list}', { list: cs.map((c) => `${contactName(c.label, d)[0]} ${t('{s}秒', { s: signed(c.dt_drs, 1) })}`).join(listSep()) });
+}
 function renderSheet() {
   const box = $('#sheet');
   const d = state.detail, L = state.local;
@@ -2040,16 +2597,22 @@ function sheetSvg(d, L, orient) {
   const moon = L.body === 'moon', kind = L.observer_kind;
   const cs = L.contacts;
   const cmax = cs.find((c) => c.label === 'MAX');
-  const tc = (c) => (new Date(c.time).getTime() - s.t0ms) / 1000;
-  const Pdeg = solarP(new Date(cmax.time).getTime());
-  const rot = orient === 'solar' ? Pdeg * Math.PI / 180 : 0;
-  const cr = Math.cos(rot), sr = Math.sin(rot);
-  // (x, y): arcseconds west and north of the Sun's centre
-  const XY = (xi, eta) => [-(xi * cr - eta * sr), eta * cr + xi * sr];
+  const tc = (c) => (msOf(c.time) - s.t0ms) / 1000;
+  const solar = orient === 'solar';
+  const Pdeg = cmax.p_angle != null ? cmax.p_angle : solarP(msOf(cmax.time));
+  // the P angle at a contact, at a point of the time series and at a time (0 with the celestial north up)
+  const Pc = (c) => (solar ? (c.p_angle != null ? c.p_angle : Pdeg) : 0);
+  const Pi = (i) => (solar ? (s.p_angle ? s.p_angle[i] : Pdeg) : 0);
+  const Pt = (tt) => (solar ? (s.p_angle ? sample(s.p_angle, tt) : Pdeg) : 0);
+  // (x, y): arcseconds west and north of the Sun's centre (solar west and north: helioprojective X, Y)
+  const XY = (xi, eta, P) => {
+    const r = P * Math.PI / 180, cr = Math.cos(r), sr = Math.sin(r);
+    return [-(xi * cr - eta * sr), eta * cr + xi * sr];
+  };
   // a square frame around the Sun and the body at the contacts, on a round grid
   const box = [-cmax.rho_s, cmax.rho_s, -cmax.rho_s, cmax.rho_s];
   for (const c of cs) {
-    const [x, y] = XY(c.xi, c.eta);
+    const [x, y] = XY(c.xi, c.eta, Pc(c));
     box[0] = Math.min(box[0], x - c.rho_b); box[1] = Math.max(box[1], x + c.rho_b);
     box[2] = Math.min(box[2], y - c.rho_b); box[3] = Math.max(box[3], y + c.rho_b);
   }
@@ -2061,15 +2624,16 @@ function sheetSvg(d, L, orient) {
 
   const W = 1000, px = 82, py = 96, S = 600, rx = px + S + 34, rw = W - rx - 24;
   const X = (v) => px + (v - x0) / ext * S, Y = (v) => py + (y0 + ext - v) / ext * S, R = (r) => r / ext * S;
-  const P = (c) => { const [x, y] = XY(c.xi, c.eta); return [X(x), Y(y)]; };
+  const P = (c) => { const [x, y] = XY(c.xi, c.eta, Pc(c)); return [X(x), Y(y)]; };
   const cx = X(0), cy = Y(0);
-  const rowH = 30, tableY = py + S + 58, H = tableY + 26 + rowH * cs.length + 76;
+  const sens = sensitivityLine(L);
+  const rowH = 30, tableY = py + S + 58, H = tableY + 26 + rowH * cs.length + 76 + (sens ? 18 : 0);
 
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, 'font-family': SHEET_FONT, role: 'img' });
   root.append(svg('rect', { x: 0, y: 0, width: W, height: H, fill: '#fff' }));
 
   // title
-  sheetText(root, W / 2, 40, t('{date} の{type}', { date: fmtDate(d.max), type: typeLabel(d) }), { size: 22, weight: 700, anchor: 'middle', w: W - 60 });
+  sheetText(root, W / 2, 40, t('{date} の{type}', { date: fmtDate(d.max) + utDateNote(d.max), type: typeLabel(d) }), { size: 22, weight: 700, anchor: 'middle', w: W - 60 });
   sheetText(root, W / 2, 66, t('観測者: {obs}', { obs: observerText(L.observer || d.observer) }), { size: 13, fill: '#4a5468', anchor: 'middle', w: W - 60 });
 
   // grid and axes
@@ -2106,7 +2670,7 @@ function sheetSvg(d, L, orient) {
   let anyHidden = false;
   const segs = [];
   s.dt_s.forEach((_, i) => {
-    const [x, y] = XY(s.xi[i], s.eta[i]);
+    const [x, y] = XY(s.xi[i], s.eta[i], Pi(i));
     const pt = `${X(x).toFixed(1)},${Y(y).toFixed(1)}`;
     const h = hidden(i);
     anyHidden = anyHidden || h;
@@ -2117,7 +2681,7 @@ function sheetSvg(d, L, orient) {
   for (const sg of segs) {
     g.append(svg('path', { d: 'M' + sg.pts.join('L'), fill: 'none', stroke: sg.h ? '#9aa4b8' : '#262b38', 'stroke-width': 1.6, 'stroke-dasharray': sg.h ? '5 4' : 'none' }));
   }
-  const at = (tt) => { const [x, y] = XY(sample(s.xi, tt), sample(s.eta, tt)); return [X(x), Y(y)]; };
+  const at = (tt) => { const [x, y] = XY(sample(s.xi, tt), sample(s.eta, tt), Pt(tt)); return [X(x), Y(y)]; };
   // side of the path away from the Sun at time tt (unit vector on the screen)
   const outward = (tt) => {
     const dt = s.dur / 400, [x1, y1] = at(Math.max(0, tt - dt)), [x2, y2] = at(Math.min(s.dur, tt + dt)), [x, y] = at(tt);
@@ -2165,7 +2729,7 @@ function sheetSvg(d, L, orient) {
       k = c.sep_arcsec - c.rho_b;
       if (!moon || Math.abs(k) > c.rho_s) return null;
     } else k = (c.label === 'C2' || c.label === 'C3') && c.rho_b_int > c.rho_s ? -c.rho_s : c.rho_s;
-    return XY(k * ux, k * uy);
+    return XY(k * ux, k * uy, Pc(c));
   };
   for (const c of cs) {
     const st = SHEET_STYLE[c.label] || SHEET_STYLE.C2, [x, y] = P(c), q = point(c);
@@ -2227,25 +2791,27 @@ function sheetSvg(d, L, orient) {
   if (moon) vals.push([t('視直径比（月/太陽）'), f4(L.ratio)], [t('サロス番号'), String((d.kind === 'global' ? d.saros : L.saros) ?? '—')]);
   if (kind === 'ground') vals.push([t('最大時の太陽高度'), `${cmax.sun_alt.toFixed(1)}°` + paren(azName(cmax.sun_az))]);
   if (kind === 'space') vals.push([t('見える時間の割合'), pct(L.vis_fraction, 0)]);
-  vals.push([t('太陽の自転軸の方位角 P'), `${Pdeg >= 0 ? '+' : ''}${Pdeg.toFixed(2)}°`]);
+  vals.push([t('太陽の P 角（自転軸、最大時）'), `${signed(Pdeg, 2)}°`]);
   for (const [k, v] of vals) {
     sheetText(root, rx, yy + 14, k, { size: 11, fill: '#7a8396', w: rw });
     sheetText(root, rx, yy + 32, v, { size: 15, weight: 700, w: rw });
     yy += 38;
   }
 
-  // contact table
+  // contact table (the UTC to the millisecond when another time zone is shown)
+  const utc = tzId() === 'UTC';
   const cols = [
-    { h: t('接触'), w: 172 },
-    { h: t('時刻（{tz}）', { tz: tzLabel(d.max) }), w: 122 },
-    { h: t('中心 X, Y（″）'), w: 146 },
-    { h: t('接触点 X, Y（″）'), w: 146 },
-    { h: t('位置角 P'), w: 70 },
-    { h: moon ? t('食分') : t('中心間距離'), w: 80 },
-  ];
-  if (kind === 'ground') cols.push({ h: t('太陽高度'), w: 90 });
-  if (kind === 'space') cols.push({ h: t('地球の縁からの離角'), w: 106 });
-  if (kind !== 'geocenter') cols.push({ h: t('観測'), w: 84 });
+    { h: t('接触'), w: 148 },
+    { h: t('時刻（{tz}）', { tz: tzLabel(d.max) }), w: utc ? 136 : 112 },
+    !utc && { h: 'UTC', w: 108 },
+    { h: t('中心 X, Y（″）'), w: 126 },
+    { h: t('接触点 X, Y（″）'), w: 126 },
+    { h: solar ? t('位置角（太陽の北から）') : t('位置角（天の北から）'), w: 84 },
+    { h: moon ? t('食分') : t('太陽の縁からの距離'), w: 80 },
+  ].filter(Boolean);
+  if (kind === 'ground') cols.push({ h: t('太陽高度'), w: 86 });
+  if (kind === 'space') cols.push({ h: t('地球の縁からの離角'), w: 100 });
+  if (kind !== 'geocenter') cols.push({ h: t('観測'), w: 76 });
   const tw = cols.reduce((a, c) => a + c.w, 0);
   let tx = (W - tw) / 2;
   cols.forEach((c) => { c.x = tx; tx += c.w; });
@@ -2261,8 +2827,10 @@ function sheetSvg(d, L, orient) {
     root.append(svg('rect', { x: cols[0].x + 6, y: y + 6, width: 7, height: 7, fill: '#fff', stroke: st.color, 'stroke-width': 1.6 }));
     sheetText(root, cols[0].x + 19, y + 14, n, { size: 12, weight: 700, w: cols[0].w - 24 });
     if (sub) sheetText(root, cols[0].x + 19, y + 26, sub, { size: 10, fill: '#7a8396', w: cols[0].w - 24 });
-    const cells = [fmtTime(c.time, 1) + (dayDiff(c.time, d.max) ? ' ' + fmtDateShort(c.time) : ''), xy(XY(c.xi, c.eta)), xy(point(c)), `${c.pa.toFixed(1)}°`,
-      moon ? f4(c.magnitude) : `${f1(c.sep_arcsec)}″`];
+    const h = hpcOf(c);
+    const cells = [fmtTime(c.time, utc ? 3 : 1) + (dayDiff(c.time, d.max) ? ' ' + fmtDateShort(c.time, 1) : ''),
+      !utc && fmtUtc(c.time).slice(11) + (c.time.slice(0, 10) !== L.max.slice(0, 10) ? ` (${c.time.slice(5, 10)})` : ''), xy(XY(c.xi, c.eta, Pc(c))), xy(point(c)),
+      `${(solar ? h.paSolar : c.pa).toFixed(1)}°`, moon ? f4(c.magnitude) : `${signed(limbDist(c)[0], 2)}″`].filter((v) => v !== false);
     if (kind === 'ground') cells.push(`${c.sun_alt.toFixed(1)}°`);
     if (kind === 'space') cells.push(`${c.vis.toFixed(1)}°`);
     if (kind !== 'geocenter') cells.push(c.visible ? t('見える') : kind === 'ground' ? t('地平線下') : t('地球に隠れる'));
@@ -2273,14 +2841,16 @@ function sheetSvg(d, L, orient) {
   // conditions
   let fy = tableY + 26 + rowH * cs.length + 24;
   const p = L.params;
-  const model = t('太陽半径 {v} km', { v: p.sun_radius_km.toFixed(0) }) + sep() + (moon
-    ? t('月半径 {ext} / {int} km（外接/内接）', { ext: p.moon_radius_ext_km.toFixed(2), int: p.moon_radius_int_km.toFixed(2) })
-    : t('{body}半径 {v} km', { body: bodyJa(L.body), v: (L.body === 'venus' ? p.venus_radius_km : p.mercury_radius_km).toFixed(1) }));
+  const model = sunModelText(p) + sep() + bodyModelText(L.body, p);
   sheetText(root, cols[0].x, fy, [`${t('暦')} ${L.ephemeris}`, `ΔT ${t('{v} 秒', { v: L.delta_t_s.toFixed(2) })}`, model].join(sep()), { size: 11, fill: '#4a5468', w: tw });
   fy += 18;
-  sheetText(root, cols[0].x, fy, (orient === 'solar' ? t('太陽の自転軸の北が上（P = {p}°）', { p: Pdeg.toFixed(2) }) : t('天の北が上・東が左（空に見えるとおりの向き）'))
+  sheetText(root, cols[0].x, fy, (solar ? t('太陽の自転軸の北が上（P = {p}°）', { p: Pdeg.toFixed(2) }) : t('天の北が上・東が左（空に見えるとおりの向き）'))
     + sep() + t('X・Y は太陽の中心から測った角度（西・北が正）'), { size: 11, fill: '#4a5468', w: tw });
   fy += 18;
+  if (sens) {
+    sheetText(root, cols[0].x, fy, sens, { size: 11, fill: '#4a5468', w: tw });
+    fy += 18;
+  }
   const made = new Date().toISOString();
   sheetText(root, cols[0].x + tw, fy, `${document.title}${state.info ? ' v' + state.info.version : ''}${sep()}${t('作成 {time}', { time: `${fmtDT(made)} ${tzLabel(made)}` })}`,
     { size: 10, fill: '#9aa4b8', anchor: 'end', w: tw });
@@ -2597,7 +3167,9 @@ function textSummary() {
     for (const c of src.contacts) {
       const [n, sub] = contactName(c.label, src);
       const name = n + (sub ? paren(sub) : '');
-      let s = `${LANG === 'ja' || LANG === 'zh' ? name.padEnd(18, '　') : name.padEnd(36)} ${fmtDT(c.time, 1)} ${tzLabel(c.time)}  P=${c.pa.toFixed(1)}°`;
+      const h = hpcOf(c);
+      let s = `${LANG === 'ja' || LANG === 'zh' ? name.padEnd(18, '　') : name.padEnd(36)} ${fmtDT(c.time, 1)} ${tzLabel(c.time)}  UTC ${fmtUtc(c.time)}  ` +
+        `${t('位置角 {v}°', { v: c.pa.toFixed(1) })}  X ${h.x.toFixed(2)}″ Y ${h.y.toFixed(2)}″`;
       if (c.sun_alt != null) s += '  ' + t('高度 {alt}° 方位 {az}°', { alt: c.sun_alt.toFixed(1), az: c.sun_az.toFixed(1) });
       if (c.sat_lat != null) s += '  ' + t('衛星 {pos} {alt} km', { pos: fmtLatLon(c.sat_lat, c.sat_lon), alt: c.sat_alt_km.toFixed(0) });
       if (src.body === 'moon') s += '  ' + t('食分 {v}', { v: f4(c.magnitude) });
@@ -2625,7 +3197,7 @@ function downloadSeriesCsv() {
   const L = state.local;
   if (!L || !L.timeseries) return;
   const s = L.timeseries;
-  const t0 = new Date(s.t0).getTime();
+  const t0 = msOf(s.t0);
   const keys = Object.keys(s).filter((k) => Array.isArray(s[k]) && k !== 'dt_s');
   const rows = [['time_utc', ...keys]];
   s.dt_s.forEach((dt, i) => rows.push([new Date(t0 + dt * 1000).toISOString(), ...keys.map((k) => s[k][i])]));

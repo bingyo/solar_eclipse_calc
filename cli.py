@@ -18,6 +18,13 @@ The observer is chosen by the options that are given (exactly one kind):
         --raan 220.5 --argp 90 --m 45 --start 2027-07-25 --end 2027-08-10 --tz 9
     python cli.py --city Tokyo --start 2026-01-01 --end 2056-01-01 --format json --detail --lang en
 
+With --at TIME[,TIME...] or --at-file FILE (and one --phenomena) it computes,
+instead of searching, the position of the body on the solar disk at those times
+(e.g. of images: solar-north-up X / Y in arcsec, distance from the limb, O-C of
+measured positions), as POST /api/event/{id}/at of the web API:
+
+    python cli.py --sscweb hinode --phenomena mercury --at "8-Nov-2006 19:13:37.498 UT"
+
 Messages, tables and help are in the language of --lang (ja, en, fr, ru, es,
 zh, hi), else $ECLIPSECALC_LANG, else the language of the environment, else
 English; the texts are the Japanese keys of eclipsecalc/i18n.py.
@@ -40,10 +47,23 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from eclipsecalc import constants as C  # noqa: E402
 from eclipsecalc import i18n  # noqa: E402
 from eclipsecalc.i18n import tr  # noqa: E402
 
 PHENOMENA = ('moon', 'mercury', 'venus')
+# --sun-radius and --planet-radius (as the presets of the web UI, /api/info)
+SUN_RADIUS = {'observed': C.SUN_RADIUS_OBSERVED, 'nasa': C.SUN_RADIUS_NASA, 'iau2015': C.SUN_RADIUS_IAU2015}
+PLANET_RADIUS = {'observed': (C.MERCURY_RADIUS, C.VENUS_RADIUS_VISIBLE), 'iau': (C.MERCURY_RADIUS, C.VENUS_RADIUS),
+                 'nasa': (C.MERCURY_RADIUS_NASA, C.VENUS_RADIUS_NASA), 'xray': (C.MERCURY_RADIUS, C.VENUS_RADIUS_XRAY)}
+# The names of the radii in the header of the tables (Japanese keys; the first that matches)
+SUN_RADIUS_NAMES = ((C.SUN_RADIUS_OBSERVED, '観測される縁'), (C.SUN_RADIUS_NASA, 'NASA'),
+                    (C.SUN_RADIUS_IAU2015, 'IAU 2015 の光球'))
+PLANET_RADIUS_NAMES = {
+    'mercury': ((C.MERCURY_RADIUS, 'IAU の固体表面、大気がなく見える大きさと同じ'), (C.MERCURY_RADIUS_NASA, 'NASA')),
+    'venus': ((C.VENUS_RADIUS_VISIBLE, '見える大きさ: 雲頂と靄'), (C.VENUS_RADIUS, 'IAU の固体表面'),
+              (C.VENUS_RADIUS_NASA, 'NASA'), (C.VENUS_RADIUS_XRAY, '軟X線')),
+}
 # Japanese names (the keys of their translations)
 BODY_JA = {'moon': '日食', 'mercury': '水星の太陽面通過', 'venus': '金星の太陽面通過'}
 TYPE_JA = {'total': '皆既日食', 'annular': '金環日食', 'hybrid': '金環皆既日食', 'partial': '部分日食'}
@@ -187,6 +207,7 @@ def _epilog():
         '  python cli.py --norad 25544 --start 2026-10-01 --end 2027-10-01 --tz 9',
         f'  python cli.py --city {tr("東京")} --start 2026-01-01 --end 2056-01-01 --phenomena moon --tz 9 --detail',
         '  python cli.py --global --start 2026-01-01 --end 2036-01-01 --format csv -o list.csv',
+        '  python cli.py --sscweb hinode --phenomena mercury --at "8-Nov-2006 19:13:37.498 UT"',
         '',
         tr('生成 AI から使うときは --format json を付けてください（詳しくは docs/cli.md）。'),
         tr('終了コード: 0 = 計算した, 1 = 入力を計算できなかった, 2 = 引数の誤り'),
@@ -255,13 +276,32 @@ def build_parser():
                    help=tr('軌道要素・TLE の衛星のみ: 平均近点角（軌道上の位置）をこの刻み (°, 5〜90) で変えて一括計算する'
                            '（打ち上げ前や、TLE の元期から何か月も先の検討。期間は 1 年以内）'))
 
+    a = ap.add_argument_group(tr('時刻を指定した位置（観測画像と比べる）'))
+    a.add_argument('--at', action='append', metavar='UTC',
+                   help=tr('この時刻（UTC）の太陽面上の位置などを計算する（現象は探さない。--phenomena で現象を 1 つ指定）。'
+                           'カンマ区切りで複数、繰り返しも可。例 2017-08-21T16:53:59.204Z、'
+                           '"21-Aug-2017 16:53:59.204 UT"（ひので・SDO の画像の時刻の形）'))
+    a.add_argument('--at-file', metavar='FILE',
+                   help=tr('時刻のファイル（- で標準入力）。1 行に「時刻 [X Y]」。X Y は画像で測った位置'
+                           '（太陽の北が上、″）で、計算との差 O−C を出す。# から行末までは注釈'))
+    a.add_argument('--exposure', type=float, metavar='SEC',
+                   help=tr('露光時間 (秒)。時刻にその半分を足した露光の中央で計算する（画像の時刻が露光の開始のとき）'))
+
     s = ap.add_argument_group(tr('詳細設定'))
     s.add_argument('--ephemeris', metavar='FILE',
                    help=tr('暦（既定 de440s.bsp = 1849〜2150 年。de440.bsp なら 1550〜2650 年）'))
     s.add_argument('--delta-t', type=float, metavar='SEC', help=tr('ΔT（TT−UT, 秒）を固定値で指定（既定は自動）'))
-    s.add_argument('--sun-radius', metavar='KM|iau2015|nasa',
-                   help=tr('太陽の半径。iau2015（既定 695,700 km）、nasa（959.63″ = 695,992 km）または km'))
-    s.add_argument('--atm', type=float, metavar='KM', help=tr('人工衛星: 地球大気の遮蔽高度 (km)（既定 0）'))
+    s.add_argument('--sun-radius', metavar='observed|nasa|iau2015|KM|ARCSECas',
+                   help=tr('太陽の半径: observed（既定。観測される縁、1 AU で 959.96″ = 696,231 km）、'
+                           'nasa（959.63″ = 695,992 km）、iau2015（光球 695,700 km = 959.23″）、km の数値、'
+                           'または 959.96as のように 1 AU での角半径 (″)'))
+    s.add_argument('--planet-radius', choices=tuple(PLANET_RADIUS), metavar='observed|iau|nasa|xray',
+                   help=tr('水星・金星の半径: observed（既定。太陽の前に見える大きさ: 水星 2,439.4 km、'
+                           '金星 6,131 km = 雲頂と靄）、iau（固体表面: 金星 6,051.8 km）、'
+                           'nasa（1 AU で 3.36″・8.41″）、xray（軟X線: 金星 6,202 km）'))
+    s.add_argument('--atm', type=float, metavar='KM',
+                   help=tr('人工衛星: 地球大気の遮蔽高度 (km)（既定 0。目安は可視光 0、軟X線 約 140 km、'
+                           '極紫外線 約 250 km）'))
     s.add_argument('--min-sun-alt', type=float, metavar='DEG',
                    help=tr('地上: 太陽中心がこの高度以上で「見える」とする (°)（既定 0）'))
     s.add_argument('--no-refraction', action='store_true', help=tr('地上: 大気差を太陽高度に反映しない'))
@@ -271,7 +311,8 @@ def build_parser():
     out.add_argument('--format', choices=('table', 'csv', 'json'), default='table',
                      help=tr('出力形式（既定 table。生成 AI からは json）'))
     out.add_argument('--detail', action='store_true',
-                     help=tr('各現象の接触（第1〜第4接触・最大）の時刻・太陽高度・位置角なども出力する'))
+                     help=tr('各現象の接触（第1〜第4接触・最大）の時刻・位置（太陽の北が上の X・Y）・太陽高度なども出力する'
+                             '（CSV では接触ごとに 1 行）'))
     out.add_argument('--dry-run', action='store_true',
                      help=tr('計算せず、入力の解釈（衛星の軌道の大きさ・周期・傾斜角など）だけを出力する'))
     out.add_argument('--tz', default='0', metavar='HOURS',
@@ -333,14 +374,19 @@ def parse_args(argv):
                             '地上の地点（--lat --lon / --city）、地球全体（--global）、JSON（--request）')
                          + (tr('（指定されたもの: {modes}）', modes=', '.join(modes)) if modes else ''))
     args.mode = modes[0]
+    args.at_mode = bool(args.at or args.at_file)
+    if args.at_mode and (args.sweep is not None or args.detail):
+        raise UsageError(tr('--at と --at-file は --sweep・--detail と同時には使えません'))
     if args.mode == 'request':
         clash = [k for k in ORBIT_ONLY + ('elev', 'horizons_step', 'name', 'start', 'end', 'phenomena', 'sweep',
-                                          'ephemeris', 'delta_t', 'sun_radius', 'atm', 'min_sun_alt',
+                                          'ephemeris', 'delta_t', 'sun_radius', 'planet_radius', 'atm', 'min_sun_alt',
                                           'no_refraction', 'include_invisible') if _given(args, k)]
         if clash:
             raise UsageError(tr('--request と {opts} は併用できません（JSON の中で指定してください）',
                                 opts=' '.join('--' + k.replace('_', '-') for k in clash)))
         return args
+    if _given(args, 'exposure') and not args.at_mode:
+        raise UsageError(tr('--exposure は --at または --at-file と一緒に指定してください'))
     if args.mode == 'kepler':
         _check_orbit(args)
     else:
@@ -360,6 +406,14 @@ def parse_args(argv):
             raise UsageError(tr('--city と --lat/--lon はどちらか一方だけ指定してください'))
         if not _given(args, 'city') and not (_given(args, 'lat') and _given(args, 'lon')):
             raise UsageError(tr('地上の地点では --lat と --lon の両方を指定してください'))
+    if args.at_mode:
+        if args.mode == 'global':
+            raise UsageError(tr('--at と --at-file は --global では使えません（地上の地点・人工衛星・探査機を指定してください）'))
+        if len({x.strip() for x in (args.phenomena or '').split(',') if x.strip()}) != 1:
+            raise UsageError(tr('--at と --at-file では現象を --phenomena で 1 つ指定してください（moon, mercury, venus のどれか）'))
+        if (args.start is None) != (args.end is None):      # optional: the times must then be in the period
+            raise UsageError(tr('期間を --start と --end で指定してください（例 --start 2027-07-25 --end 2027-08-10）'))
+        return args
     if args.start is None or args.end is None:
         raise UsageError(tr('期間を --start と --end で指定してください（例 --start 2027-07-25 --end 2027-08-10）'))
     if args.sweep is not None and not 5 <= args.sweep <= 90:
@@ -507,22 +561,35 @@ def observer_from_args(args, log):
     return {'type': 'ground', 'lat': args.lat, 'lon': args.lon, 'elevation_m': args.elev or 0.0, 'name': name}
 
 
+_RADIUS_RE = re.compile(r'\s*(\d+(?:\.\d*)?|\.\d+)\s*(km|as|arcsec|″|")?\s*', re.I)
+
+
+def sun_radius_km(text):
+    """--sun-radius: a preset, km, or the angular radius at 1 AU in arcsec (959.96as) -> km."""
+    key = str(text).strip().lower()
+    if key in SUN_RADIUS:
+        return SUN_RADIUS[key]
+    m = _RADIUS_RE.fullmatch(key)
+    unit = (m.group(2) or 'km').lower() if m else None
+    v = float(m.group(1)) if m else 0.0
+    r = v if unit == 'km' else v / C.RAD2ARCSEC * C.AU_KM
+    # a bare number below 2000 is an angle given without "as" (the Sun is ~696,000 km)
+    if not m or not v > 0 or (unit == 'km' and r < 2000):
+        raise InputError(tr('--sun-radius は observed、nasa、iau2015、km の数値、または 959.96as のように '
+                            '1 AU での角半径（″）で指定してください'))
+    return r
+
+
 def _settings_from_args(args):
-    from eclipsecalc.constants import SUN_RADIUS_IAU2015, SUN_RADIUS_NASA
     s = {}
     if args.ephemeris:
         s['ephemeris'] = args.ephemeris
     if args.delta_t is not None:
         s['delta_t'] = args.delta_t
     if args.sun_radius:
-        presets = {'iau2015': SUN_RADIUS_IAU2015, 'nasa': SUN_RADIUS_NASA}
-        try:
-            r = presets.get(args.sun_radius.lower()) or float(args.sun_radius)
-        except ValueError:
-            r = None
-        if r is None or not 0 < r < math.inf:
-            raise InputError(tr('--sun-radius は iau2015、nasa または km の数値で指定してください'))
-        s['sun_radius_km'] = r
+        s['sun_radius_km'] = sun_radius_km(args.sun_radius)
+    if args.planet_radius:
+        s['mercury_radius_km'], s['venus_radius_km'] = PLANET_RADIUS[args.planet_radius]
     if args.atm is not None:
         s['earth_atm_km'] = args.atm
     if args.min_sun_alt is not None:
@@ -534,12 +601,63 @@ def _settings_from_args(args):
     return s
 
 
+RADIUS_SETTINGS = ('sun_radius_km', 'moon_radius_ext_km', 'moon_radius_int_km', 'mercury_radius_km', 'venus_radius_km')
+
+
+def _with_radii(settings):
+    """Write the default radii into ``settings`` where none is given, so that the echoed request
+    reproduces the calculation after a change of the defaults (requests written before 2026-10
+    lack them and meant 695,700 km and the solid Venus: docs/cli.md)."""
+    from eclipsecalc.local import Params
+    default = Params()
+    for k in RADIUS_SETTINGS:
+        if settings.get(k) in (None, ''):
+            settings[k] = getattr(default, k)
+    return settings
+
+
 def _not_json(name):
     raise ValueError(f'{name} is not a JSON value')
 
 
+def _at_inputs(args):
+    """The times of --at and --at-file -> (times, measured [X, Y] or None for each, or None if none
+    was measured).  A line of the file is "TIME [X Y]" (also separated by commas or tabs)."""
+    times, measured = [], []
+    for a in args.at or []:
+        for s in a.split(','):
+            if s.strip():
+                times.append(s.strip())
+                measured.append(None)
+    if args.at_file:
+        try:
+            text = _read_text(args.at_file)
+        except OSError as exc:
+            raise InputError(tr('時刻のファイルを読めません: {exc}', exc=exc))
+        for line in text.splitlines():
+            parts = line.split('#', 1)[0].replace(',', ' ').replace('\t', ' ').split()
+            if not parts:
+                continue
+            xy = None
+            if len(parts) >= 3:
+                try:
+                    xy = [float(parts[-2]), float(parts[-1])]
+                except ValueError:
+                    pass
+            if xy and all(map(math.isfinite, xy)):
+                times.append(' '.join(parts[:-2]))
+                measured.append(xy)
+            else:                       # the whole line is the time (parse_obs_time names it if it is not one)
+                times.append(' '.join(parts))
+                measured.append(None)
+    if not times:
+        raise InputError(tr('--at または --at-file に時刻がありません'))
+    return times, (measured if any(m is not None for m in measured) else None)
+
+
 def build_request(args, log):
-    """-> the request in the web API's shape (also echoed in the JSON output)."""
+    """-> the request in the web API's shape (also echoed in the JSON output).  With times (--at,
+    --at-file, or "times" in the JSON) it is that of server.at_times: the period is optional."""
     if args.mode == 'request':
         try:
             req = json.loads(_read_text(args.request), parse_constant=_not_json)
@@ -551,17 +669,26 @@ def build_request(args, log):
             req = req['request']        # the whole output of --format json (or a result saved by the web UI)
         if not isinstance(req, dict) or not isinstance(req.get('observer'), dict):
             raise InputError(tr('計算条件の JSON には "observer"（観測者のオブジェクト）が必要です'))
-        unknown = set(req) - {'observer', 'start', 'end', 'phenomena', 'settings', 'step_deg'}
+        unknown = set(req) - {'observer', 'start', 'end', 'phenomena', 'settings', 'step_deg',
+                              'times', 'measured', 'exposure_s'}
         if unknown:
             raise InputError(tr('計算条件の JSON に不明な項目があります: {keys}', keys=', '.join(sorted(unknown))))
-        for k in ('start', 'end'):
-            if not isinstance(req.get(k), str):
-                raise InputError(tr('計算条件の JSON に "{key}"（UTC の日付の文字列）が必要です', key=k))
         req = dict(req)
+        if args.at_mode:                # the times of the options replace those of the JSON
+            req['times'], req['measured'] = _at_inputs(args)
+        if args.exposure is not None:
+            req['exposure_s'] = args.exposure
+        at = req.get('times') is not None
+        if not at and req.get('exposure_s') is not None:
+            raise InputError(tr('--exposure は --at または --at-file と一緒に指定してください'))
+        for k in ('start', 'end'):      # with times the period may be left out (both)
+            if not isinstance(req.get(k), str) and not (at and req.get('start') is None and req.get('end') is None):
+                raise InputError(tr('計算条件の JSON に "{key}"（UTC の日付の文字列）が必要です', key=k))
         req.setdefault('phenomena', list(PHENOMENA))
         req.setdefault('settings', {})
         if not isinstance(req['settings'], dict):
             raise InputError(tr('計算条件の JSON の "settings" はオブジェクトで指定してください'))
+        req['settings'] = _with_radii(dict(req['settings']))
         step = req.get('step_deg')
         if step is not None and (isinstance(step, bool) or not isinstance(step, (int, float)) or not 5 <= step <= 90):
             raise InputError(tr('位相の刻みは 5〜90° で指定してください'))
@@ -570,9 +697,14 @@ def build_request(args, log):
             req['observer'] = _celestrak(o.get('norad'), o.get('name', ''), log)
     else:
         req = {'observer': observer_from_args(args, log), 'start': args.start, 'end': args.end,
-               'phenomena': args.phenomena or ','.join(PHENOMENA), 'settings': _settings_from_args(args)}
+               'phenomena': args.phenomena or ','.join(PHENOMENA), 'settings': _with_radii(_settings_from_args(args))}
         if args.sweep is not None:
             req['step_deg'] = args.sweep
+        if args.at_mode:
+            req['times'], req['measured'] = _at_inputs(args)
+            req['exposure_s'] = args.exposure
+            if args.start is None:
+                del req['start'], req['end']
     ph = req['phenomena']
     if isinstance(ph, str):
         ph = [x.strip() for x in ph.split(',') if x.strip()]
@@ -583,6 +715,17 @@ def build_request(args, log):
     req['phenomena'] = list(dict.fromkeys(ph))      # each once (moon,moon would list every eclipse twice)
     if req.get('step_deg') is not None and req['observer'].get('type') not in ('kepler', 'tle'):
         raise InputError(tr('平均近点角を変えた一括計算（step_deg）は軌道要素または TLE で指定した衛星だけで使えます'))
+    if req.get('times') is not None:
+        if req.get('step_deg') is not None:
+            raise InputError(tr('--at と --at-file は --sweep・--detail と同時には使えません'))
+        if len(req['phenomena']) != 1:
+            raise InputError(tr('時刻を指定した位置の計算では、現象（moon, mercury, venus）を 1 つだけ選んでください'))
+        if req['observer'].get('type') == 'global':
+            raise InputError(tr('時刻を指定した位置の計算は、地上の地点・人工衛星・探査機（または地心）から見た'
+                                '現象だけでできます（地球全体の日食ではできません）'))
+        for k in ('measured', 'exposure_s'):
+            if req.get(k) is None:
+                req.pop(k, None)
     return req
 
 
@@ -740,10 +883,28 @@ def _table(head, rows, right=()):
 
 
 def _time(iso, tz, fmt='%H:%M:%S'):
+    """An ISO UTC time (ms) in the time zone, rounded to the second unless ``fmt`` has %f; a
+    time in a leap second (23:59:60.500Z) keeps its second 60."""
     if not iso:
         return '—'
+    leap = iso[16:19] == ':60'
+    if leap:            # datetime cannot hold it: count it as second 59 and write 60
+        iso = iso[:17] + '59' + iso[19:]
     t = _dt.datetime.fromisoformat(iso.replace('Z', '+00:00')) + _dt.timedelta(hours=tz)
-    return t.strftime(fmt)
+    if '%f' not in fmt:
+        carry = not leap and iso[17:19] == '59' and iso[19:21] >= '.5'
+        t = (t + _dt.timedelta(microseconds=500_000)).replace(microsecond=0)
+        if carry and _leap_minute(iso):      # 23:59:59.5 rounds to the leap second, not to 00:00:00
+            t, leap = t - _dt.timedelta(seconds=1), True
+        leap = leap and t.second == 59
+    return t.strftime(fmt.replace('%S', '@S@')).replace('@S@', '60' if leap else f'{t.second:02d}')
+
+
+def _leap_minute(iso):
+    """Whether the UTC minute of ``iso`` ends with a leap second."""
+    from eclipsecalc.context import get_context
+    from eclipsecalc.timeutil import _leap_minute as leap_minute
+    return leap_minute(get_context().ts, *(int(v) for v in (iso[0:4], iso[5:7], iso[8:10], iso[11:13], iso[14:16])))
 
 
 def _time_on(iso, day, tz, fmt='%H:%M:%S'):
@@ -843,7 +1004,25 @@ def observer_text(o):
     return o['name'] + _paren(_sep().join(items))
 
 
-def _header(res, args, extra=()):
+def _model(value, names):
+    """The name of the preset radius ``value`` is (Japanese key), else 「指定値」."""
+    return next((n for v, n in names if abs(value - v) < 0.05), '指定値')
+
+
+def radius_line(params, phenomena):
+    """The radii used, in one line: 「太陽半径 696,231 km（観測される縁, 1 AU で 959.96″）」 and
+    those of the planets among ``phenomena``."""
+    rs = params['sun_radius_km']
+    items = [tr('太陽半径 {km} km（{model}, 1 AU で {arcsec}″）', km=f'{rs:,.0f}', model=tr(_model(rs, SUN_RADIUS_NAMES)),
+                arcsec=f'{rs / C.AU_KM * C.RAD2ARCSEC:.2f}')]
+    for body, text in (('mercury', '水星の半径 {km} km（{model}）'), ('venus', '金星の半径 {km} km（{model}）')):
+        if body in phenomena:
+            r = params[f'{body}_radius_km']
+            items.append(tr(text, km=f'{r:,.1f}', model=tr(_model(r, PLANET_RADIUS_NAMES[body]))))
+    return _sep().join(items)
+
+
+def _header(res, args, extra=(), phenomena=()):
     period = [tr('期間: {start} 〜 {end}（UTC）', start=res['start'], end=res['end']),
               tr('暦 {name}', name=res['ephemeris'])]
     if res.get('delta_t_override') is not None:
@@ -852,33 +1031,50 @@ def _header(res, args, extra=()):
         period.append(tr('ΔT 約 {v} 秒（期間中央）', v=f'{res["delta_t_mid_s"]:.1f}'))
     period += [tr('計算 {v} 秒', v=f'{res["elapsed_s"]:.1f}'), *extra]
     out = [tr('観測者: {obs}', obs=observer_text(res['observer'])), _sep().join(period),
-           tr('時刻: {tz}', tz=_tz_label(args.tz_hours))]
+           radius_line(res['params'], phenomena), tr('時刻: {tz}', tz=_tz_label(args.tz_hours))]
     return out + [tr('注意: {w}', w=w) for w in res.get('warnings') or []]
 
 
 def _contacts_table(e, tz, ground):
-    head = [tr('接触'), tr('時刻'), tr('食分'), tr('中心間'), tr('位置角 P')]
+    # a transit has no meaningful magnitude: the distance from the limb instead
+    moon = e['body'] == 'moon'
+    head = [tr('接触'), tr('時刻'), tr('食分') if moon else tr('縁からの距離'), tr('中心間'), tr('位置角 P'), 'X', 'Y']
+    head += [tr('縁からの距離')] * moon + [tr('太陽半径 +1″ あたり（秒）')]
+    n = len(head)
     head += ([tr('天頂角 V'), tr('太陽高度'), tr('太陽方位'), tr('見えるか')] if ground
              else [tr('衛星直下点'), tr('衛星高度'), tr('見えるか')])
     rows = []
     for c in e.get('contacts') or []:
+        limb = _f(c.get('limb_dist'), '+.1f' if moon else '+.2f', '"')
         row = [tr(CONTACT_JA[c['label']]) if c['label'] in CONTACT_JA else c['label'],
                _time_on(c['time'], e['max'], tz, '%H:%M:%S.%f')[:-3],
-               _f(c.get('magnitude'), '.4f'), _f(c.get('sep_arcsec'), '.1f', '"'), _f(c.get('pa'), '.1f', '°')]
+               _f(c.get('magnitude'), '.4f') if moon else limb, _f(c.get('sep_arcsec'), '.1f', '"'),
+               _f(c.get('pa'), '.1f', '°'), _f(c.get('hpc_x'), '.1f', '"'), _f(c.get('hpc_y'), '.1f', '"')]
+        row += [limb] * moon + [_f(c.get('dt_drs'), '+.1f')]
         if ground:
             row += [_f(c.get('v_angle'), '.1f', '°'), _f(c.get('sun_alt'), '.2f', '°'),
                     _f(c.get('sun_az'), '.1f', '°') + (f' {_az(c["sun_az"])}' if c.get('sun_az') is not None else '')]
         else:
             row += [_latlon(c.get('sat_lat'), c.get('sat_lon')), _f(c.get('sat_alt_km'), ',.0f', ' km')]
         rows.append(row + ['○' if c.get('visible') else '×'])
-    return _table(head, rows, right={2, 3, 4, 5, 6})
+    return _table(head, rows, right=set(range(2, n + 2)))
 
 
-def search_table(res, args):
+def _visible_intervals(e, tz):
+    """The parts of an event seen from a spacecraft (between the orbit nights), in one line."""
+    iv = e.get('visible_intervals') or []
+    if not iv:
+        return []
+    fmt = '%H:%M:%S.%f'
+    return [tr('見えている時間帯（{n} 回）: {list}', n=len(iv), list=', '.join(
+        _span(_time_on(a, e['max'], tz, fmt)[:-3], _time_on(b, e['max'], tz, fmt)[:-3]) for a, b in iv))]
+
+
+def search_table(res, args, phenomena=PHENOMENA):
     evs = res['events']
     kind = res['observer']['kind']
-    lines = _header(res, args) + ['', tr('{n} 件の現象が見つかりました', n=len(evs)) if evs
-                                  else tr('この期間に見られる現象はありません')]
+    lines = _header(res, args, phenomena=phenomena) + ['', tr('{n} 件の現象が見つかりました', n=len(evs)) if evs
+                                                       else tr('この期間に見られる現象はありません')]
     if not evs:
         return lines
     tz = args.tz_hours
@@ -934,14 +1130,20 @@ def search_table(res, args):
             lines += _contacts_table(e, tz, ground)
             if len(e.get('internal') or []) > 1:
                 lines.append(tr('衛星の運動により皆既・金環（内接）が {n} 回に分かれます', n=len(e['internal'])))
+            if kind == 'space':
+                lines += _visible_intervals(e, tz)
+        lines += ['', tr('X・Y は太陽の北を上にした太陽の中心からの位置（″。X は太陽の西 = 画像の右、Y は太陽の北）、'
+                         '位置角 P は天の北から東回り、縁からの距離は太陽の縁から月・惑星の中心までの角距離'
+                         '（負なら中心が太陽面の内側）、太陽半径 +1″ あたりは太陽の視半径が 1″ 大きいときの'
+                         '接触の時刻の変化（秒）です。')]
     return lines
 
 
-def sweep_table(res, args):
+def sweep_table(res, args, phenomena=PHENOMENA):
     groups = res['groups']
     tz = args.tz_hours
     lines = _header(res, args, [tr('平均近点角を {step}° ずつ変えた {n} 通り', step=f'{res["step_deg"]:g}',
-                                   n=len(res['phases']))])
+                                   n=len(res['phases']))], phenomena)
     if res['observer'].get('model') == 'tle':
         lines.append(tr('TLE の平均近点角（元期での衛星の位置）は {m}° です。'
                         'TLE どおりの位置での結果は --sweep を付けずに計算できます。', m=f'{res["observer"]["m_deg"]:.2f}'))
@@ -1002,6 +1204,80 @@ def sweep_csv(res):
     return rows
 
 
+CONTACT_CSV = ('label', 'time', 'hpc_x', 'hpc_y', 'pa', 'pa_solar', 'p_angle', 'sep_arcsec', 'limb_dist', 'limb_depth',
+               'magnitude', 'dt_drs', 'dt_drb', 'visible')
+
+
+def contacts_csv(res):
+    # --detail: one row per contact of each event (the events of the whole Earth have none)
+    rows = [['event_max_utc'] + [k.replace('time', 'time_utc') for k in CONTACT_CSV]]
+    for e in res['events']:
+        for c in e.get('contacts') or []:
+            rows.append([e['max']] + [int(c[k]) if k == 'visible' else c.get(k) for k in CONTACT_CSV])
+    return rows
+
+
+AT_CSV = ('input', 'time', 'jd_tt', 'p_angle', 'hpc_x', 'hpc_y', 'hpc_vx', 'hpc_vy', 'pa', 'pa_solar', 'xi', 'eta',
+          'sep_arcsec', 'sep_rate', 'limb_dist', 'limb_depth', 'rho_s', 'rho_b', 'rho_b_int', 'magnitude',
+          'obscuration', 'visible', 'vis')
+AT_CSV_EXTRAS = ('sun_alt', 'sun_az', 'parallactic', 'v_angle', 'sat_lat', 'sat_lon', 'sat_alt_km',
+                 'earth_sep_deg', 'earth_pa', 'earth_radius_deg', 'earth_atm_deg', 'dist_earth_km',
+                 'measured_x', 'measured_y', 'oc_x', 'oc_y', 'oc_dt')
+
+
+def at_csv(res):
+    rows = res['at']
+    keys = list(AT_CSV) + [k for k in AT_CSV_EXTRAS if any(k in r for r in rows)]
+    return [[k.replace('time', 'time_utc') for k in keys]] + [
+        [int(r[k]) if k == 'visible' else r.get(k) for k in keys] for r in rows]
+
+
+def at_table(res, args):
+    tz = args.tz_hours
+    kind = res['observer']['kind']
+    rows_in = res['at']
+    items = [tr(BODY_JA[res['body']]), tr('暦 {name}', name=res['ephemeris'])]
+    if res.get('delta_t_override') is not None:
+        items.append(tr('ΔT {v} 秒（手動）', v=f'{res["delta_t_override"]:.1f}'))
+    else:
+        items.append(tr('ΔT {v} 秒', v=f'{res["delta_t_mid_s"]:.1f}'))
+    items.append(tr('計算 {v} 秒', v=f'{res["elapsed_s"]:.1f}'))
+    when = tr('時刻: {tz}', tz=_tz_label(tz))
+    if res.get('exposure_s'):
+        when += _sep() + tr('露光の中央（露光時間 {s} 秒の半分を足した時刻）', s=f'{res["exposure_s"]:g}')
+    lines = [tr('観測者: {obs}', obs=observer_text(res['observer'])), _sep().join(items),
+             radius_line(res['params'], [res['body']]), when]
+    lines += [tr('注意: {w}', w=w) for w in res.get('warnings') or []]
+    measured = any('oc_x' in r for r in rows_in)
+    head = [tr('時刻'), 'X', 'Y', tr('縁からの距離'), tr('深さ'), tr('位置角（太陽の北から）'), tr('太陽の P 角')]
+    head += [tr('太陽高度')] if kind == 'ground' else [tr('衛星直下点'), tr('衛星高度')] if kind == 'space' else []
+    head += [tr('見えるか')]
+    n = len(head)
+    head += ['O−C X', 'O−C Y', tr('O−C 時間（秒）')] if measured else []
+    rows = []
+    for r in rows_in:
+        row = [_time(r['time'], tz, '%Y-%m-%d %H:%M:%S.%f')[:-3], _f(r['hpc_x'], '.2f', '"'), _f(r['hpc_y'], '.2f', '"'),
+               _f(r['limb_dist'], '+.2f', '"'), _f(r['limb_depth'], '+.3f'), _f(r['pa_solar'], '.2f', '°'),
+               _f(r['p_angle'], '.2f', '°')]
+        if kind == 'ground':
+            row.append(_f(r.get('sun_alt'), '.2f', '°'))
+        elif kind == 'space':
+            row += [_latlon(r.get('sat_lat'), r.get('sat_lon')), _f(r.get('sat_alt_km'), ',.0f', ' km')]
+        row.append('○' if r['visible'] else '×')
+        if measured:
+            row += [_f(r.get('oc_x'), '+.2f', '"'), _f(r.get('oc_y'), '+.2f', '"'), _f(r.get('oc_dt'), '+.2f')]
+        rows.append(row)
+    lines += [''] + _table(head, rows, right=set(range(1, len(head))) - {n - 1})
+    lines += ['', tr('X・Y は太陽の北を上にした太陽の中心からの位置（″。X は太陽の西 = 画像の右、Y は太陽の北。'
+                     'ひので・SDO などの画像の座標と同じ向き）、縁からの距離は太陽の縁から中心までの角距離'
+                     '（負なら中心が太陽面の内側）、深さは −1 で外接、0 で中心が縁の上、+1 で内接、'
+                     'P 角は太陽の自転軸の北の位置角（天の北から東回り）です。')]
+    if measured:
+        lines.append(tr('O−C は測った位置 − 計算の位置、O−C 時間は動きの向きに測った位置が計算より先にある時間です'
+                        '（正なら観測が計算より進んでいる）。'))
+    return lines
+
+
 def _csv_text(rows):
     buf = io.StringIO()
     csv.writer(buf, lineterminator='\n').writerows([['' if v is None else v for v in r] for r in rows])
@@ -1051,12 +1327,16 @@ def run(args):
         return 0
 
     req = build_request(args, log)
-    check_utc(req['start'], 'start')
-    check_utc(req['end'], 'end')
+    at = req.get('times') is not None
+    if not at or req.get('start') is not None:
+        check_utc(req['start'], 'start')
+        check_utc(req['end'], 'end')
     ctx = _context(req)
     observer, obs = check_observer(ctx, req['observer'])
     base = {'ok': True, 'tool': 'solar_eclipse_calc cli.py', 'version': __version__, 'lang': i18n.current(),
             'request': req}
+    if at:
+        return run_at(args, req, ctx, observer, obs, base, log)
     if args.dry_run:
         warnings = preflight(req, obs)
         if args.format == 'json':
@@ -1085,9 +1365,58 @@ def run(args):
     if args.format == 'csv':
         for w in res.get('warnings') or []:      # the table shows them in its header
             log(tr('注意: {w}', w=w))
-        _emit(_csv_text(sweep_csv(res) if sweep else search_csv(res)), args, csv_out=True)
+        rows = sweep_csv(res) if sweep else contacts_csv(res) if args.detail else search_csv(res)
+        _emit(_csv_text(rows), args, csv_out=True)
     else:
-        _emit('\n'.join(sweep_table(res, args) if sweep else search_table(res, args)) + '\n', args)
+        table = sweep_table if sweep else search_table
+        _emit('\n'.join(table(res, args, req['phenomena'])) + '\n', args)
+    return 0
+
+
+def run_at(args, req, ctx, observer, obs, base, log):
+    """--at / --at-file (or "times" in the JSON): the geometry at the times, without an event."""
+    from eclipsecalc import server
+    from eclipsecalc.observers import ObserverError
+    from eclipsecalc.timeutil import iso_from_jd, parse_utc
+    with _api_errors():
+        jd, _ = server.parse_at_request(ctx, server.AtRequest(**{k: req[k] for k in ('times', 'measured', 'exposure_s')
+                                                          if k in req}))
+    if req.get('start') is not None:      # a period given as well: the times must be in it
+        a, b = parse_utc(ctx, req['start']), parse_utc(ctx, req['end'])
+        bad = next((t for t, j in zip(req['times'], jd) if not a <= j <= b), None)
+        if bad is not None:
+            raise InputError(tr('時刻「{text}」が期間（{start}〜{end}）の外です', text=bad.strip(),
+                                start=req['start'], end=req['end']))
+    if args.dry_run:
+        try:
+            warnings = server.at_observer_checks(ctx, obs, jd)
+        except ObserverError as exc:
+            raise InputError(str(exc))
+        times = [{'input': t, 'time': iso_from_jd(ctx, j), 'jd_tt': float(j)} for t, j in zip(req['times'], jd)]
+        if args.format == 'json':
+            _emit(_json_text(dict(base, dry_run=True, observer=observer, warnings=warnings, at_times=times)), args)
+        else:
+            _emit(tr('観測者: {obs}', obs=observer_text(observer)) + '\n'
+                  + tr('現象: {list}', list=', '.join(req['phenomena'])) + '\n'
+                  + ''.join(tr('時刻 {input} → {time}', input=t['input'], time=t['time']) + '\n' for t in times)
+                  + ''.join(tr('注意: {w}', w=w) + '\n' for w in warnings)
+                  + tr('計算条件（--request で使える JSON）:') + '\n' + _json_text(req), args)
+        return 0
+    t0 = time.time()
+    log(tr('計算しています…'))
+    kw = {k: req[k] for k in ('phenomena', 'observer', 'settings', 'times', 'measured', 'exposure_s') if k in req}
+    with _api_errors():
+        with contextlib.redirect_stderr(io.StringIO() if os.environ.get('ECLIPSECALC_DEBUG') != '1' else sys.stderr):
+            res = server.at_times(server.AtSearchRequest(**kw))
+    log(tr('完了（{v} 秒）', v=f'{time.time() - t0:.1f}'))
+    if args.format == 'json':
+        _emit(_json_text(dict(base, **res)), args)
+    elif args.format == 'csv':
+        for w in res.get('warnings') or []:
+            log(tr('注意: {w}', w=w))
+        _emit(_csv_text(at_csv(res)), args, csv_out=True)
+    else:
+        _emit('\n'.join(at_table(res, args)) + '\n', args)
     return 0
 
 

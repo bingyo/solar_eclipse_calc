@@ -176,7 +176,7 @@ const I18N = /*BEGIN-MESSAGES*/{
 "軌道要素の元期を入力してください": ["Enter the epoch of the orbital elements", "Saisissez l’époque des éléments orbitaux", "Введите эпоху элементов орбиты", "Introduzca la época de los elementos orbitales", "请输入轨道根数的历元", "कक्षीय तत्वों का युग दर्ज करें"],
 "軌道長半径を入力してください": ["Enter the semi-major axis", "Saisissez le demi-grand axe", "Введите большую полуось", "Introduzca el semieje mayor", "请输入半长轴", "अर्ध-दीर्घ अक्ष दर्ज करें"],
 "軌道離心率は 0 以上 1 未満で入力してください": ["The eccentricity must be at least 0 and less than 1", "L’excentricité doit être ≥ 0 et < 1", "Эксцентриситет должен быть не меньше 0 и меньше 1", "La excentricidad debe ser ≥ 0 y < 1", "偏心率须大于等于 0 且小于 1", "उत्केंद्रता 0 या अधिक और 1 से कम होनी चाहिए"],
-"太陽・月の半径は正の数（km）で入力してください": ["Enter the radii of the Sun and the Moon as positive numbers (km)", "Indiquez les rayons du Soleil et de la Lune par des nombres positifs (km)", "Введите радиусы Солнца и Луны положительными числами (км)", "Indique los radios del Sol y de la Luna como números positivos (km)", "请以正数（km）输入太阳和月球的半径", "सूर्य और चंद्रमा की त्रिज्याएँ धनात्मक संख्याओं (किमी) में दर्ज करें"],
+"太陽・月の半径は正の数で入力してください": ["Enter the radii of the Sun and the Moon as positive numbers", "Indiquez les rayons du Soleil et de la Lune par des nombres positifs", "Введите радиусы Солнца и Луны положительными числами", "Indique los radios del Sol y de la Luna como números positivos", "请以正数输入太阳和月球的半径", "सूर्य और चंद्रमा की त्रिज्याएँ धनात्मक संख्याओं में दर्ज करें"],
 "NASA SSCWeb の衛星 ID を入力してください（例: hinode）": ["Enter a NASA SSCWeb satellite ID (e.g. hinode)", "Saisissez un identifiant de satellite NASA SSCWeb (ex. : hinode)", "Введите идентификатор спутника NASA SSCWeb (например, hinode)", "Introduzca un ID de satélite de NASA SSCWeb (p. ej., hinode)", "请输入 NASA SSCWeb 卫星 ID（例：hinode）", "NASA SSCWeb उपग्रह ID दर्ज करें (उदा. hinode)"],
 "計算する現象を 1 つ以上選んでください": ["Select at least one phenomenon to compute", "Choisissez au moins un phénomène à calculer", "Выберите хотя бы одно явление для расчёта", "Seleccione al menos un fenómeno para calcular", "请至少选择一种要计算的天象", "गणना के लिए कम से कम एक घटना चुनें"],
 "JPL Horizons から軌道を取得して計算中…": ["Getting the orbit from JPL Horizons and computing…", "Récupération de l’orbite depuis JPL Horizons et calcul…", "Получение орбиты из JPL Horizons и расчёт…", "Obteniendo la órbita de JPL Horizons y calculando…", "正在从 JPL Horizons 获取轨道并计算…", "JPL Horizons से कक्षा लेकर गणना हो रही है…"],
@@ -361,7 +361,6 @@ const I18N = /*BEGIN-MESSAGES*/{
 "衛星直下点": ["Sub-satellite point", "Point subsatellite", "Подспутниковая точка", "Punto subsatelital", "星下点", "उपग्रह-अधो बिंदु"],
 "高度": ["Altitude", "Altitude", "Высота", "Altitud", "高度", "ऊँचाई"],
 "地球の縁からの太陽の離角": ["Sun’s distance from the Earth’s limb", "Écart du Soleil au bord de la Terre", "Угол Солнца над краем Земли", "Separación del Sol del borde terrestre", "太阳与地球边缘的角距", "पृथ्वी के किनारे से सूर्य की कोणीय दूरी"],
-"位置角 P": ["Position angle P", "Angle de position P", "Позиционный угол P", "Ángulo de posición P", "位置角 P", "स्थिति कोण P"],
 "天頂角 V": ["Zenith angle V", "Angle zénithal V", "Зенитный угол V", "Ángulo cenital V", "天顶角 V", "शिरोबिंदु कोण V"],
 "観測": ["Observation", "Observation", "Наблюдение", "Observación", "观测", "प्रेक्षण"],
 "見える": ["visible", "visible", "видно", "visible", "可见", "दिखेगा"],
@@ -613,17 +612,14 @@ const I18N = /*BEGIN-MESSAGES*/{
 "ΔT の値 (秒)": ["ΔT value (s)", "Valeur de ΔT (s)", "Значение ΔT (с)", "Valor de ΔT (s)", "ΔT 值（秒）", "ΔT का मान (से.)"],
 "例 69.2": ["e.g. 69.2", "ex. 69,2", "напр. 69.2", "p. ej. 69.2", "例 69.2", "उदा. 69.2"],
 "太陽の半径": ["Radius of the Sun", "Rayon du Soleil", "Радиус Солнца", "Radio del Sol", "太阳半径", "सूर्य की त्रिज्या"],
-"IAU 2015 公称値 (695,700 km)": ["IAU 2015 nominal (695,700 km)", "Valeur nominale UAI 2015 (695 700 km)", "Номинал МАС 2015 (695 700 км)", "Valor nominal UAI 2015 (695 700 km)", "IAU 2015 标称值 (695,700 km)", "IAU 2015 नाममात्र (695,700 किमी)"],
 "NASA 互換 (959.63″ = 695,992 km)": ["NASA compatible (959.63″ = 695,992 km)", "Compatible NASA (959,63″ = 695 992 km)", "Как у NASA (959,63″ = 695 992 км)", "Compatible con NASA (959,63″ = 695 992 km)", "与 NASA 一致 (959.63″ = 695,992 km)", "NASA अनुरूप (959.63″ = 695,992 किमी)"],
 "数値で指定": ["Custom value", "Valeur personnalisée", "Задать число", "Valor personalizado", "指定数值", "कस्टम मान"],
-"太陽半径 (km)": ["Sun radius (km)", "Rayon du Soleil (km)", "Радиус Солнца (км)", "Radio del Sol (km)", "太阳半径 (km)", "सूर्य की त्रिज्या (किमी)"],
 "月の半径": ["Radius of the Moon", "Rayon de la Lune", "Радиус Луны", "Radio de la Luna", "月球半径", "चंद्रमा की त्रिज्या"],
 "NASA方式 (外接 k=0.2725076 / 内接 k=0.272281)": ["NASA method (external k=0.2725076 / internal k=0.272281)", "Méthode NASA (extérieur k=0,2725076 / intérieur k=0,272281)", "Метод NASA (внешний k=0,2725076 / внутренний k=0,272281)", "Método NASA (externo k=0,2725076 / interno k=0,272281)", "NASA 方式（外切 k=0.2725076 / 内切 k=0.272281）", "NASA विधि (बाह्य k=0.2725076 / आंतरिक k=0.272281)"],
 "平均半径 1737.4 km": ["Mean radius 1737.4 km", "Rayon moyen 1737,4 km", "Средний радиус 1737,4 км", "Radio medio 1737,4 km", "平均半径 1737.4 km", "माध्य त्रिज्या 1737.4 किमी"],
 "外接用 (km)": ["For external contacts (km)", "Contacts extérieurs (km)", "Для внешних контактов (км)", "Contactos externos (km)", "外切用 (km)", "बाह्य स्पर्श के लिए (किमी)"],
 "内接用 (km)": ["For internal contacts (km)", "Contacts intérieurs (km)", "Для внутренних контактов (км)", "Contactos internos (km)", "内切用 (km)", "आंतरिक स्पर्श के लिए (किमी)"],
 "水星・金星の半径": ["Radii of Mercury and Venus", "Rayons de Mercure et Vénus", "Радиусы Меркурия и Венеры", "Radios de Mercurio y Venus", "水星·金星半径", "बुध और शुक्र की त्रिज्या"],
-"IAU 固体表面 (水星 2439.4 / 金星 6051.8 km)": ["IAU solid surface (Mercury 2439.4 / Venus 6051.8 km)", "Surface solide UAI (Mercure 2439,4 / Vénus 6051,8 km)", "Твёрдая поверхность МАС (Меркурий 2439,4 / Венера 6051,8 км)", "Superficie sólida UAI (Mercurio 2439,4 / Venus 6051,8 km)", "IAU 固体表面（水星 2439.4 / 金星 6051.8 km）", "IAU ठोस सतह (बुध 2439.4 / शुक्र 6051.8 किमी)"],
 "NASA 互換 (3.36″ / 8.41″ at 1 AU)": ["NASA compatible (3.36″ / 8.41″ at 1 AU)", "Compatible NASA (3,36″ / 8,41″ à 1 UA)", "Как у NASA (3,36″ / 8,41″ на 1 а. е.)", "Compatible con NASA (3,36″ / 8,41″ a 1 UA)", "与 NASA 一致（1 AU 处 3.36″ / 8.41″）", "NASA अनुरूप (1 AU पर 3.36″ / 8.41″)"],
 "太陽高度の下限 (°)": ["Minimum Sun altitude (°)", "Hauteur minimale du Soleil (°)", "Минимальная высота Солнца (°)", "Altura mínima del Sol (°)", "太阳高度下限 (°)", "सूर्य की न्यूनतम ऊँचाई (°)"],
 "太陽中心がこの高度以上で「見える」": ["“visible” when the Sun’s centre is at least this high", "« visible » si le centre du Soleil est au moins à cette hauteur", "«видно», если центр Солнца не ниже этой высоты", "«visible» si el centro del Sol está al menos a esta altura", "太阳中心在此高度以上视为“可见”", "सूर्य का केंद्र इतनी ऊँचाई या अधिक पर हो तो “दृश्य”"],
@@ -684,7 +680,6 @@ const I18N = /*BEGIN-MESSAGES*/{
 "接触点": ["Contact point", "Point de contact", "Точка контакта", "Punto de contacto", "接触点", "स्पर्श बिंदु"],
 "主な値": ["Main values", "Valeurs principales", "Основные величины", "Valores principales", "主要数值", "मुख्य मान"],
 "{body}の視半径（最大時）": ["Apparent radius of {body} (at maximum)", "Rayon apparent de {body} (au maximum)", "Видимый радиус ({body}) в максимуме", "Radio aparente de {body} (en el máximo)", "{body}视半径（最大时）", "{body} की आभासी त्रिज्या (अधिकतम पर)"],
-"太陽の自転軸の方位角 P": ["Position angle of the solar axis P", "Angle de position de l’axe solaire P", "Позиционный угол оси Солнца P", "Ángulo de posición del eje solar P", "太阳自转轴方位角 P", "सौर अक्ष का स्थिति कोण P"],
 "中心 X, Y（″）": ["Centre X, Y (″)", "Centre X, Y (″)", "Центр X, Y (″)", "Centro X, Y (″)", "中心 X, Y（″）", "केंद्र X, Y (″)"],
 "接触点 X, Y（″）": ["Contact point X, Y (″)", "Point de contact X, Y (″)", "Точка контакта X, Y (″)", "Punto de contacto X, Y (″)", "接触点 X, Y（″）", "स्पर्श बिंदु X, Y (″)"],
 "太陽の自転軸の北が上（P = {p}°）": ["Solar north up (P = {p}°)", "Nord solaire en haut (P = {p}°)", "Север Солнца сверху (P = {p}°)", "Norte solar arriba (P = {p}°)", "太阳自转轴北极朝上（P = {p}°）", "सौर उत्तर ऊपर (P = {p}°)"],
@@ -695,6 +690,98 @@ const I18N = /*BEGIN-MESSAGES*/{
 "はじめの画面": ["Start page", "Page d’accueil", "Начальная страница", "Página de inicio", "首页", "प्रारंभिक पृष्ठ"],
 "計算結果": ["Results", "Résultats", "Результаты", "Resultados", "计算结果", "परिणाम"],
 "↑ 一覧に戻る": ["↑ Back to the list", "↑ Retour à la liste", "↑ К списку", "↑ Volver a la lista", "↑ 返回列表", "↑ सूची पर वापस"],
+"観測される縁（実測 959.96″ = 696,231 km）": ["Observed limb (measured 959.96″ = 696,231 km)", "Bord observé (mesuré 959,96″ = 696 231 km)", "Наблюдаемый край (измерено 959,96″ = 696 231 км)", "Borde observado (medido 959,96″ = 696 231 km)", "观测到的日面边缘（实测 959.96″ = 696,231 km）", "प्रेक्षित किनारा (मापा गया 959.96″ = 696,231 किमी)"],
+"IAU 2015 公称値（光球 τ=1, 695,700 km）": ["IAU 2015 nominal (photosphere τ=1, 695,700 km)", "Valeur nominale UAI 2015 (photosphère τ=1, 695 700 km)", "Номинал МАС 2015 (фотосфера τ=1, 695 700 км)", "Valor nominal UAI 2015 (fotosfera τ=1, 695 700 km)", "IAU 2015 标称值（光球 τ=1，695,700 km）", "IAU 2015 नाममात्र (प्रकाशमंडल τ=1, 695,700 किमी)"],
+"接触は画像に見える太陽の縁で起こります（IAU 2015 公称値の光球より 0.73″ 大きい）": ["Contacts happen at the limb of the Sun seen in images (0.73″ larger than the IAU 2015 nominal photosphere)", "Les contacts ont lieu au bord du Soleil visible sur les images (0,73″ plus grand que la photosphère nominale UAI 2015)", "Контакты происходят на видимом на снимках краю Солнца (на 0,73″ больше номинальной фотосферы МАС 2015)", "Los contactos ocurren en el borde del Sol que se ve en las imágenes (0,73″ mayor que la fotosfera nominal UAI 2015)", "接触发生在图像中可见的日面边缘（比 IAU 2015 标称光球大 0.73″）", "स्पर्श चित्रों में दिखने वाले सूर्य के किनारे पर होते हैं (IAU 2015 नाममात्र प्रकाशमंडल से 0.73″ बड़ा)"],
+"太陽半径": ["Sun radius", "Rayon du Soleil", "Радиус Солнца", "Radio del Sol", "太阳半径", "सूर्य की त्रिज्या"],
+"単位": ["Unit", "Unité", "Единица", "Unidad", "单位", "इकाई"],
+"″（1 AU での角度）": ["″ (angle at 1 AU)", "″ (angle à 1 UA)", "″ (угол на 1 а. е.)", "″ (ángulo a 1 UA)", "″（1 AU 处的角度）", "″ (1 AU पर कोण)"],
+"観測される円盤（水星 2439.4 / 金星 6131 km, 可視光）": ["Observed disk (Mercury 2439.4 / Venus 6131 km, visible light)", "Disque observé (Mercure 2439,4 / Vénus 6131 km, lumière visible)", "Наблюдаемый диск (Меркурий 2439,4 / Венера 6131 км, видимый свет)", "Disco observado (Mercurio 2439,4 / Venus 6131 km, luz visible)", "观测到的圆面（水星 2439.4 / 金星 6131 km，可见光）", "प्रेक्षित चकती (बुध 2439.4 / शुक्र 6131 किमी, दृश्य प्रकाश)"],
+"IAU 固体表面 (2439.4 / 6051.8 km)": ["IAU solid surface (2439.4 / 6051.8 km)", "Surface solide UAI (2439,4 / 6051,8 km)", "Твёрдая поверхность МАС (2439,4 / 6051,8 км)", "Superficie sólida UAI (2439,4 / 6051,8 km)", "IAU 固体表面 (2439.4 / 6051.8 km)", "IAU ठोस सतह (2439.4 / 6051.8 किमी)"],
+"X 線の円盤（金星 6202 km）": ["X-ray disk (Venus 6202 km)", "Disque en rayons X (Vénus 6202 km)", "Рентгеновский диск (Венера 6202 км)", "Disco en rayos X (Venus 6202 km)", "X 射线圆面（金星 6202 km）", "एक्स-किरण चकती (शुक्र 6202 किमी)"],
+"金星は雲と大気の分だけ固体表面より大きく見えます（Reale ほか 2015）": ["Venus looks larger than its solid surface by its clouds and atmosphere (Reale et al. 2015)", "Vénus paraît plus grande que sa surface solide, de ses nuages et de son atmosphère (Reale et al. 2015)", "Венера выглядит больше твёрдой поверхности на толщину облаков и атмосферы (Reale et al. 2015)", "Venus se ve mayor que su superficie sólida por sus nubes y atmósfera (Reale et al. 2015)", "金星因云层和大气看起来比固体表面大（Reale 等 2015）", "बादलों और वायुमंडल के कारण शुक्र अपनी ठोस सतह से बड़ा दिखता है (Reale आदि 2015)"],
+"目安: 可視光 約 0 km、軟 X 線 約 140 km、EUV 約 250 km": ["Guide: visible light about 0 km, soft X-rays about 140 km, EUV about 250 km", "Repère : lumière visible env. 0 km, rayons X mous env. 140 km, EUV env. 250 km", "Ориентир: видимый свет ≈ 0 км, мягкий рентген ≈ 140 км, ЭУФ ≈ 250 км", "Referencia: luz visible unos 0 km, rayos X blandos unos 140 km, EUV unos 250 km", "参考：可见光约 0 km，软 X 射线约 140 km，EUV 约 250 km", "संदर्भ: दृश्य प्रकाश लगभग 0 किमी, मृदु एक्स-किरण लगभग 140 किमी, EUV लगभग 250 किमी"],
+"観測される縁": ["observed limb", "bord observé", "наблюдаемый край", "borde observado", "观测到的边缘", "प्रेक्षित किनारा"],
+"NASA 互換": ["NASA compatible", "compatible NASA", "как у NASA", "compatible con NASA", "与 NASA 一致", "NASA संगत"],
+"IAU 2015 公称値": ["IAU 2015 nominal", "valeur nominale UAI 2015", "номинал МАС 2015", "valor nominal UAI 2015", "IAU 2015 标称值", "IAU 2015 नाममात्र"],
+"観測される円盤": ["observed disk", "disque observé", "наблюдаемый диск", "disco observado", "观测到的圆面", "प्रेक्षित चकती"],
+"IAU 固体表面": ["IAU solid surface", "surface solide UAI", "твёрдая поверхность МАС", "superficie sólida UAI", "IAU 固体表面", "IAU ठोस सतह"],
+"X 線の円盤": ["X-ray disk", "disque en rayons X", "рентгеновский диск", "disco en rayos X", "X 射线圆面", "एक्स-किरण चकती"],
+"NASA方式": ["NASA method", "méthode NASA", "метод NASA", "método NASA", "NASA 方式", "NASA विधि"],
+"太陽半径 {km} km（{model}・1 AU で {as}″）": ["Sun radius {km} km ({model}, {as}″ at 1 AU)", "rayon du Soleil {km} km ({model}, {as}″ à 1 UA)", "радиус Солнца {km} км ({model}, {as}″ на 1 а. е.)", "radio del Sol {km} km ({model}, {as}″ a 1 UA)", "太阳半径 {km} km（{model}，1 AU 处 {as}″）", "सूर्य की त्रिज्या {km} किमी ({model}, 1 AU पर {as}″)"],
+"太陽半径 {km} km（1 AU で {as}″）": ["Sun radius {km} km ({as}″ at 1 AU)", "rayon du Soleil {km} km ({as}″ à 1 UA)", "радиус Солнца {km} км ({as}″ на 1 а. е.)", "radio del Sol {km} km ({as}″ a 1 UA)", "太阳半径 {km} km（1 AU 处 {as}″）", "सूर्य की त्रिज्या {km} किमी (1 AU पर {as}″)"],
+"画像と比べるための値（UTC のミリ秒・太陽の北が上の X, Y・太陽の縁からの距離）を表示": ["Show the values to compare with images (UTC to the ms, X, Y with solar north up, distance from the Sun’s limb)", "Afficher les valeurs à comparer aux images (UTC à la ms, X, Y nord solaire en haut, distance au bord du Soleil)", "Показывать значения для сравнения со снимками (UTC до мс, X, Y при севере Солнца вверху, расстояние от края Солнца)", "Mostrar los valores para comparar con imágenes (UTC al ms, X, Y con el norte solar arriba, distancia al borde del Sol)", "显示与图像比较用的数值（精确到毫秒的 UTC、太阳北极朝上的 X, Y、与日面边缘的距离）", "चित्रों से तुलना के मान दिखाएँ (मि.से. तक UTC, सौर उत्तर ऊपर X, Y, सूर्य के किनारे से दूरी)"],
+"UTC（ミリ秒まで）": ["UTC (to the ms)", "UTC (à la ms)", "UTC (до мс)", "UTC (al ms)", "UTC（精确到毫秒）", "UTC (मि.से. तक)"],
+"位置角（天の北から）": ["Position angle (from celestial north)", "Angle de position (depuis le nord céleste)", "Позиционный угол (от севера мира)", "Ángulo de posición (desde el norte celeste)", "位置角（自天北）", "स्थिति कोण (खगोलीय उत्तर से)"],
+"位置角（太陽の北から）": ["Position angle (from solar north)", "Angle de position (depuis le nord solaire)", "Позиционный угол (от севера Солнца)", "Ángulo de posición (desde el norte solar)", "位置角（自太阳北极）", "स्थिति कोण (सौर उत्तर से)"],
+"位置角 {v}°": ["position angle {v}°", "angle de position {v}°", "позиционный угол {v}°", "ángulo de posición {v}°", "位置角 {v}°", "स्थिति कोण {v}°"],
+"X, Y（太陽の北が上, ″）": ["X, Y (solar north up, ″)", "X, Y (nord solaire en haut, ″)", "X, Y (север Солнца вверху, ″)", "X, Y (norte solar arriba, ″)", "X, Y（太阳北极朝上，″）", "X, Y (सौर उत्तर ऊपर, ″)"],
+"太陽の縁からの距離（外側が +）": ["Distance from the Sun’s limb (+ outside)", "Distance au bord du Soleil (+ à l’extérieur)", "Расстояние от края Солнца (+ снаружи)", "Distancia al borde del Sol (+ fuera)", "与日面边缘的距离（外侧为 +）", "सूर्य के किनारे से दूरी (बाहर +)"],
+"太陽の縁からの距離": ["Distance from the Sun’s limb", "Distance au bord du Soleil", "Расстояние от края Солнца", "Distancia al borde del Sol", "与日面边缘的距离", "सूर्य के किनारे से दूरी"],
+"{body}の半径の {n} 倍": ["{n} × the radius of {body}", "{n} × le rayon de {body}", "{n} × радиус ({body})", "{n} × el radio de {body}", "{body}半径的 {n} 倍", "{body} की त्रिज्या का {n} गुना"],
+"※ {list}のとき、太陽の一部が地平線（太陽高度の下限）の下にあります。見えるかどうかは太陽の中心で判定しています。": ["* At {list}, part of the Sun is below the horizon (the lower limit of the Sun’s altitude). Whether it is seen is decided by the Sun’s centre.", "* À {list}, une partie du Soleil est sous l’horizon (la hauteur minimale du Soleil). La visibilité est jugée sur le centre du Soleil.", "* В момент «{list}» часть Солнца находится под горизонтом (нижним пределом высоты Солнца). Видимость определяется по центру Солнца.", "* En {list}, parte del Sol está bajo el horizonte (el límite inferior de la altitud del Sol). La visibilidad se decide por el centro del Sol.", "※ {list}时，太阳的一部分位于地平线（太阳高度下限）以下。是否可见按日面中心判断。", "* {list} के समय सूर्य का कुछ भाग क्षितिज (सूर्य की ऊँचाई की निचली सीमा) के नीचे है। दृश्यता सूर्य के केंद्र से तय की जाती है।"],
+"※ {list}のとき、太陽の一部が地球の縁（大気の遮蔽高度 {atm} km を含む）に隠れています。見えるかどうかは太陽の中心で判定しています。": ["* At {list}, part of the Sun is hidden by the Earth’s limb (including the blocking atmosphere of {atm} km). Whether it is seen is decided by the Sun’s centre.", "* À {list}, une partie du Soleil est cachée par le bord de la Terre (atmosphère occultante de {atm} km comprise). La visibilité est jugée sur le centre du Soleil.", "* В момент «{list}» часть Солнца закрыта краем Земли (с затеняющей атмосферой {atm} км). Видимость определяется по центру Солнца.", "* En {list}, parte del Sol está oculta por el borde de la Tierra (incluida la atmósfera que oculta, de {atm} km). La visibilidad se decide por el centro del Sol.", "※ {list}时，太阳的一部分被地球边缘（含 {atm} km 的遮挡大气）遮住。是否可见按日面中心判断。", "* {list} के समय सूर्य का कुछ भाग पृथ्वी के किनारे ({atm} किमी के रोकने वाले वायुमंडल सहित) से छिपा है। दृश्यता सूर्य के केंद्र से तय की जाती है।"],
+"半径による接触時刻の変化": ["Change of the contact times with the radii", "Variation des heures de contact avec les rayons", "Изменение моментов контактов с радиусами", "Cambio de las horas de contacto con los radios", "半径对接触时刻的影响", "त्रिज्या से स्पर्श समयों में बदलाव"],
+"太陽の半径が 1″ 大きいと": ["Sun’s radius 1″ larger", "Rayon du Soleil plus grand de 1″", "Радиус Солнца больше на 1″", "Radio del Sol 1″ mayor", "太阳半径大 1″ 时", "सूर्य की त्रिज्या 1″ अधिक हो तो"],
+"太陽の半径が 1″ 大きいと: {list}": ["With the Sun’s radius 1″ larger: {list}", "Avec un rayon du Soleil plus grand de 1″ : {list}", "При радиусе Солнца больше на 1″: {list}", "Con el radio del Sol 1″ mayor: {list}", "太阳半径大 1″ 时：{list}", "सूर्य की त्रिज्या 1″ अधिक हो तो: {list}"],
+"{body}の半径が 1″ 大きいと": ["Radius of {body} 1″ larger", "Rayon de {body} plus grand de 1″", "Радиус ({body}) больше на 1″", "Radio de {body} 1″ mayor", "{body}半径大 1″ 时", "{body} की त्रिज्या 1″ अधिक हो तो"],
+"太陽半径を {model}（{as}″）にすると": ["Sun radius: {model} ({as}″)", "Rayon du Soleil : {model} ({as}″)", "Радиус Солнца: {model} ({as}″)", "Radio del Sol: {model} ({as}″)", "太阳半径改为{model}（{as}″）时", "सूर्य की त्रिज्या {model} ({as}″) हो तो"],
+"{body}半径を {model}（{km} km）にすると": ["Radius of {body}: {model} ({km} km)", "Rayon de {body} : {model} ({km} km)", "Радиус ({body}): {model} ({km} км)", "Radio de {body}: {model} ({km} km)", "{body}半径改为{model}（{km} km）时", "{body} की त्रिज्या {model} ({km} किमी) हो तो"],
+"月半径を {model} にすると": ["Moon radius: {model}", "Rayon de la Lune : {model}", "Радиус Луны: {model}", "Radio de la Luna: {model}", "月球半径改为{model}时", "चंद्रमा की त्रिज्या {model} हो तो"],
+"今の計算条件（{model}）からの差です。ほかの半径の値は、1″ あたりの変化から求めた近似値です。": ["Differences from the present settings ({model}). The values for the other radii are approximations from the change per 1″.", "Écarts par rapport aux conditions actuelles ({model}). Les valeurs pour les autres rayons sont des approximations tirées de la variation par 1″.", "Разности относительно текущих условий ({model}). Значения для других радиусов — приближения по изменению на 1″.", "Diferencias respecto de las condiciones actuales ({model}). Los valores para los otros radios son aproximaciones a partir del cambio por 1″.", "为与当前计算条件（{model}）的差。其他半径的值是由每 1″ 的变化求得的近似值。", "ये वर्तमान शर्तों ({model}) से अंतर हैं। अन्य त्रिज्याओं के मान प्रति 1″ बदलाव से निकाले गए सन्निकट मान हैं।"],
+"太陽が見える時間帯（地球に隠されない時間）": ["When the Sun is seen (not hidden by the Earth)", "Intervalles où le Soleil est visible (non caché par la Terre)", "Интервалы видимости Солнца (не закрыто Землёй)", "Intervalos en que se ve el Sol (no oculto por la Tierra)", "可见太阳的时间段（未被地球遮挡）", "सूर्य दिखने के समय (पृथ्वी से न छिपा)"],
+"見え始め（{tz}）": ["Visible from ({tz})", "Visible dès ({tz})", "Видно с ({tz})", "Visible desde ({tz})", "开始可见（{tz}）", "दिखना शुरू ({tz})"],
+"見え終わり（{tz}）": ["Visible until ({tz})", "Visible jusqu’à ({tz})", "Видно до ({tz})", "Visible hasta ({tz})", "可见结束（{tz}）", "दिखना समाप्त ({tz})"],
+"見え始め（UTC）": ["Visible from (UTC)", "Visible dès (UTC)", "Видно с (UTC)", "Visible desde (UTC)", "开始可见（UTC）", "दिखना शुरू (UTC)"],
+"見え終わり（UTC）": ["Visible until (UTC)", "Visible jusqu’à (UTC)", "Видно до (UTC)", "Visible hasta (UTC)", "可见结束（UTC）", "दिखना समाप्त (UTC)"],
+"長さ": ["Length", "Durée", "Длительность", "Duración", "时长", "अवधि"],
+"太陽の円盤が縁を横切る ±{s}": ["the Sun’s disk crosses the limb in ±{s}", "le disque solaire franchit le bord en ±{s}", "диск Солнца пересекает край за ±{s}", "el disco solar cruza el borde en ±{s}", "日面圆盘越过边缘需 ±{s}", "सूर्य की चकती किनारा ±{s} में पार करती है"],
+"見えるかどうかは、太陽の中心が地球の縁（大気の遮蔽高度 {atm} km を含む）より上にあるかで判定しています。": ["Whether the Sun is seen is decided by its centre being above the Earth’s limb (including the blocking atmosphere of {atm} km).", "La visibilité est jugée selon que le centre du Soleil est au-dessus du bord de la Terre (atmosphère occultante de {atm} km comprise).", "Видимость определяется тем, находится ли центр Солнца над краем Земли (с затеняющей атмосферой {atm} км).", "La visibilidad se decide según si el centro del Sol está sobre el borde de la Tierra (incluida la atmósfera que oculta, de {atm} km).", "是否可见按日面中心是否高于地球边缘（含 {atm} km 的遮挡大气）判断。", "दृश्यता इस पर तय होती है कि सूर्य का केंद्र पृथ्वी के किनारे ({atm} किमी के रोकने वाले वायुमंडल सहित) से ऊपर है या नहीं।"],
+"太陽の P 角（自転軸、最大時）": ["Solar P angle (rotation axis, at maximum)", "Angle P du Soleil (axe de rotation, au maximum)", "Угол P Солнца (ось вращения, в максимуме)", "Ángulo P del Sol (eje de rotación, en el máximo)", "太阳 P 角（自转轴，最大时）", "सूर्य का P कोण (घूर्णन अक्ष, अधिकतम पर)"],
+"太陽の P 角（自転軸）": ["Solar P angle (rotation axis)", "Angle P du Soleil (axe de rotation)", "Угол P Солнца (ось вращения)", "Ángulo P del Sol (eje de rotación)", "太阳 P 角（自转轴）", "सूर्य का P कोण (घूर्णन अक्ष)"],
+"太陽の P 角": ["Solar P angle", "Angle P du Soleil", "Угол P Солнца", "Ángulo P del Sol", "太阳 P 角", "सूर्य का P कोण"],
+"表示範囲": ["Field of view", "Champ", "Поле зрения", "Campo de visión", "显示范围", "दृश्य क्षेत्र"],
+"太陽全体": ["Whole Sun", "Soleil entier", "Всё Солнце", "Sol entero", "整个太阳", "पूरा सूर्य"],
+"{v}″ 四方（{what}）": ["{v}″ square ({what})", "{v}″ de côté ({what})", "{v}″ × {v}″ ({what})", "{v}″ de lado ({what})", "{v}″ 见方（{what}）", "{v}″ वर्ग ({what})"],
+"{body}を中心に": ["centred on {body}", "centré sur {body}", "в центре — {body}", "centrado en {body}", "以{body}为中心", "{body} केंद्र में"],
+"接触点を中心に": ["centred on the contact point", "centré sur le point de contact", "в центре — точка контакта", "centrado en el punto de contacto", "以接触点为中心", "स्पर्श बिंदु केंद्र में"],
+"表示範囲 {v}″ 四方": ["field {v}″ square", "champ de {v}″ de côté", "поле {v}″ × {v}″", "campo de {v}″ de lado", "显示范围 {v}″ 见方", "दृश्य क्षेत्र {v}″ वर्ग"],
+"角度の目盛り（″）を表示": ["Show angle ticks (″)", "Afficher les graduations d’angle (″)", "Показывать шкалу углов (″)", "Mostrar marcas de ángulo (″)", "显示角度刻度（″）", "कोण के निशान (″) दिखाएँ"],
+"太陽の北が上（ひので・SDO などの画像の向き）": ["Solar north up (as in images of Hinode, SDO, …)", "Nord solaire en haut (comme les images de Hinode, SDO…)", "Север Солнца вверху (как на снимках «Хиноде», SDO и др.)", "Norte solar arriba (como en las imágenes de Hinode, SDO…)", "太阳北极朝上（与日出、SDO 等图像相同的方向）", "सौर उत्तर ऊपर (Hinode, SDO आदि के चित्रों जैसा)"],
+"太陽の北": ["Solar N", "N solaire", "Сев. Солнца", "N solar", "太阳北", "सौर उ"],
+"X・Y（″）: 太陽の中心から": ["X, Y (″): from the Sun’s centre", "X, Y (″) : depuis le centre du Soleil", "X, Y (″): от центра Солнца", "X, Y (″): desde el centro del Sol", "X、Y（″）：自日面中心", "X, Y (″): सूर्य के केंद्र से"],
+"太陽の北が上（ひので・SDO の画像の座標）": ["solar north up (coordinates of Hinode, SDO images)", "nord solaire en haut (coordonnées des images Hinode, SDO)", "север Солнца вверху (координаты снимков «Хиноде», SDO)", "norte solar arriba (coordenadas de las imágenes de Hinode, SDO)", "太阳北极朝上（日出、SDO 图像的坐标）", "सौर उत्तर ऊपर (Hinode, SDO चित्रों के निर्देशांक)"],
+"X′・Y′（″）: 太陽の中心から画面の向きに": ["X′, Y′ (″): from the Sun’s centre along the screen", "X′, Y′ (″) : depuis le centre du Soleil, selon l’écran", "X′, Y′ (″): от центра Солнца по осям экрана", "X′, Y′ (″): desde el centro del Sol, según la pantalla", "X′、Y′（″）：自日面中心沿屏幕方向", "X′, Y′ (″): सूर्य के केंद्र से, स्क्रीन की दिशा में"],
+"画面の上は太陽の北から東回りに {a}°": ["up on the screen is {a}° east of solar north", "le haut de l’écran est à {a}° à l’est du nord solaire", "верх экрана — {a}° к востоку от севера Солнца", "arriba en la pantalla está {a}° al este del norte solar", "屏幕上方为自太阳北极向东 {a}°", "स्क्रीन का ऊपर सौर उत्तर से पूर्व की ओर {a}° है"],
+"サーバーで計算した値": ["computed by the server", "calculé par le serveur", "рассчитано сервером", "calculado por el servidor", "服务器计算的值", "सर्वर द्वारा गणना"],
+"動画用の補間値": ["interpolated for the animation", "interpolé pour l’animation", "интерполяция для анимации", "interpolado para la animación", "动画用插值", "एनिमेशन के लिए अंतर्वेशित"],
+"動画の範囲の外の時刻です（その時刻の値で描いています）。": ["The time is outside the animation (drawn with the values at that time).", "L’heure est hors de l’animation (dessin avec les valeurs à cette heure).", "Время вне анимации (нарисовано по значениям на этот момент).", "La hora está fuera de la animación (dibujada con los valores de esa hora).", "该时刻在动画范围之外（按该时刻的值绘制）。", "समय एनिमेशन की सीमा से बाहर है (उस समय के मानों से बनाया गया)।"],
+"UT {date}": ["UT {date}", "TU {date}", "UT {date}", "UT {date}", "UT {date}", "UT {date}"],
+"時刻を指定（UTC）": ["Time (UTC)", "Heure (UTC)", "Время (UTC)", "Hora (UTC)", "指定时刻（UTC）", "समय (UTC)"],
+"表示": ["Show", "Afficher", "Показать", "Mostrar", "显示", "दिखाएँ"],
+"2017-08-21T16:53:59.204Z のような ISO 8601 の形式や、画像の時刻の形式（21-Aug-2017 16:53:59.204 UT）で入力します": ["In ISO 8601 such as 2017-08-21T16:53:59.204Z, or as the times of images (21-Aug-2017 16:53:59.204 UT)", "Au format ISO 8601 comme 2017-08-21T16:53:59.204Z, ou comme l’heure des images (21-Aug-2017 16:53:59.204 UT)", "В формате ISO 8601, например 2017-08-21T16:53:59.204Z, или как время снимков (21-Aug-2017 16:53:59.204 UT)", "En ISO 8601 como 2017-08-21T16:53:59.204Z, o como la hora de las imágenes (21-Aug-2017 16:53:59.204 UT)", "使用 2017-08-21T16:53:59.204Z 这样的 ISO 8601 格式，或图像时刻的格式（21-Aug-2017 16:53:59.204 UT）", "2017-08-21T16:53:59.204Z जैसे ISO 8601 रूप में, या चित्रों के समय के रूप (21-Aug-2017 16:53:59.204 UT) में लिखें"],
+"時刻を入力してください（UTC）": ["Enter a time (UTC)", "Saisissez une heure (UTC)", "Введите время (UTC)", "Introduzca una hora (UTC)", "请输入时刻（UTC）", "समय दर्ज करें (UTC)"],
+"現象が選ばれていません": ["No event is selected", "Aucun phénomène n’est choisi", "Явление не выбрано", "No hay ningún fenómeno seleccionado", "未选择天象", "कोई घटना चुनी नहीं गई है"],
+"観測画像と比べる": ["Compare with images", "Comparer avec des images", "Сравнить со снимками", "Comparar con imágenes", "与观测图像比较", "प्रेक्षित चित्रों से तुलना"],
+"画像 1 枚につき 1 行で「時刻, X, Y」を入力すると、その時刻の計算値と、画像で測った位置との差（O−C）を表にします。X, Y は太陽の北が上の太陽の中心からの角度（″、ひので・SDO などの画像の座標）で、省略できます。時刻は UTC です。": ["Enter one line “time, X, Y” per image to get a table of the computed values at those times and of the differences from the positions measured in the images (O−C). X, Y are the angles from the centre of the Sun with solar north up (″, the coordinates of images of Hinode, SDO and others) and may be left out. Times are in UTC.", "Saisissez une ligne « heure, X, Y » par image pour obtenir un tableau des valeurs calculées à ces heures et des écarts aux positions mesurées sur les images (O−C). X, Y sont les angles depuis le centre du Soleil, nord solaire en haut (″, coordonnées des images de Hinode, SDO, etc.), et peuvent être omis. Les heures sont en UTC.", "Введите по строке «время, X, Y» на снимок, чтобы получить таблицу расчётных значений на эти моменты и отклонений от измеренных на снимках положений (O−C). X, Y — углы от центра Солнца при севере Солнца вверху (″, координаты снимков «Хиноде», SDO и др.); их можно не указывать. Время — UTC.", "Escriba una línea «hora, X, Y» por imagen para obtener una tabla de los valores calculados a esas horas y de las diferencias con las posiciones medidas en las imágenes (O−C). X, Y son los ángulos desde el centro del Sol con el norte solar arriba (″, las coordenadas de las imágenes de Hinode, SDO y otros) y pueden omitirse. Las horas son UTC.", "每幅图像输入一行“时刻, X, Y”，即可列出这些时刻的计算值以及与图像中测得位置的差（O−C）。X、Y 为太阳北极朝上时自日面中心的角度（″，即日出、SDO 等图像的坐标），可以省略。时刻为 UTC。", "हर चित्र के लिए एक पंक्ति “समय, X, Y” लिखें, तो उन समयों के गणना मान और चित्रों में मापी गई स्थितियों से अंतर (O−C) की तालिका बनती है। X, Y सौर उत्तर ऊपर रखकर सूर्य के केंद्र से कोण हैं (″, Hinode, SDO आदि के चित्रों के निर्देशांक) और छोड़े जा सकते हैं। समय UTC में है।"],
+"露光時間（秒）": ["Exposure time (s)", "Temps de pose (s)", "Выдержка (с)", "Tiempo de exposición (s)", "曝光时间（秒）", "एक्सपोज़र समय (से.)"],
+"時刻が露光の始まりのとき。露光の中央の時刻で計算します": ["When the times are the starts of the exposures; computed at the middle of each exposure", "Lorsque les heures sont les débuts des poses ; calcul au milieu de chaque pose", "Если время — начало экспозиции; расчёт на середину экспозиции", "Cuando las horas son el inicio de las exposiciones; se calcula a la mitad de cada exposición", "时刻为曝光开始时填写；按曝光中点的时刻计算", "जब समय एक्सपोज़र की शुरुआत हो; गणना एक्सपोज़र के मध्य समय पर होती है"],
+"CSV で保存": ["Save as CSV", "Enregistrer en CSV", "Сохранить в CSV", "Guardar en CSV", "保存为 CSV", "CSV में सहेजें"],
+"入力": ["Input", "Saisie", "Ввод", "Entrada", "输入", "इनपुट"],
+"UTC（露光の中央）": ["UTC (mid-exposure)", "UTC (milieu de la pose)", "UTC (середина экспозиции)", "UTC (mitad de la exposición)", "UTC（曝光中点）", "UTC (एक्सपोज़र का मध्य)"],
+"X（″）": ["X (″)", "X (″)", "X (″)", "X (″)", "X（″）", "X (″)"],
+"Y（″）": ["Y (″)", "Y (″)", "Y (″)", "Y (″)", "Y（″）", "Y (″)"],
+"見えない": ["not visible", "non visible", "не видно", "no visible", "不可见", "नहीं दिखेगा"],
+"O−C X（″）": ["O−C X (″)", "O−C X (″)", "O−C X (″)", "O−C X (″)", "O−C X（″）", "O−C X (″)"],
+"O−C Y（″）": ["O−C Y (″)", "O−C Y (″)", "O−C Y (″)", "O−C Y (″)", "O−C Y（″）", "O−C Y (″)"],
+"O−C（時間）": ["O−C (time)", "O−C (temps)", "O−C (время)", "O−C (tiempo)", "O−C（时间）", "O−C (समय)"],
+"O−C の平均 ± 標準偏差（{n} 枚）: X {x}″、Y {y}″、時間 {dt} 秒": ["O−C mean ± standard deviation ({n} images): X {x}″, Y {y}″, time {dt} s", "O−C moyenne ± écart type ({n} images) : X {x}″, Y {y}″, temps {dt} s", "Среднее O−C ± стандартное отклонение ({n} снимков): X {x}″, Y {y}″, время {dt} с", "O−C media ± desviación típica ({n} imágenes): X {x}″, Y {y}″, tiempo {dt} s", "O−C 平均值 ± 标准差（{n} 幅）：X {x}″，Y {y}″，时间 {dt} 秒", "O−C औसत ± मानक विचलन ({n} चित्र): X {x}″, Y {y}″, समय {dt} से."],
+"O−C は画像で測った位置から計算した位置を引いた差です。O−C（時間）は、観測された位置が計算より運動の向きに何秒先に進んでいるかを表します。": ["O−C is the position measured in the image minus the computed one. O−C (time) is how many seconds the observed position is ahead of the computed one along the motion.", "O−C est la position mesurée sur l’image moins la position calculée. O−C (temps) indique de combien de secondes la position observée est en avance sur le calcul dans le sens du mouvement.", "O−C — измеренное на снимке положение минус вычисленное. O−C (время) показывает, на сколько секунд наблюдаемое положение опережает расчётное по направлению движения.", "O−C es la posición medida en la imagen menos la calculada. O−C (tiempo) indica cuántos segundos va adelantada la posición observada respecto del cálculo en el sentido del movimiento.", "O−C 为图像中测得的位置减去计算位置。O−C（时间）表示观测位置沿运动方向比计算位置超前多少秒。", "O−C चित्र में मापी गई स्थिति में से गणना की गई स्थिति घटाकर मिलता है। O−C (समय) बताता है कि प्रेक्षित स्थिति गति की दिशा में गणना से कितने सेकंड आगे है।"],
+"X・Y は太陽の北が上の太陽の中心からの角度（″、X は西、Y は北が正）です。": ["X, Y are the angles from the centre of the Sun with solar north up (″, X positive to the west, Y to the north).", "X, Y sont les angles depuis le centre du Soleil, nord solaire en haut (″, X positif vers l’ouest, Y vers le nord).", "X, Y — углы от центра Солнца при севере Солнца вверху (″, X положителен к западу, Y — к северу).", "X, Y son los ángulos desde el centro del Sol con el norte solar arriba (″, X positivo hacia el oeste, Y hacia el norte).", "X、Y 为太阳北极朝上时自日面中心的角度（″，X 向西为正，Y 向北为正）。", "X, Y सौर उत्तर ऊपर रखकर सूर्य के केंद्र से कोण हैं (″, X पश्चिम की ओर धनात्मक, Y उत्तर की ओर)।"],
+"{n} 個の時刻を計算しました。行をクリックすると、その時刻の見え方を表示します。": ["Computed {n} times. Click a row to see the view at that time.", "{n} heures calculées. Cliquez sur une ligne pour voir l’aspect à cette heure.", "Рассчитано моментов: {n}. Щёлкните строку, чтобы увидеть вид на этот момент.", "Se calcularon {n} horas. Haga clic en una fila para ver la vista a esa hora.", "已计算 {n} 个时刻。点击行可显示该时刻的情况。", "{n} समयों की गणना हुई। उस समय का दृश्य देखने के लिए किसी पंक्ति पर क्लिक करें।"],
+"{n} 行目「{line}」を読めません（「時刻, X, Y」または「時刻」の形で書いてください）": ["Cannot read line {n} “{line}” (write “time, X, Y” or “time”)", "Ligne {n} « {line} » illisible (écrivez « heure, X, Y » ou « heure »)", "Не удаётся прочитать строку {n} «{line}» (пишите «время, X, Y» или «время»)", "No se puede leer la línea {n} «{line}» (escriba «hora, X, Y» o «hora»)", "无法读取第 {n} 行“{line}”（请写成“时刻, X, Y”或“时刻”）", "पंक्ति {n} “{line}” पढ़ी नहीं जा सकी (“समय, X, Y” या “समय” के रूप में लिखें)"],
+"時刻を 1 行に 1 つずつ入力してください（UTC）": ["Enter one time per line (UTC)", "Saisissez une heure par ligne (UTC)", "Введите по одному времени в строке (UTC)", "Escriba una hora por línea (UTC)", "请每行输入一个时刻（UTC）", "हर पंक्ति में एक समय दर्ज करें (UTC)"],
+"一度に計算できる時刻は {n} 個までです": ["Up to {n} times can be computed at once", "Au plus {n} heures peuvent être calculées à la fois", "За один раз можно рассчитать не более {n} моментов", "Se pueden calcular como máximo {n} horas a la vez", "一次最多可计算 {n} 个时刻", "एक बार में अधिकतम {n} समयों की गणना हो सकती है"],
 }/*END-MESSAGES*/;
 
 /* Static parts of index.html with markup (data-i18n-html); Japanese is the page itself. */
@@ -731,12 +818,15 @@ const HTML_BLOCKS = {
     <h3>Saving and reopening results</h3>
     <p>“Save results” saves the list and the computation settings in a JSON file. Choose that file with “Open saved results” at the top: the list is shown as it was saved and the settings on the left are restored.
       Clicking a row computes the details of that event (contacts, animation, charts, map) again with the saved settings. You can also open a single event saved with “Download JSON” in the Data tab of the details, and the output of <code>cli.py --format json</code>.</p>
+    <h3>Comparing with images</h3>
+    <p>In the “View (animation)” tab of the details, choose “Solar north up” with the angle ticks and a field of view to see the event in the coordinates of images of Hinode, SDO and other solar telescopes (X, Y from the centre of the Sun, in ″). “Time (UTC)” gives the values at the time of an image, and “Compare with images” takes the time and the measured position of each image and lists the differences from the computation (O−C). “Change of the contact times with the radii” in the overview shows how much the contact times move when the radius of the Sun or of the body is changed.</p>
     <h3>Terms</h3>
     <dl>
       <dt>Magnitude</dt><dd>Fraction of the Sun’s <b>diameter</b> covered by the Moon; 1 or more in a total eclipse (in the whole-Earth list, as at NASA, the ratio of the apparent diameters of the Moon and the Sun for central eclipses).</dd>
       <dt>Obscuration</dt><dd>Fraction of the Sun’s <b>area</b> covered; close to how dark it feels.</dd>
       <dt>1st to 4th contact</dt><dd>Moments when the limb of the Moon (or planet) touches the limb of the Sun: 1st = the eclipse begins, 2nd = totality or annularity (or internal contact) begins, 3rd = it ends, 4th = the eclipse ends.</dd>
-      <dt>Position angle P / zenith angle V</dt><dd>Direction of the point of contact seen from the centre of the Sun: P is measured from celestial north towards the east, V from the direction of the zenith.</dd>
+      <dt>Position angle / zenith angle V</dt><dd>Direction of the point of contact seen from the centre of the Sun: the position angle is measured from celestial north towards the east, V from the direction of the zenith. The position angle “from solar north” is measured from the north of the Sun’s rotation axis towards the east.</dd>
+      <dt>Solar P angle, X, Y</dt><dd>The P angle is how far the north of the Sun’s rotation axis is tilted east of celestial north. X, Y are the angles from the centre of the Sun with solar north up (″, X positive to the west, Y to the north), the same coordinates as in images of Hinode, SDO and others (helioprojective).</dd>
       <dt>γ (gamma)</dt><dd>Least distance of the axis of the Moon’s shadow from the centre of the Earth, in Earth equatorial radii. The smaller it is, the nearer the shadow passes to the middle of the Earth.</dd>
       <dt>Saros number</dt><dd>Number of the series of similar eclipses repeating about every 18 years.</dd>
       <dt>ΔT</dt><dd>Difference TT − UT due to the irregular rotation of the Earth. It is more uncertain the further in the future or past, and mainly affects where (at what longitude) an eclipse is seen.</dd>
@@ -745,6 +835,7 @@ const HTML_BLOCKS = {
     <h3>Accuracy</h3>
     <ul>
       <li>Positions come from the JPL DE440 (DE440s) ephemeris, and ΔT from IERS observations. Contact times are found iterating the light time and converged to better than 0.1 ms.</li>
+      <li>The default solar radius is that of the limb seen in images (959.96″ at 1 AU = 696,231 km; it reproduces to about 1 s the contacts of the 2006 Mercury transit taken by Hinode SOT). The IAU 2015 nominal value (695,700 km) is the radius of the photosphere (τ=1); with it the contact times of transits change by about 10 s. Venus, having an atmosphere, appears as a disk of 6131 km in visible light and of 6202 km in soft X-rays (Reale et al. 2015).</li>
       <li>The relief of the lunar limb (mountains and valleys) is not modelled; the two NASA lunar radii approximate its average effect. Real contact times can differ by ±1–2 s because of the limb profile.</li>
       <li>For satellites, the accuracy is that of the orbit. A TLE gives errors of a few km to hundreds of km as days pass from its epoch.</li>
     </ul>`,
@@ -758,12 +849,15 @@ const HTML_BLOCKS = {
     <h3>Enregistrer et rouvrir des résultats</h3>
     <p>« Enregistrer les résultats » sauvegarde la liste et les conditions de calcul dans un fichier JSON. Choisissez ce fichier avec « Ouvrir des résultats enregistrés » en haut : la liste s’affiche telle qu’elle a été enregistrée et les paramètres de gauche sont restaurés.
       Un clic sur une ligne recalcule les détails de l’événement (contacts, animation, graphiques, carte) avec les conditions enregistrées. Vous pouvez aussi ouvrir un événement enregistré avec « Télécharger le JSON » dans l’onglet Données des détails, ainsi que la sortie de <code>cli.py --format json</code>.</p>
+    <h3>Comparer avec des images</h3>
+    <p>Dans l’onglet « Vue (animation) » des détails, choisissez « Nord solaire en haut » avec les graduations d’angle et un champ pour voir le phénomène dans les coordonnées des images de Hinode, de SDO et d’autres télescopes solaires (X, Y depuis le centre du Soleil, en ″). « Heure (UTC) » donne les valeurs à l’heure d’une image, et « Comparer avec des images » prend l’heure et la position mesurée de chaque image et liste les écarts au calcul (O−C). « Variation des heures de contact avec les rayons », dans la vue d’ensemble, montre de combien les contacts se déplacent quand on change le rayon du Soleil ou de l’astre.</p>
     <h3>Termes</h3>
     <dl>
       <dt>Magnitude</dt><dd>Fraction du <b>diamètre</b> du Soleil masquée par la Lune ; 1 ou plus lors d’une éclipse totale (dans la liste « Terre entière », comme à la NASA, rapport des diamètres apparents de la Lune et du Soleil pour les éclipses centrales).</dd>
       <dt>Obscuration</dt><dd>Fraction de la <b>surface</b> du Soleil masquée ; proche de l’assombrissement ressenti.</dd>
       <dt>1er à 4e contact</dt><dd>Instants où le bord de la Lune (ou de la planète) touche le bord du Soleil : 1er = début de l’éclipse, 2e = début de la totalité ou de l’annularité (ou contact intérieur), 3e = sa fin, 4e = fin de l’éclipse.</dd>
-      <dt>Angle de position P / angle zénithal V</dt><dd>Direction du point de contact vue du centre du Soleil : P est compté depuis le nord céleste vers l’est, V depuis la direction du zénith.</dd>
+      <dt>Angle de position / angle zénithal V</dt><dd>Direction du point de contact vue du centre du Soleil : l’angle de position est compté depuis le nord céleste vers l’est, V depuis la direction du zénith. L’angle de position « depuis le nord solaire » est compté depuis le nord de l’axe de rotation du Soleil vers l’est.</dd>
+      <dt>Angle P du Soleil, X, Y</dt><dd>L’angle P est l’inclinaison vers l’est du nord de l’axe de rotation du Soleil par rapport au nord céleste. X, Y sont les angles depuis le centre du Soleil, nord solaire en haut (″, X positif vers l’ouest, Y vers le nord), les coordonnées des images de Hinode, de SDO, etc. (héliographiques projetées, « helioprojective »).</dd>
       <dt>γ (gamma)</dt><dd>Distance minimale de l’axe de l’ombre de la Lune au centre de la Terre, en rayons équatoriaux terrestres. Plus elle est petite, plus l’ombre passe près du milieu de la Terre.</dd>
       <dt>Numéro de saros</dt><dd>Numéro de la série d’éclipses semblables qui se répètent environ tous les 18 ans.</dd>
       <dt>ΔT</dt><dd>Différence TT − UT due à l’irrégularité de la rotation terrestre. Elle est d’autant plus incertaine qu’on s’éloigne dans le futur ou le passé et influe surtout sur le lieu (la longitude) où l’éclipse est visible.</dd>
@@ -772,6 +866,7 @@ const HTML_BLOCKS = {
     <h3>Précision</h3>
     <ul>
       <li>Positions tirées de l’éphéméride JPL DE440 (DE440s), ΔT issu des observations de l’IERS. Les heures de contact sont obtenues en itérant le temps de lumière et convergées à mieux que 0,1 ms.</li>
+      <li>Le rayon solaire par défaut est celui du bord visible sur les images (959,96″ à 1 UA = 696 231 km ; il reproduit à 1 s près les contacts du transit de Mercure de 2006 filmé par Hinode SOT). La valeur nominale UAI 2015 (695 700 km) est le rayon de la photosphère (τ=1) ; avec elle, les heures de contact des transits changent d’environ 10 s. Vénus, qui a une atmosphère, apparaît comme un disque de 6131 km en lumière visible et de 6202 km en rayons X mous (Reale et al. 2015).</li>
       <li>Le relief du bord lunaire (montagnes et vallées) n’est pas modélisé ; les deux rayons lunaires de la NASA en approchent l’effet moyen. Les heures réelles peuvent différer de ±1 à 2 s à cause du profil du bord.</li>
       <li>Pour les satellites, la précision est celle de l’orbite. Un TLE produit des erreurs de quelques km à des centaines de km à mesure que l’on s’éloigne de son époque.</li>
     </ul>`,
@@ -785,12 +880,15 @@ const HTML_BLOCKS = {
     <h3>Сохранение и повторный просмотр</h3>
     <p>«Сохранить результаты» записывает список и условия расчёта в файл JSON. Выберите этот файл кнопкой «Открыть сохранённые результаты» вверху — список появится в сохранённом виде, а параметры слева вернутся к сохранённым условиям.
       При щелчке по строке подробности события (контакты, анимация, графики, карта) пересчитываются по сохранённым условиям. Можно также открыть отдельное событие, сохранённое через «Скачать JSON» на вкладке «Данные», и вывод <code>cli.py --format json</code>.</p>
+    <h3>Сравнение со снимками</h3>
+    <p>На вкладке «Вид (анимация)» подробностей выберите «Север Солнца вверху», шкалу углов и поле зрения, чтобы увидеть явление в координатах снимков «Хиноде», SDO и других солнечных телескопов (X, Y от центра Солнца, в ″). «Время (UTC)» даёт значения на момент снимка, а «Сравнить со снимками» принимает время и измеренное положение для каждого снимка и выдаёт таблицу отклонений от расчёта (O−C). «Изменение моментов контактов с радиусами» в обзоре показывает, насколько сдвигаются контакты при изменении радиуса Солнца или тела.</p>
     <h3>Термины</h3>
     <dl>
       <dt>Фаза</dt><dd>Доля <b>диаметра</b> Солнца, закрытая Луной; при полном затмении 1 и более (в списке для всей Земли, как у NASA, для центральных затмений — отношение видимых диаметров Луны и Солнца).</dd>
       <dt>Доля закрытой площади</dt><dd>Доля <b>площади</b> Солнца, закрытая Луной; близка к ощущаемому потемнению.</dd>
       <dt>1-й – 4-й контакты</dt><dd>Моменты касания края Луны (или планеты) с краем Солнца: 1-й — начало затмения, 2-й — начало полной или кольцеобразной фазы (или внутренний контакт), 3-й — её конец, 4-й — конец затмения.</dd>
-      <dt>Позиционный угол P / зенитный угол V</dt><dd>Направление на точку контакта из центра Солнца: P отсчитывается от северного полюса мира к востоку, V — от направления на зенит.</dd>
+      <dt>Позиционный угол / зенитный угол V</dt><dd>Направление на точку контакта из центра Солнца: позиционный угол отсчитывается от северного полюса мира к востоку, V — от направления на зенит. Позиционный угол «от севера Солнца» отсчитывается к востоку от северного конца оси вращения Солнца.</dd>
+      <dt>Угол P Солнца, X, Y</dt><dd>Угол P — наклон северного конца оси вращения Солнца к востоку от направления на северный полюс мира. X, Y — углы от центра Солнца при севере Солнца вверху (″, X положителен к западу, Y — к северу), те же координаты, что на снимках «Хиноде», SDO и др. (гелиопроективные).</dd>
       <dt>γ (гамма)</dt><dd>Наименьшее расстояние оси лунной тени от центра Земли в экваториальных радиусах Земли. Чем оно меньше, тем ближе к середине Земли проходит тень.</dd>
       <dt>Номер сароса</dt><dd>Номер серии похожих затмений, повторяющихся примерно через 18 лет.</dd>
       <dt>ΔT</dt><dd>Разность TT − UT, вызванная неравномерностью вращения Земли. Чем дальше в будущее или прошлое, тем она менее определённа; в основном влияет на то, где (на какой долготе) видно затмение.</dd>
@@ -799,6 +897,7 @@ const HTML_BLOCKS = {
     <h3>О точности</h3>
     <ul>
       <li>Положения берутся из эфемерид JPL DE440 (DE440s), ΔT — по наблюдениям IERS. Моменты контактов находятся с итерацией времени распространения света и уточняются лучше чем до 0,1 мс.</li>
+      <li>По умолчанию радиус Солнца — радиус края, видимого на снимках (959,96″ на 1 а. е. = 696 231 км; он воспроизводит с точностью около 1 с контакты прохождения Меркурия 2006 г., снятые SOT «Хиноде»). Номинал МАС 2015 (695 700 км) — радиус фотосферы (τ=1); с ним моменты контактов прохождений меняются примерно на 10 с. Венера из-за атмосферы выглядит диском 6131 км в видимом свете и 6202 км в мягком рентгене (Reale et al. 2015).</li>
       <li>Рельеф края Луны (горы и долины) не учитывается; два радиуса Луны по методу NASA приближают его средний эффект. Реальные моменты контактов могут отличаться на ±1–2 с из-за профиля края.</li>
       <li>Для спутников точность определяется точностью орбиты. TLE с удалением от эпохи даёт ошибки от нескольких до сотен километров.</li>
     </ul>`,
@@ -812,12 +911,15 @@ const HTML_BLOCKS = {
     <h3>Guardar y volver a abrir resultados</h3>
     <p>«Guardar resultados» guarda la lista y las condiciones de cálculo en un archivo JSON. Elija ese archivo con «Abrir resultados guardados» arriba: la lista se muestra tal como se guardó y los ajustes de la izquierda vuelven a las condiciones guardadas.
       Al hacer clic en una fila se recalculan los detalles del evento (contactos, animación, gráficos, mapa) con las condiciones guardadas. También puede abrir un evento guardado con «Descargar JSON» en la pestaña Datos de los detalles, y la salida de <code>cli.py --format json</code>.</p>
+    <h3>Comparar con imágenes</h3>
+    <p>En la pestaña «Vista (animación)» de los detalles, elija «Norte solar arriba» con las marcas de ángulo y un campo de visión para ver el fenómeno en las coordenadas de las imágenes de Hinode, SDO y otros telescopios solares (X, Y desde el centro del Sol, en ″). «Hora (UTC)» da los valores a la hora de una imagen, y «Comparar con imágenes» toma la hora y la posición medida de cada imagen y muestra las diferencias con el cálculo (O−C). «Cambio de las horas de contacto con los radios», en el resumen, indica cuánto se mueven los contactos al cambiar el radio del Sol o del cuerpo.</p>
     <h3>Términos</h3>
     <dl>
       <dt>Magnitud</dt><dd>Fracción del <b>diámetro</b> del Sol cubierta por la Luna; 1 o más en un eclipse total (en la lista de toda la Tierra, como en la NASA, la razón de los diámetros aparentes de la Luna y el Sol en los eclipses centrales).</dd>
       <dt>Oscurecimiento</dt><dd>Fracción del <b>área</b> del Sol cubierta; cercana a la oscuridad que se percibe.</dd>
       <dt>1.er a 4.º contacto</dt><dd>Instantes en que el borde de la Luna (o del planeta) toca el borde del Sol: 1.º = empieza el eclipse, 2.º = empieza la totalidad o la anularidad (o contacto interno), 3.º = termina, 4.º = termina el eclipse.</dd>
-      <dt>Ángulo de posición P / ángulo cenital V</dt><dd>Dirección del punto de contacto vista desde el centro del Sol: P se mide desde el norte celeste hacia el este, V desde la dirección del cenit.</dd>
+      <dt>Ángulo de posición / ángulo cenital V</dt><dd>Dirección del punto de contacto vista desde el centro del Sol: el ángulo de posición se mide desde el norte celeste hacia el este, V desde la dirección del cenit. El ángulo de posición «desde el norte solar» se mide hacia el este desde el norte del eje de rotación del Sol.</dd>
+      <dt>Ángulo P del Sol, X, Y</dt><dd>El ángulo P es la inclinación hacia el este del norte del eje de rotación del Sol respecto del norte celeste. X, Y son los ángulos desde el centro del Sol con el norte solar arriba (″, X positivo hacia el oeste, Y hacia el norte), las mismas coordenadas que las imágenes de Hinode, SDO y otros (helioproyectivas).</dd>
       <dt>γ (gamma)</dt><dd>Distancia mínima del eje de la sombra lunar al centro de la Tierra, en radios ecuatoriales terrestres. Cuanto menor es, más cerca del centro de la Tierra pasa la sombra.</dd>
       <dt>Número de saros</dt><dd>Número de la serie de eclipses parecidos que se repiten cada unos 18 años.</dd>
       <dt>ΔT</dt><dd>Diferencia TT − UT debida a la rotación irregular de la Tierra. Es más incierta cuanto más lejos en el futuro o el pasado, y afecta sobre todo a dónde (en qué longitud) se ve el eclipse.</dd>
@@ -826,6 +928,7 @@ const HTML_BLOCKS = {
     <h3>Precisión</h3>
     <ul>
       <li>Las posiciones proceden de la efeméride JPL DE440 (DE440s) y ΔT de las observaciones del IERS. Las horas de contacto se obtienen iterando el tiempo de luz y convergen a menos de 0,1 ms.</li>
+      <li>El radio solar por defecto es el del borde que se ve en las imágenes (959,96″ a 1 UA = 696 231 km; reproduce con 1 s los contactos del tránsito de Mercurio de 2006 tomados por Hinode SOT). El valor nominal UAI 2015 (695 700 km) es el radio de la fotosfera (τ=1); con él, las horas de contacto de los tránsitos cambian unos 10 s. Venus, por su atmósfera, se ve como un disco de 6131 km en luz visible y de 6202 km en rayos X blandos (Reale et al. 2015).</li>
       <li>No se modela el relieve del borde lunar (montañas y valles); los dos radios lunares de la NASA aproximan su efecto medio. Las horas reales pueden diferir ±1–2 s por el perfil del borde.</li>
       <li>En los satélites, la precisión es la de la órbita. Un TLE produce errores de unos pocos km a cientos de km a medida que pasan los días desde su época.</li>
     </ul>`,
@@ -839,12 +942,15 @@ const HTML_BLOCKS = {
     <h3>保存与重新查看结果</h3>
     <p>列表中的“保存结果”会将列表和计算条件保存为 JSON 文件。用上方的“打开保存的结果”选择该文件，列表会按保存时的样子显示，左侧设置也会恢复为保存的条件。
       点击列表中的行，会按保存的计算条件重新计算并显示该天象的详细信息（接触时刻、动画、图表、地图）。也可以打开在详细信息“数据”标签页中用“下载 JSON”保存的单个天象，以及 <code>cli.py --format json</code> 的输出。</p>
+    <h3>与观测图像比较</h3>
+    <p>在详细结果的“情况（动画）”选项卡中，将方向设为“太阳北极朝上”，并选择角度刻度和显示范围，即可在与日出（Hinode）、SDO 等太阳望远镜图像相同的坐标（自日面中心的 X、Y，单位 ″）中查看。在“指定时刻（UTC）”中输入图像的时刻可得到该时刻的数值；在“与观测图像比较”中输入每幅图像的时刻和测得的位置，可列出与计算的差（O−C）。概要中的“半径对接触时刻的影响”显示改变太阳或天体半径时接触时刻的变化量。</p>
     <h3>术语</h3>
     <dl>
       <dt>食分</dt><dd>太阳<b>直径</b>被月球遮住的比例。日全食时大于等于 1（全球列表中与 NASA 相同，中心食为月球与太阳视直径之比）。</dd>
       <dt>食面积比</dt><dd>太阳<b>面积</b>被遮住的比例，接近体感上的昏暗程度。</dd>
       <dt>第一至第四接触</dt><dd>月球（或行星）边缘与太阳边缘相切的时刻。第一接触＝初亏，第二接触＝全食·环食（或内切）开始，第三接触＝其结束，第四接触＝复圆。</dd>
-      <dt>位置角 P / 天顶角 V</dt><dd>从日面中心看接触点的方向。P 从天北极方向向东量，V 从天顶方向量。</dd>
+      <dt>位置角 / 天顶角 V</dt><dd>从日面中心看接触点的方向。位置角从天北极方向向东量，V 从天顶方向量。“自太阳北极”的位置角从太阳自转轴的北极向东量。</dd>
+      <dt>太阳 P 角、X、Y</dt><dd>P 角是太阳自转轴北极相对天北方向向东倾斜的角度。X、Y 是太阳北极朝上时自日面中心的角度（″，X 向西为正，Y 向北为正），与日出、SDO 等图像的坐标（日面投影坐标，helioprojective）相同。</dd>
       <dt>γ（伽马）</dt><dd>月影轴与地心的最近距离（以地球赤道半径为单位）。越小，影子越靠近地球中央通过。</dd>
       <dt>沙罗序列号</dt><dd>约 18 年周期重复出现的相似日食序列的编号。</dd>
       <dt>ΔT</dt><dd>反映地球自转不规则性的 TT 与 UT 之差。越远的未来或过去越不确定，主要影响食的可见地点（经度）。</dd>
@@ -853,6 +959,7 @@ const HTML_BLOCKS = {
     <h3>关于精度</h3>
     <ul>
       <li>天体位置采用 JPL DE440（DE440s）历表，时间系统采用基于 IERS 观测值的 ΔT。接触时刻经光行时迭代计算，收敛到 0.1 ms 以下。</li>
+      <li>太阳半径默认采用图像中可见的日面边缘（1 AU 处 959.96″ = 696,231 km；可在约 1 秒内再现日出 SOT 拍摄的 2006 年水星凌日的接触）。IAU 2015 标称值（695,700 km）是光球（τ=1）的半径，使用它时凌日的接触时刻约变化 10 秒。金星有大气，在可见光中呈 6131 km、在软 X 射线中呈 6202 km 的圆面（Reale 等 2015）。</li>
       <li>未考虑月面边缘的起伏（山谷）。用 NASA 方式的两种月球半径近似其平均效应。实际接触时刻可能因月缘地形相差 ±1～2 秒。</li>
       <li>人造卫星的精度取决于轨道信息的精度。TLE 离历元的天数越多，误差可达数千米到数百千米。</li>
     </ul>`,
@@ -866,12 +973,15 @@ const HTML_BLOCKS = {
     <h3>परिणाम सहेजना और फिर से खोलना</h3>
     <p>“परिणाम सहेजें” सूची और गणना की शर्तों को एक JSON फ़ाइल में सहेजता है। ऊपर “सहेजे गए परिणाम खोलें” से वह फ़ाइल चुनें — सूची वैसी ही दिखेगी जैसी सहेजी गई थी और बाईं ओर की सेटिंग भी लौट आएँगी।
       किसी पंक्ति पर क्लिक करने से सहेजी गई शर्तों से उस घटना का विवरण (स्पर्श, एनिमेशन, ग्राफ़, मानचित्र) फिर से गणना होकर दिखता है। विवरण के “डेटा” टैब में “JSON डाउनलोड करें” से सहेजी गई एक घटना और <code>cli.py --format json</code> का आउटपुट भी खोला जा सकता है।</p>
+    <h3>प्रेक्षित चित्रों से तुलना</h3>
+    <p>विवरण के “दृश्य (एनिमेशन)” टैब में दिशा “सौर उत्तर ऊपर” चुनें और कोण के निशान तथा दृश्य क्षेत्र चुनें, तो घटना Hinode, SDO आदि सौर दूरबीनों के चित्रों वाले निर्देशांकों (सूर्य के केंद्र से X, Y, ″ में) में दिखती है। “समय (UTC)” में चित्र का समय डालने पर उस समय के मान मिलते हैं, और “प्रेक्षित चित्रों से तुलना” में हर चित्र का समय और मापी गई स्थिति डालने पर गणना से अंतर (O−C) की तालिका बनती है। सारांश में “त्रिज्या से स्पर्श समयों में बदलाव” दिखाता है कि सूर्य या पिंड की त्रिज्या बदलने पर स्पर्श समय कितने खिसकते हैं।</p>
     <h3>शब्दावली</h3>
     <dl>
       <dt>परिमाण</dt><dd>सूर्य के <b>व्यास</b> का वह भाग जो चंद्रमा से ढका है; पूर्ण ग्रहण में 1 या अधिक (पूरी पृथ्वी की सूची में, NASA की तरह, केंद्रीय ग्रहणों के लिए चंद्रमा और सूर्य के आभासी व्यासों का अनुपात)।</dd>
       <dt>आच्छादन</dt><dd>सूर्य के <b>क्षेत्रफल</b> का ढका भाग; महसूस होने वाले अँधेरे के करीब।</dd>
       <dt>प्रथम से चतुर्थ स्पर्श</dt><dd>वे क्षण जब चंद्रमा (या ग्रह) का किनारा सूर्य के किनारे को छूता है: प्रथम = ग्रहण आरंभ, द्वितीय = पूर्णता या वलय (या आंतरिक स्पर्श) आरंभ, तृतीय = उसका अंत, चतुर्थ = ग्रहण समाप्त।</dd>
-      <dt>स्थिति कोण P / शिरोबिंदु कोण V</dt><dd>सूर्य के केंद्र से स्पर्श बिंदु की दिशा: P खगोलीय उत्तर से पूर्व की ओर, V शिरोबिंदु की दिशा से मापा जाता है।</dd>
+      <dt>स्थिति कोण / शिरोबिंदु कोण V</dt><dd>सूर्य के केंद्र से स्पर्श बिंदु की दिशा: स्थिति कोण खगोलीय उत्तर से पूर्व की ओर, V शिरोबिंदु की दिशा से मापा जाता है। “सौर उत्तर से” स्थिति कोण सूर्य के घूर्णन अक्ष के उत्तर से पूर्व की ओर मापा जाता है।</dd>
+      <dt>सूर्य का P कोण, X, Y</dt><dd>P कोण वह कोण है जितना सूर्य के घूर्णन अक्ष का उत्तर खगोलीय उत्तर से पूर्व की ओर झुका है। X, Y सौर उत्तर ऊपर रखकर सूर्य के केंद्र से कोण हैं (″, X पश्चिम की ओर धनात्मक, Y उत्तर की ओर), वही निर्देशांक जो Hinode, SDO आदि के चित्रों में होते हैं (helioprojective)।</dd>
       <dt>γ (गामा)</dt><dd>चंद्रमा की छाया के अक्ष की पृथ्वी के केंद्र से न्यूनतम दूरी (पृथ्वी की विषुवतीय त्रिज्या की इकाई में)। यह जितनी कम हो, छाया पृथ्वी के बीच के उतने निकट से गुज़रती है।</dd>
       <dt>सारोस संख्या</dt><dd>लगभग हर 18 वर्ष में दोहराए जाने वाले समान ग्रहणों की श्रृंखला की संख्या।</dd>
       <dt>ΔT</dt><dd>पृथ्वी के अनियमित घूर्णन के कारण TT − UT का अंतर। भविष्य या अतीत में जितना दूर, उतना अनिश्चित; मुख्यतः यह प्रभावित करता है कि ग्रहण कहाँ (किस देशांतर पर) दिखेगा।</dd>
@@ -880,6 +990,7 @@ const HTML_BLOCKS = {
     <h3>सटीकता</h3>
     <ul>
       <li>स्थितियाँ JPL DE440 (DE440s) एफ़ेमेरिस से और ΔT IERS प्रेक्षणों से। स्पर्श समय प्रकाश-समय की पुनरावृत्ति से निकाले जाते हैं और 0.1 ms से बेहतर तक अभिसरित होते हैं।</li>
+      <li>डिफ़ॉल्ट सौर त्रिज्या चित्रों में दिखने वाले किनारे की है (1 AU पर 959.96″ = 696,231 किमी; यह Hinode SOT द्वारा लिए गए 2006 के बुध पारगमन के स्पर्शों को लगभग 1 सेकंड तक दोहराती है)। IAU 2015 नाममात्र मान (695,700 किमी) प्रकाशमंडल (τ=1) की त्रिज्या है; इससे पारगमनों के स्पर्श समय लगभग 10 सेकंड बदलते हैं। शुक्र अपने वायुमंडल के कारण दृश्य प्रकाश में 6131 किमी और मृदु एक्स-किरणों में 6202 किमी की चकती जैसा दिखता है (Reale आदि 2015)।</li>
       <li>चंद्रमा के किनारे की ऊबड़-खाबड़ सतह (पहाड़ और घाटियाँ) शामिल नहीं है; NASA की दो चंद्र त्रिज्याएँ उसके औसत प्रभाव का अनुमान देती हैं। किनारे की बनावट के कारण वास्तविक स्पर्श समय ±1–2 से. अलग हो सकते हैं।</li>
       <li>उपग्रहों के लिए सटीकता कक्षा की सटीकता पर निर्भर है। युग से दिन बीतने के साथ TLE में कुछ किमी से सैकड़ों किमी तक की त्रुटि आ जाती है।</li>
     </ul>`,

@@ -44,11 +44,12 @@ python cli.py --help
 | 打ち上げ前で、軌道上の位置（位相）が決まっていない | 上の軌道要素に `--sweep 10`（平均近点角を 10° 刻みで一括計算） |
 | TLE の元期から何週間も先の現象 | `--tle` に `--sweep 10`（TLE の平均近点角を 10° 刻みで置き換えて一括計算） |
 | 静止衛星の経度 | `--geo-lon 140.7` |
-| 探査機・宇宙望遠鏡（JWST、SOHO など） | `--horizons -170`（JPL Horizons の ID。地球近傍の衛星は `--horizons-step 1`〜`2`） |
+| 探査機・宇宙望遠鏡（JWST、SOHO など） | `--horizons -170`（JPL Horizons の ID。位置の刻み `--horizons-step`（既定 60 分）は、地球の近くを回る衛星・月を回る探査機・地球や月の近くを通る探査機では位置の補間の誤差が 10 m 以下になるまで自動で細かくし、`warnings` で知らせます） |
 | 科学衛星が過去に見た現象（ひので など） | `--sscweb hinode`（ID は `--list-sscweb` で確認） |
 | 地上の地点（緯度・経度・標高） | `--lat --lon --elev`（地名しかなければ AI が緯度経度を調べ、出典とともに人に確認） |
 | よく使う都市（東京、ルクソールなど） | `--city 東京`（7 言語のどの名前でも可。`--city Tokyo` など。一覧は `--list-cities`） |
 | 「世界のどこで見られるか」 | `--global` |
+| 観測画像（ひので・SDO など）の撮影時刻・画像で測った位置 | 観測者に `--phenomena` で現象を 1 つと `--at 時刻` または `--at-file ファイル`（[観測画像と比べる](#観測画像と比べる--at)） |
 
 期間は `--start` `--end`（UTC の日付）、現象は `--phenomena moon,mercury,venus`（既定はすべて。`moon` が日食）で指定します。
 
@@ -68,6 +69,23 @@ python cli.py --help
 | 人工衛星の期間 | 20 年以内（`--sweep` は 1 年以内） |
 | TLE | 元期から離れるほど誤差が大きくなります（7 日超・30 日超で `warnings` に注意が入ります）。現象の数日前の TLE を使うと秒単位の精度になります。何週間も先なら `--sweep` で位置による幅を確かめます |
 | JPL Horizons・SSCWeb | 各サービスが軌道データを提供している期間のみ。範囲外は `warnings` に入るか、エラーになります |
+
+### 半径の選び方（`--sun-radius`、`--planet-radius`）
+
+接触の時刻は太陽と月・惑星の半径で決まります（太陽の視半径が 1″ 違うと、接触は水星の太陽面通過で 10〜12 秒、金星で 13〜19 秒、地上の日食で 2〜3 秒、低軌道の衛星から見た日食で 0.2〜0.3 秒ずれます。`--detail` の `dt_drs`）。既定は **観測される縁** です。
+
+| 引数 | 値 |
+|---|---|
+| `--sun-radius observed`（既定） | 1 AU で 959.96″ = 696,231 km。目に見える太陽の縁（周辺減光の変曲点）。ひので SOT が撮影した 2006 年の水星の太陽面通過の接触に最もよく合い（4 つの接触とも 1.3 秒以内）、ほかの観測（SDO/HMI 2012 年の金星の太陽面通過 959.90″、日食の光度変化 959.99″、SOHO/MDI 960.12″、PICARD/SODISM 959.86″）とも一致します |
+| `--sun-radius nasa` | 959.63″ = 695,992 km（NASA・Espenak の日食予報の値。NASA の公表値と比べるとき） |
+| `--sun-radius iau2015` | 695,700 km = 959.23″（IAU 2015 B3 の公称値。光学的深さ 1 の光球の半径で、見える縁より内側。太陽面通過の接触は水星で 8〜10 秒、金星で約 13 秒ずれます） |
+| `--sun-radius 696000`、`--sun-radius 959.96as` | km の数値、または 1 AU での角半径（″。`as`・`″`・`"` を付ける）。単位のない 2,000 未満の数は角度の書き忘れとしてエラーにします |
+| `--planet-radius observed`（既定） | 太陽の前に見える大きさ: 水星 2,439.4 km（大気がなく固体表面と同じ）、金星 6,131 km（雲頂と靄。Reale et al. 2015） |
+| `--planet-radius iau` | IAU の固体表面: 水星 2,439.4 km、金星 6,051.8 km（金星の接触は既定より約 7 秒ずれます） |
+| `--planet-radius nasa` | NASA の値: 1 AU で水星 3.36″、金星 8.41″（雲を含む） |
+| `--planet-radius xray` | 軟X線（ひので XRT など）: 金星 6,202 km（上層大気）。水星は 2,439.4 km |
+
+人工衛星から X 線・極紫外線で見るときは、地球の大気が太陽を隠す高さも `--atm` で指定します（目安: 可視光 0 km、軟X線 約 140 km、極紫外線 約 250 km）。表の見出しには使った半径が 1 行で出ます（例: `太陽半径 696,231 km（観測される縁, 1 AU で 959.96″）`）。JSON では `params` と `settings` の `sun_radius_km`・`mercury_radius_km`・`venus_radius_km`（km）です。出力の `request` の `settings` には、指定しなかった半径も既定の値で入るので、既定が変わっても `--request` で同じ計算を再現できます。既定を見える縁に変える前（2026 年 10 月より前）の `request` には半径がなく、当時の既定は太陽 695,700 km・金星 6,051.8 km（固体表面）だったので、その結果を再現するには `settings` に `"sun_radius_km": 695700, "venus_radius_km": 6051.8` を加えます（加えないと、太陽面通過の接触は約 9 秒、日食の接触は数秒変わります）。
 
 ## JSON での指定（`--request`）
 
@@ -102,7 +120,8 @@ python cli.py --request request.json --format json
 | `global` | （なし） |
 
 `step_deg`（5〜90）を加えると、`kepler` と `tle` で平均近点角を変えた一括計算になります。
-`settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`。省略すると画面の既定値です。
+`times`（時刻の文字列の配列）を加えると、現象を探さずにその時刻の位置を計算します（`--at` と同じ。`measured`・`exposure_s` も使えます。`start`・`end` は省略でき、`phenomena` は 1 つ）。`--request` に `--at`・`--at-file`・`--exposure` を加えると、JSON の時刻の代わりにそれを使います。
+`settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`。省略すると画面の既定値です（半径は上の「半径の選び方」の既定。以前の `request` の半径は同じ節の注意を参照）。
 
 ## 出力（`--format json`）
 
@@ -132,7 +151,7 @@ python cli.py --request request.json --format json
 | `body` | `moon`（日食）、`mercury`、`venus` |
 | `type` / `type_ja` | `type_ja` は常に日本語。`partial` 部分日食、`total` 皆既日食、`annular` 金環日食、`hybrid` 金環皆既日食、`transit` 太陽面通過、`transit_grazing` 外接のみの太陽面通過 |
 | `c1`、`max`、`c4` | 第1接触（欠け始め）、最大、第4接触（欠け終わり） |
-| `magnitude` | 食分（太陽の直径のうち隠された割合。皆既日食では 1 以上） |
+| `magnitude` | 食分（太陽の直径のうち隠された割合。皆既日食では 1 以上）。太陽面通過では意味のある量ではありません（小さな惑星の円と太陽の円から同じ式で計算しているだけで、観測とは比べられません）。太陽面通過の位置は `min_sep_arcsec` と、`--detail` の `hpc_x`・`hpc_y`・`limb_dist` で見ます |
 | `obscuration` | 食面積率（太陽の面積のうち隠された割合、0〜1） |
 | `ratio` | 月（惑星）と太陽の視直径の比 |
 | `min_sep_arcsec` | 最大時の中心間角距離（″）。太陽面通過の指標 |
@@ -150,16 +169,28 @@ python cli.py --request request.json --format json
 | `contacts` | `--detail` のときのみ。下の表 |
 | `internal` | `--detail` のときのみ。皆既・金環（内接）の時間帯 `[[第2接触, 第3接触], …]` |
 
-`contacts`（`--detail`）は接触ごとの値です。`label` は `C1`、`C2`、`MAX`、`C3`、`C4`（衛星では `C2`/`C3` が複数回あることがあります）。
+`contacts`（`--detail`）は接触ごとの値です。`label` は `C1`、`C2`、`MAX`、`C3`、`C4`（衛星では `C2`/`C3` が複数回あることがあります）。位置はどれも観測者から見た太陽の中心に対する月・惑星の中心の位置で、向きは 2 通りあります。
+
+- **天の北が上**（`xi`、`eta`、`pa`）: その日の真の赤道の北が上。`xi` は東（空を見上げて左）が +、`eta` は北が +。
+- **太陽の北が上**（`hpc_x`、`hpc_y`、`pa_solar`）: 太陽の自転軸の北が上。`hpc_x` は太陽の西（画像の右）が +、`hpc_y` は太陽の北が +。ひので・SDO などの太陽画像の座標（helioprojective、″）と同じ向きです。`hpc_x = −(xi cos P − eta sin P)`、`hpc_y = xi sin P + eta cos P`（P は `p_angle`）。
 
 | 項目 | 内容 |
 |---|---|
-| `time`、`visible` | 時刻、その時刻に見えるか |
+| `time`、`jd_tt`、`visible` | 時刻、TT のユリウス日、その時刻に見えるか |
 | `magnitude`、`obscuration`、`sep_arcsec` | 食分、食面積率、中心間角距離（″） |
-| `pa` | 位置角 P（太陽の中心から見た月・惑星の方向。天の北極から東回り、°） |
+| `xi`、`eta` | 天の北が上の位置（″。上の説明） |
+| `pa` | 位置角 P（太陽の中心から見た月・惑星の方向。天の北から東回り、°） |
+| `p_angle` | 太陽の P 角（太陽の自転軸の北の位置角。天の北から東回り、°。IAU 2015 の自転軸 α₀ = 286.13°、δ₀ = 63.87°） |
+| `hpc_x`、`hpc_y` | 太陽の北が上の位置（″。上の説明） |
+| `pa_solar` | 太陽の北から東回りの位置角（°。`pa − p_angle`） |
+| `limb_dist` | 太陽の縁から月・惑星の中心までの角距離（″。`sep_arcsec − rho_s`。負なら中心が太陽面の内側。太陽面通過の外接で +`rho_b`、内接で −`rho_b`） |
+| `limb_depth` | 縁への入り込み（`(rho_s − sep_arcsec) / rho_b`。太陽面通過では外接で −1、中心が縁の上で 0、内接で +1。金環日食の内接でもほぼ +1、皆既日食の内接では (2·rho_s − rho_b) / rho_b） |
+| `dt_drs`、`dt_drb` | 太陽、月（惑星）の視半径が 1″ 大きいとき、その接触の時刻が変わる秒数（秒/″。`MAX` と期間の端で切れた接触は `null`）。第1・第4接触ではどちらも `1/f′`、太陽面通過・金環の第2・第3接触では `dt_drs = 1/f′`、`dt_drb = −1/f′`、皆既の第2・第3接触では符号が逆（`f′` は中心間と半径の和・差の変化率、″/秒）。例: 太陽面通過で `dt_drs = −11.9` なら、太陽が 0.1″ 大きいと第1接触は 1.2 秒早い。接触をかすめる現象では大きな値になります |
 | `rho_s`、`rho_b` | 太陽、月（惑星）の視半径（″） |
 | `sun_alt`、`sun_az`、`v_angle` | 地上: 太陽高度・方位（°）、天頂角 V（天頂方向から測った位置角、°） |
 | `sat_lat`、`sat_lon`、`sat_alt_km`、`earth_sep_deg`、`earth_radius_deg`、`dist_earth_km` | 衛星: 衛星直下点、衛星から見た太陽と地球中心の離角（°）、地球の視半径（°）、地心距離（km） |
+
+表（`--format table --detail`）では、各現象の接触の時刻・X・Y（太陽の北が上）・縁からの距離（太陽面通過では食分の代わり）・太陽半径 +1″ あたりの時刻の変化（`dt_drs`）が並び、人工衛星では見えている時間帯（周回ごとの「夜」の合間）も出ます。`--format csv --detail` は接触ごとに 1 行で、列は `event_max_utc`（現象の最大の時刻）、`label`、`time_utc`、`hpc_x`、`hpc_y`、`pa`、`pa_solar`、`p_angle`、`sep_arcsec`、`limb_dist`、`limb_depth`、`magnitude`、`dt_drs`、`dt_drb`、`visible`（1 = 見える、0 = 見えない）です。
 
 ### `events` の項目（地球全体 `--global`）
 
@@ -189,11 +220,56 @@ python cli.py --request request.json --format json
 | `time_first`、`time_last` | 最大の時刻の範囲 |
 | `rows` | 位相ごとの結果（`m_deg`、`count`、`best`＝最も深い現象、`events`） |
 
+## 観測画像と比べる（`--at`）
+
+ひので・SDO などの画像には撮影時刻（ミリ秒まで）があり、座標は太陽の北が上の太陽中心からの角距離（″）です。`--at` は、現象を探さずに、指定した時刻の月・惑星の位置を同じ向きで計算します（`--detail` の接触と同じ計算）。観測者と `--phenomena` の現象 1 つを指定します（`--global` は使えません）。
+
+```bash
+python cli.py --sscweb hinode --phenomena mercury --start 2006-11-08 --end 2006-11-09 \
+    --at '8-Nov-2006 19:13:37.498 UT' --format json
+```
+
+2006 年 11 月 8 日の水星の太陽面通過で、ひので SOT の G バンド動画のこのコマでは水星は太陽の東の縁に入りかけています。結果の `at[0]` は `hpc_x` −852.1″、`hpc_y` −459.2″、`limb_dist` −1.05″（中心は縁の 1″ 内側）、`limb_depth` +0.21 です。
+
+- **時刻の形**（大文字・小文字は区別せず、常に UTC）: ISO 8601（`2017-08-21T16:53:59.204Z`。`T` の代わりに空白、`Z` なし、`+00:00` も可）、`2017/08/21 16:53:59.204`、SolarSoft・ひのでのクイックルックの形（`21-Aug-2017 16:53:59.204 UT`、`21-AUG-2017 16:53:59.204`）。SDO（JSOC）の `2017.08.21_16:54:36.204_TAI` は TAI として読みます（末尾の `_TAI` がないと、UTC と 37 秒違うため受け付けません）。うるう秒（`2016-12-31T23:59:60.5`）も書けます。1972 年より前は UT です（ほかの入力と同じ）。
+- 複数の時刻は `--at` にカンマ区切りで並べるか、`--at` を繰り返すか、`--at-file` で渡します。2,000 個まで、すべて 3 日以内に収めます。`--start` `--end` は省略でき、指定すると時刻がその期間内にあるかを確かめます。
+- `--at-file ファイル`（`-` で標準入力）は 1 行に `時刻 [X Y]` です。`X Y` は画像で測った位置（太陽の北が上、″）で、書くと計算との差 O−C（`oc_x`、`oc_y`）と、それを動きの向きの時間に直した `oc_dt`（秒。正なら観測が計算より先に進んでいる）が出ます。区切りは空白・タブ・カンマ、`#` から行末までは注釈です。
+
+  ```text
+  # time                       X (″)    Y (″)
+  8-Nov-2006 19:13:37.498 UT   -852.0   -459.0
+  2006-11-08T19:14:00.000Z
+  ```
+
+- `--exposure 秒` は露光時間です。画像の時刻が露光の開始のとき、その半分を足した露光の中央で計算します。
+- `--dry-run` では計算せず、時刻の解釈（`at_times`: `input`、`time`、`jd_tt`）と注意だけを出します。
+- 人工衛星の軌道を NASA SSCWeb・JPL Horizons から取得するときは、その時刻の軌道データが必要です（ない時刻はエラー）。TLE は元期からの日数の注意が `warnings` に入ります。
+- `--sun-radius` と `--planet-radius` は `limb_dist`・`limb_depth` に効きます（位置 `hpc_x`・`hpc_y` は半径によりません）。画像の目盛り（1 ピクセルの角度）や指向の誤差は計算に含まれないので、O−C には画像側の誤差も入ります。
+
+出力（`--format json`）は `at`（時刻ごとの行）、`body`、`observer`、`warnings`、`params`、`ephemeris`、`delta_t_mid_s`、`exposure_s`、`request`（`times` などを含み、`--request` で同じ計算を再現できます）です。`at` の行の項目:
+
+| 項目 | 内容 |
+|---|---|
+| `input`、`time`、`jd_tt` | 入力の文字列、計算した時刻（UTC、ミリ秒。`--exposure` があれば露光の中央）、TT のユリウス日 |
+| `hpc_x`、`hpc_y` | 太陽の北が上の位置（″。`hpc_x` は太陽の西 = 画像の右が +） |
+| `hpc_vx`、`hpc_vy`、`sep_rate` | 位置の動き（″/秒）、中心間角距離の変化（″/秒） |
+| `p_angle`、`pa`、`pa_solar`、`xi`、`eta` | 太陽の P 角、天の北からの位置角、太陽の北からの位置角（°）、天の北が上の位置（″） |
+| `sep_arcsec`、`limb_dist`、`limb_depth`、`rho_s`、`rho_b`、`rho_b_int` | 中心間角距離、縁からの距離、縁への入り込み（上の `contacts` の表）、視半径（″。`rho_b_int` は皆既・金環の内接に使う月の視半径で、惑星では `rho_b` と同じ） |
+| `magnitude`、`obscuration`、`visible`、`vis` | 食分、食面積率、太陽が見えるか（地上は地平線の上、衛星は地球に隠されていない）、その余裕（°。正なら見える。地上は太陽高度 − `min_sun_alt_deg`、衛星は地球の縁（＋`earth_atm_km`）から太陽の中心までの離角） |
+| `sun_alt`、`sun_az`、`parallactic`、`v_angle` | 地上: 太陽高度・方位、天頂の方向の位置角（°。天の北から東回り）、天頂角 V（°） |
+| `sat_lat`、`sat_lon`、`sat_alt_km`、`earth_sep_deg`、`earth_pa`、`earth_radius_deg`、`earth_atm_deg`、`dist_earth_km` | 衛星: 衛星直下点・高度、太陽と地球中心の離角（°）、地球の中心の方向の位置角（°。天の北から東回り）、地球と大気（`earth_atm_km`）の視半径（°）、地心距離（km） |
+| `measured_x`、`measured_y`、`oc_x`、`oc_y`、`oc_dt` | 測った位置を渡した行のみ: 測った位置、O−C（″）、O−C の時間（秒） |
+
+`--format csv` は同じ項目の 1 行 1 時刻（時刻の列は `time_utc`、`visible` は 1/0）、`--format table` は時刻（`--tz` の時刻帯）・X・Y・縁からの距離・深さ・位置角・P 角・見えるか（と O−C）の表です。
+
+画面の Web API では、計算した現象（`/api/search` などの `id`）について `POST /api/event/{id}/at` に `{"times": ["8-Nov-2006 19:13:37.498 UT"], "measured": [[-852.0, -459.0]], "exposure_s": 0.1}`（`measured`・`exposure_s` は省略可。`measured` の要素は `null` でもよい）を送ると、`{"rows": [上の行], "warnings": []}` が返ります。地球全体の日食（`kind: "global"`）には使えません（400）。
+
 ## 検証のしかた
 
 計算を検証したいときは、次の方法があります。
 
-- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと）、`python tests/test_orbit_planning.py`、`python tests/test_hinode.py`（「ひので」の実観測との比較。要インターネット）。どれも全項目が `PASS` になることを確かめます。
+- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと、`--at` が接触と同じ位置を返すこと）、`python tests/test_geometry.py`（P 角・太陽の北が上の位置・接触の時刻の半径への感度・うるう秒など）、`python tests/test_orbit_planning.py`、`python tests/test_hinode.py`（「ひので」の実観測との比較。2006 年の水星の太陽面通過の接触は画像から測った時刻と 1.5 秒以内。要インターネット）。どれも全項目が `PASS` になることを確かめます。
+- **観測画像との比較**: 画像の撮影時刻を `--at` で渡し、画像で測った位置を `--at-file` の `X Y` に書くと、O−C（″）と時間の差 `oc_dt`（秒）が出ます（[観測画像と比べる](#観測画像と比べる--at)）。
 - **地球全体の結果**: `--global` の日食の時刻・γ・食分・中心食の継続時間は、NASA の日食カタログ（Espenak & Meeus）と比べられます（一致の程度は [README](../README.ja.md) の「精度と検証」）。
 - **地上の結果**: 同じ日食を `--global` で計算し、その地点が中心食帯の中にあるか、最大の時刻が `p1`〜`p4` に入っているかなどで整合を確かめられます。
 - **衛星の結果**: 衛星の位置の誤差がそのまま時刻の誤差になります（低軌道で沿軌道 7.5 km ≒ 1 秒）。TLE なら元期が現象に近いもので計算し直して差を見ます。打ち上げ前や TLE の元期から何週間も先なら、`--sweep` で位相による結果の幅を示します。

@@ -286,3 +286,28 @@ dialog::backdrop { background: rgba(15, 20, 32, .45); }
 .sweep-chart .tick { fill: var(--muted); font-size: 11px; }
 .sweep-chart .axis { fill: var(--ink2); font-size: 12px; }
 .saved-note { margin-bottom: 6px; padding: 6px 10px; border-radius: 8px; background: #eef4ff; color: #24427a; font-size: 13px; }
+
+/* values compared with images: options of the tables, the time box, the comparison */
+table.events .sub { display: block; font-size: 11px; color: var(--muted); }
+.check.table-opt { font-size: 12px; margin: 0 0 6px; }
+.note.warn-note { color: var(--warn); }
+details.radius-fx { margin-top: 12px; }
+details.radius-fx summary, details.compare summary { cursor: pointer; font-weight: 700; font-size: 14px; }
+details.radius-fx[open] summary { margin-bottom: 8px; }
+.readout .src { display: inline-block; font-size: 11px; color: var(--muted); }
+.readout .src.exact { color: var(--ok); }
+.readout .hint { margin: 2px 0 4px; }
+.at-time { margin-top: 12px; }
+.at-time .row { gap: 6px; align-items: stretch; }
+.at-time .row input { flex: 1; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.at-time .status { margin-top: 2px; white-space: pre-wrap; }
+details.compare { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+details.compare[open] summary { margin-bottom: 6px; }
+details.compare .hint { margin-bottom: 8px; }
+.cmp-row { align-items: flex-end; }
+.cmp-row .field { margin-bottom: 0; max-width: 260px; }
+details.compare .status { white-space: pre-wrap; }
+table.cmp caption { caption-side: bottom; text-align: left; font-size: 12px; color: var(--muted); padding-top: 6px; }
+table.cmp tbody tr.click { cursor: pointer; }
+table.cmp tbody tr.click:hover td { background: #fff8ee; }
+table.cmp tfoot td { font-size: 12px; color: var(--ink2); padding: 6px 8px; }

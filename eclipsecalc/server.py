@@ -9,6 +9,7 @@ import threading
 import time
 import traceback
 from collections import OrderedDict
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 import numpy as np
@@ -18,20 +19,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__, i18n
-from .constants import (MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MOON_K_INTERNAL,
-                        MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, VENUS_RADIUS,
-                        VENUS_RADIUS_NASA, WGS84_A)
+from .constants import (DAY_S, MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTERNAL, MOON_K_INTERNAL,
+                        MOON_RADIUS_MEAN, SUN_RADIUS_IAU2015, SUN_RADIUS_NASA, SUN_RADIUS_OBSERVED,
+                        VENUS_RADIUS, VENUS_RADIUS_NASA, VENUS_RADIUS_VISIBLE, VENUS_RADIUS_XRAY, WGS84_A)
 from .conjunctions import find_conjunctions
 from .context import (DEFAULT_EPHEMERIS, DOWNLOADABLE, ROOT_DIR, available_ephemerides,
                       ensure_ephemeris, get_context)
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
-from .i18n import tr
+from .i18n import span, tr
 from .local import LocalSearch, Params
-from .observers import (GeocenterObserver, GroundObserver, NetworkError, ObserverError, SSCWebObserver,
-                        TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
+from .observers import (GeocenterObserver, GroundObserver, HorizonsObserver, NetworkError, ObserverError,
+                        SSCWebObserver, TLEObserver, build_observer, fetch_tle_celestrak, ssc_satellites)
 from .presets import SATELLITES, cities
-from .timeutil import iso_from_jd, parse_utc
+from .timeutil import iso_from_jd, parse_obs_time, parse_utc
 
 STATIC_DIR = ROOT_DIR / 'static'
 APP_MODE = os.environ.get('ECLIPSECALC_APP') == '1'  # started by the macOS app (run.py --app)
@@ -148,6 +149,22 @@ class LocalRequest(BaseModel):
     name: str = ''
 
 
+class AtRequest(BaseModel):
+    '''Times of observations (UTC, see timeutil.parse_obs_time), optionally with the measured
+    solar-north-up X / Y (arcsec) of the body at each and the exposure time (s).  Typed loosely
+    so that wrong input gets the translated messages of parse_at_request() instead of a 422.'''
+    times: Any = None
+    measured: Any = None
+    exposure_s: Any = None
+
+
+class AtSearchRequest(AtRequest):
+    '''The same for an observer and one body without a computed event (cli.py --at).'''
+    phenomena: list[str]
+    observer: dict
+    settings: dict = {}
+
+
 def _settings(settings):
     eph = settings.get('ephemeris') or DEFAULT_EPHEMERIS
     dt = settings.get('delta_t')
@@ -199,12 +216,16 @@ def info():
         'cities': cities(),
         'satellites': SATELLITES,
         'defaults': Params().as_dict(),
+        # observed: the visible limb / disk in front of the Sun (the defaults); iau: the IAU solid
+        # surface (the IAU 2015 photosphere for the Sun); nasa: NASA/Espenak; xray: soft X-rays
         'radius_presets': {
-            'sun': {'iau2015': SUN_RADIUS_IAU2015, 'nasa': SUN_RADIUS_NASA},
+            'sun': {'observed': SUN_RADIUS_OBSERVED, 'nasa': SUN_RADIUS_NASA, 'iau2015': SUN_RADIUS_IAU2015},
             'moon': {'nasa': [MOON_K_EXTERNAL * WGS84_A, MOON_K_INTERNAL * WGS84_A],
                      'mean': [MOON_RADIUS_MEAN, MOON_RADIUS_MEAN]},
-            'mercury': {'iau': MERCURY_RADIUS, 'nasa': MERCURY_RADIUS_NASA},
-            'venus': {'iau': VENUS_RADIUS, 'nasa': VENUS_RADIUS_NASA},
+            'mercury': {'observed': MERCURY_RADIUS, 'iau': MERCURY_RADIUS, 'nasa': MERCURY_RADIUS_NASA,
+                        'xray': MERCURY_RADIUS},
+            'venus': {'observed': VENUS_RADIUS_VISIBLE, 'iau': VENUS_RADIUS, 'nasa': VENUS_RADIUS_NASA,
+                      'xray': VENUS_RADIUS_XRAY},
         },
     }
 
@@ -682,6 +703,176 @@ def local_at(req: LocalRequest):
     d['id'] = eid
     d['found'] = True
     return _clean(d)
+
+
+# --- the geometry at given times (e.g. those of images of a solar telescope) ---------------------
+AT_MAX_TIMES = 2000
+AT_MAX_SPAN_D = 3.0
+AT_MAX_EXPOSURE_S = 3600.0
+AT_PAD_D = 60.0 / DAY_S          # orbit data around the times (the rates are differences over 1 s)
+# The values of a row (details() of local.py and the rates of geometry_at()); the observer's extras
+# are there for a ground observer (Sun's altitude / azimuth, the horizon's direction) or a spacecraft
+# (sub-satellite point, the Earth's direction and size), all that the page needs to draw the frame.
+AT_FIELDS = ('time', 'jd_tt', 'p_angle', 'hpc_x', 'hpc_y', 'hpc_vx', 'hpc_vy', 'pa', 'pa_solar', 'xi', 'eta',
+             'sep_arcsec', 'sep_rate', 'limb_dist', 'limb_depth', 'rho_s', 'rho_b', 'rho_b_int', 'magnitude',
+             'obscuration', 'vis')
+AT_EXTRAS = ('sun_alt', 'sun_az', 'parallactic', 'v_angle', 'sat_lat', 'sat_lon', 'sat_alt_km', 'earth_sep_deg',
+             'earth_pa', 'earth_radius_deg', 'earth_atm_deg', 'dist_earth_km')
+
+
+def _number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def parse_at_request(ctx, req):
+    '''The times of an AtRequest -> (TT JDs of the middles of the exposures, measured or None).'''
+    times = [req.times] if isinstance(req.times, str) else req.times
+    if not isinstance(times, list) or not times:
+        raise HTTPException(400, tr('時刻を 1 つ以上指定してください'))
+    if len(times) > AT_MAX_TIMES:
+        raise HTTPException(400, tr('時刻は {n} 個までにしてください', n=AT_MAX_TIMES))
+    try:
+        exp = 0.0 if req.exposure_s is None else float(req.exposure_s)
+    except (TypeError, ValueError):
+        exp = float('nan')
+    if not 0.0 <= exp <= AT_MAX_EXPOSURE_S:          # NaN too
+        raise HTTPException(400, tr('露光時間は 0〜{max:g} 秒で指定してください', max=AT_MAX_EXPOSURE_S))
+    try:
+        jd = np.array([parse_obs_time(ctx, s) for s in times]) + 0.5 * exp / DAY_S
+    except ValueError as exc:                        # names the time that cannot be read
+        raise HTTPException(400, str(exc))
+    out = np.flatnonzero((jd < ctx.jd_min) | (jd > ctx.jd_max))
+    if out.size:
+        a, b = ctx.coverage_utc()
+        raise HTTPException(400, tr('時刻「{text}」は暦 {name} の範囲（{start}〜{end}）の外です',
+                                     text=str(times[out[0]]).strip(), name=ctx.ephemeris_name, start=a, end=b))
+    if jd.max() - jd.min() > AT_MAX_SPAN_D:
+        raise HTTPException(400, tr('時刻はすべて {days:g} 日以内に収めてください（指定: {first}〜{last}）',
+                                     days=AT_MAX_SPAN_D, first=iso_from_jd(ctx, jd.min()),
+                                     last=iso_from_jd(ctx, jd.max())))
+    m = req.measured
+    if m is not None and not (isinstance(m, list) and len(m) == len(times) and all(
+            p is None or (isinstance(p, (list, tuple)) and len(p) == 2 and all(map(_number, p))) for p in m)):
+        raise HTTPException(400, tr('measured（測った位置）は時刻と同じ数の [X, Y]（″）または null の配列で指定してください'))
+    return jd, m
+
+
+def at_observer_checks(ctx, observer, jd):
+    '''The checks of the observer at the times that need no orbit data from a service (the re-entry
+    that SGP4 predicts for a TLE) -> warnings (an old TLE judged at the time farthest from its epoch).'''
+    lo, hi = float(jd.min()), float(jd.max())
+    if isinstance(observer, TLEObserver):
+        jd_d = observer.decay_jd(hi + 0.01)
+        if jd_d is not None:
+            raise ObserverError(tr('SGP4 ではこの衛星は {date} ごろに再突入するため、指定した時刻は計算できません',
+                                   date=iso_from_jd(ctx, jd_d)[:10]))
+    epoch = getattr(observer, 'epoch_jd', None)
+    if epoch is None:
+        return observer.warnings_for(ctx, hi)
+    return observer.warnings_for(ctx, lo if abs(lo - epoch) > abs(hi - epoch) else hi)
+
+
+def _prepare_at(ctx, observer, jd):
+    '''Get the orbit data of the observer for the times (a tabulated orbit must cover them) -> warnings.'''
+    warnings = at_observer_checks(ctx, observer, jd)
+    lo, hi = float(jd.min()), float(jd.max())
+    if isinstance(observer, HorizonsObserver):
+        if observer.coverage is None:                # not used by a search yet: the step it needs
+            observer.survey(lo - 0.05, hi + 0.05)
+        warnings += observer.step_warnings()
+    elif isinstance(observer, SSCWebObserver):
+        cov = observer.coverage_jd()
+        if cov and (lo - AT_PAD_D < cov[0] or hi + AT_PAD_D > cov[1]):
+            raise ObserverError(tr('指定した時刻には NASA SSCWeb の軌道データがありません（提供期間 {period}）',
+                                   period=span(iso_from_jd(ctx, cov[0])[:10], iso_from_jd(ctx, cov[1])[:10])))
+    observer.prepare(ctx, [(lo - AT_PAD_D, hi + AT_PAD_D)])
+    return warnings
+
+
+def _at_rows(ls, jd, inputs, measured):
+    '''The geometry at the TT JDs (LocalSearch.geometry_at) as rows; with a measured [X, Y] also the
+    O-C (arcsec) and the time (s) by which the observed body is ahead along its motion.'''
+    g = ls.geometry_at(np.asarray(jd, float) - ls.jd0)
+    rows = []
+    for k, text in enumerate(inputs):
+        r = {'input': text}
+        r.update({f: g[f][k] for f in AT_FIELDS + AT_EXTRAS if f in g})
+        r['visible'] = bool(g['vis'][k] > 0)
+        p = measured[k] if measured else None
+        if p is not None:
+            ox, oy = float(p[0]) - r['hpc_x'], float(p[1]) - r['hpc_y']
+            vx, vy = r['hpc_vx'], r['hpc_vy']
+            v2 = vx * vx + vy * vy
+            r.update(measured_x=float(p[0]), measured_y=float(p[1]), oc_x=ox, oc_y=oy,
+                     oc_dt=(ox * vx + oy * vy) / v2 if v2 > 0 else None)
+        rows.append(r)
+    return rows
+
+
+def _no_global_at():
+    return HTTPException(400, tr('時刻を指定した位置の計算は、地上の地点・人工衛星・探査機（または地心）から見た'
+                                 '現象だけでできます（地球全体の日食ではできません）'))
+
+
+@app.post('/api/event/{eid}/at')
+def event_at(eid: str, req: AtRequest):
+    '''The geometry of a stored event at given times (e.g. the exposure times of images): the
+    solar-north-up X / Y (arcsec), the distance from the limb and the motion, and the O-C of
+    measured positions.'''
+    obj = _get(eid)
+    if obj['kind'] != 'local':
+        raise _no_global_at()
+    ctx = obj['ctx']
+    jd, measured = parse_at_request(ctx, req)
+    with _compute_lock:
+        try:
+            warnings = _prepare_at(ctx, obj['observer'], jd)
+            rows = _at_rows(obj['search'], jd, req.times, measured)
+        except ObserverError as exc:
+            raise _bad_input(exc)
+        except Exception as exc:
+            traceback.print_exc()
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
+    return _clean({'rows': rows, 'warnings': warnings})
+
+
+def at_times(req: AtSearchRequest):
+    '''The rows of /api/event/{eid}/at for an observer and one body without a computed event
+    (cli.py --at), with the description of the observer and the settings.'''
+    t0 = time.time()
+    try:
+        ctx, params = _settings(req.settings)
+    except ObserverError as exc:
+        raise _bad_input(exc)
+    except Exception as exc:
+        raise HTTPException(400, tr('入力値を解釈できません: {exc}', exc=exc))
+    phen = list(dict.fromkeys(req.phenomena))
+    if len(phen) != 1 or phen[0] not in ('moon', 'mercury', 'venus'):
+        raise HTTPException(400, tr('時刻を指定した位置の計算では、現象（moon, mercury, venus）を 1 つだけ選んでください'))
+    spec = dict(req.observer)
+    if spec.get('type') == 'global':
+        raise _no_global_at()
+    jd, measured = parse_at_request(ctx, req)
+    with _compute_lock:
+        try:
+            observer = build_observer(ctx, spec, parse_time=lambda s: parse_utc(ctx, s))
+            ls = LocalSearch(ctx, observer, phen[0], params, float(jd.min()) - 0.5, float(jd.max()) + 0.5)
+            warnings = _prepare_at(ctx, observer, jd)
+            rows = _at_rows(ls, jd, req.times, measured)
+            obs_desc = observer.describe()
+            if obs_desc.get('epoch_jd_tt'):
+                obs_desc['epoch'] = iso_from_jd(ctx, obs_desc['epoch_jd_tt'])
+        except ObserverError as exc:
+            raise _bad_input(exc)
+        except Exception as exc:
+            traceback.print_exc()
+            raise HTTPException(500, tr('計算中にエラーが発生しました: {exc}', exc=exc))
+    return _clean({
+        'at': rows, 'body': phen[0], 'observer': obs_desc, 'warnings': warnings,
+        'elapsed_s': time.time() - t0, 'ephemeris': ctx.ephemeris_name,
+        'delta_t_mid_s': float(ctx.ts.tt_jd(0.5 * (jd.min() + jd.max())).delta_t),
+        'delta_t_override': ctx.delta_t_override, 'params': params.as_dict(), 'exposure_s': req.exposure_s,
+    })
 
 
 @app.exception_handler(Exception)

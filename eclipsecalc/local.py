@@ -19,7 +19,10 @@ Algorithm
 Positions are astrometric (light-time corrected, BCRS directions).  Because
 stellar aberration acts on all directions as a conformal map, disk tangency
 - and therefore every contact time - is invariant under it; apparent places
-are only used for altitude/azimuth and position angles.
+are only used for altitude/azimuth and position angles.  The test whether
+the Earth hides the Sun from a spacecraft is about rays passing the Earth, so
+it uses the Sun's direction in the Earth's frame (aberrated by the Earth's
+barycentric velocity only).
 """
 import math
 from dataclasses import dataclass, field
@@ -27,9 +30,11 @@ from dataclasses import dataclass, field
 import numpy as np
 from skyfield.api import wgs84
 from skyfield.framelib import true_equator_and_equinox_of_date as TOD
+from skyfield.relativity import add_aberration
 
 from .constants import (AU_KM, DAY_S, MERCURY_RADIUS, MOON_K_EXTERNAL, MOON_K_INTERNAL,
-                        RAD2ARCSEC, SUN_RADIUS_IAU2015, VENUS_RADIUS, WGS84_A, WGS84_B)
+                        RAD2ARCSEC, SUN_POLE_DEC_DEG, SUN_POLE_RA_DEG, SUN_RADIUS_OBSERVED,
+                        VENUS_RADIUS_VISIBLE, WGS84_A, WGS84_B)
 from .conjunctions import BODY_MIN_DISTANCE_KM, BODY_MIN_RATE, find_conjunctions, geocentric_min_separation
 from .geometry import angle_between, magnitude, norm, obscuration
 from .i18n import span, tr
@@ -40,15 +45,21 @@ from .timeutil import iso_utc
 
 SAFETY = 1.6
 DEG = math.pi / 180.0
+# The Sun's rotation axis (ICRS unit vector)
+SUN_POLE = np.array([math.cos(SUN_POLE_DEC_DEG * DEG) * math.cos(SUN_POLE_RA_DEG * DEG),
+                     math.cos(SUN_POLE_DEC_DEG * DEG) * math.sin(SUN_POLE_RA_DEG * DEG),
+                     math.sin(SUN_POLE_DEC_DEG * DEG)])
+# Half the time step of the central differences for rates (contact sensitivities, image motion)
+HALF_STEP_S = 0.5
 
 
 @dataclass
 class Params:
-    sun_radius_km: float = SUN_RADIUS_IAU2015
+    sun_radius_km: float = SUN_RADIUS_OBSERVED
     moon_radius_ext_km: float = MOON_K_EXTERNAL * WGS84_A
     moon_radius_int_km: float = MOON_K_INTERNAL * WGS84_A
     mercury_radius_km: float = MERCURY_RADIUS
-    venus_radius_km: float = VENUS_RADIUS
+    venus_radius_km: float = VENUS_RADIUS_VISIBLE
     min_sun_alt_deg: float = 0.0
     refraction: bool = True
     earth_atm_km: float = 0.0
@@ -81,17 +92,20 @@ class Params:
             'include_invisible')}
 
 
-def earth_disk(r_obs_km, sun_vec):
+def earth_disk(r_obs_km, sun_vec, pole=None):
     """Angular separation between the Sun centre and the Earth centre, and
     the angular radius of the (ellipsoidal) Earth limb toward the Sun, as
-    seen from an observer at geocentric position ``r_obs_km``."""
+    seen from an observer at geocentric position ``r_obs_km``.  The local
+    radius is that at the latitude of the point where the ray to the Sun
+    passes closest to the geocentre, measured from ``pole`` (the Earth's pole
+    of date in the frame of the vectors; the z axis if None)."""
     rn = norm(r_obs_km)
     su = sun_vec / norm(sun_vec)
     sep_e = angle_between(sun_vec, -r_obs_km)
     lam = -np.sum(r_obs_km * su, axis=0)
     q = r_obs_km + np.maximum(lam, 0.0) * su
     qn = np.maximum(norm(q), 1e-9)
-    sphi = np.clip(q[2] / qn, -1, 1)
+    sphi = np.clip((q[2] if pole is None else np.sum(q * pole, axis=0)) / qn, -1, 1)
     cphi = np.sqrt(1 - sphi * sphi)
     reff = WGS84_A * WGS84_B / np.sqrt((WGS84_B * cphi) ** 2 + (WGS84_A * sphi) ** 2)
     return sep_e, reff, rn
@@ -156,10 +170,28 @@ class Evaluator:
             else:
                 alt, _, _ = app.altaz()
             return alt.degrees - self.p.min_sun_alt_deg
-        r = self.observer.vf.at(g['t']).position.km
-        sep_e, reff, rn = earth_disk(r, g['S'])
+        sep_e, reff, rn = self.earth_view(g)[:3]
         rho_e = np.arcsin(np.minimum((reff + self.p.earth_atm_km) / rn, 1.0))
         return np.degrees(sep_e - rho_e)
+
+    def earth_view(self, g):
+        """The Earth seen from a spacecraft: (separation of the Sun centre from the Earth
+        centre (rad), local Earth radius toward the Sun (km), distance (km), geocentric
+        state of the spacecraft).
+
+        A ray from the Sun passes the Earth in the Earth's frame, where its direction is the
+        astrometric one aberrated by the Earth's barycentric velocity (the spacecraft's own
+        velocity aberrates only what the spacecraft sees; with the astrometric direction the
+        boundaries were off by ~0.1-0.2 s in low orbits and 1.2 s in geostationary orbit)."""
+        if '_earth' not in g:
+            t = g['t']
+            st = self.observer.vf.at(t)
+            r = st.position.km
+            sun = g['sa'].position.au.copy()
+            add_aberration(sun, g['o'].velocity.au_per_d - st.velocity.au_per_d, g['sa'].light_time)
+            pole = t.precession_matrix()[2]          # mean pole of date (GCRS); nutation < 20"
+            g['_earth'] = earth_disk(r, sun, pole) + (st,)
+        return g['_earth']
 
     def fn(self, key, need_vis=False):
         def f(x):
@@ -360,6 +392,7 @@ class LocalSearch:
             pad = self.observer.step_min / 1440.0 + 0.02
             if self.observer.coverage is None:
                 self.observer.survey(self.jd_a - margin - pad, self.jd_b + margin + pad)
+            self.warnings += self.observer.step_warnings()
             ca, cb = self.observer.coverage
             if ca + pad > self.jd_a - margin or cb - pad < self.jd_b + margin:
                 a2 = max(self.jd_a, ca + pad + margin)
@@ -474,9 +507,33 @@ class LocalSearch:
             k = int(np.argmin(v))
             A.append(s[max(k - 1, 0)])
             B.append(s[min(k + 1, s.size - 1)])
-        xm = golden_min(self.E.geom, 'sep', np.array(A), np.array(B))
+        xm = self._polish_maximum(events, golden_min(self.E.geom, 'sep', np.array(A), np.array(B)))
         for e, x in zip(events, xm):
             e['xm'] = float(x)
+
+    def _polish_maximum(self, events, xm, half_s=2.0, n=21):
+        """The computed separation is noisy at ~1e-14 rad, which leaves the minimum of a slow
+        eclipse uncertain by ~10 ms (a search over another period gave another time); the
+        stationary point of a least-squares cubic through sep^2 (quadratic for uniform relative
+        motion) over +-2 s fixes it to microseconds.  Kept when the fit fails or the event is
+        shorter than the fit."""
+        off = np.linspace(-half_s, half_s, n)
+        x1 = np.array([e['x1'] for e in events])
+        x4 = np.array([e['x4'] for e in events])
+        ok = (xm - half_s / DAY_S >= x1) & (xm + half_s / DAY_S <= x4)
+        if not np.any(ok):
+            return xm
+        xs = xm[ok]
+        s2 = self.E.geom((xs[:, None] + off[None, :] / DAY_S).ravel())['sep'].reshape(xs.size, n) ** 2
+        c3, c2, c1, _ = np.polyfit(off, (s2 - s2[:, n // 2:n // 2 + 1]).T, 3)
+        t = np.zeros(xs.size)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            for _ in range(3):              # Newton on the derivative c1 + 2 c2 t + 3 c3 t^2, from 0
+                t = t - (c1 + 2 * c2 * t + 3 * c3 * t * t) / (2 * c2 + 6 * c3 * t)
+        good = (c2 > 0) & np.isfinite(t) & (np.abs(t) < half_s)
+        out = xm.copy()
+        out[ok] = np.where(good, xs + t / DAY_S, xs)
+        return out
 
     def _visibility(self, events):
         kind = self.observer.kind
@@ -538,6 +595,7 @@ class LocalSearch:
                 xs.append(x)
                 owners.append(k)
         det = self.details(np.array(xs))
+        sens = self._sensitivities(events)
         pos = 0
         for e in events:
             pts = e.pop('_pts')
@@ -545,6 +603,7 @@ class LocalSearch:
             for label, x in pts:
                 d = {key: (val[pos] if isinstance(val, (list, np.ndarray)) else val)
                      for key, val in det.items()}
+                d.update(zip(('dt_drs', 'dt_drb'), sens[pos]))
                 pos += 1
                 d = {k: _py(v) for k, v in d.items()}
                 d['label'] = label
@@ -558,6 +617,46 @@ class LocalSearch:
             self._ecl_tc = eclipse_new_moons(self.ctx, [self.jd0 + e['xm'] for e in events], self.p)
         for e in events:
             self._summarise(e)
+
+    def _sensitivities(self, events):
+        """For the points of e['_pts']: (dt_drs, dt_drb), the change of the contact time (s) per
+        +1" of the angular radius of the Sun / of the body; (None, None) for the maximum and for
+        the ends of an event cut by the period.
+
+        A contact is a root of f = sep - rs - rb (C1, C4), sep - (rs - rb) (C2, C3 inside the Sun)
+        or sep - (rb - rs) (C2, C3 of a total eclipse); a radius larger by d moves it by -/+ d / f'.
+        f' (arcsec/s, including the change of the radii) is a central difference over 1 s."""
+        h = HALF_STEP_S / DAY_S
+        xs, kinds, out = [], [], []
+        for e in events:
+            for label, x in e['_pts']:
+                cut = ((label in ('C1', 'C2') and e.get('c1_cut') and x <= e['x1'])
+                       or (label in ('C3', 'C4') and e.get('c4_cut') and x >= e['x4']))
+                if label == 'MAX' or cut:
+                    kinds.append(None)
+                else:
+                    kinds.append('ext' if label in ('C1', 'C4') else 'int')
+                    xs.append(x)
+        if xs:
+            xs = np.array(xs)
+            g = self.E.geom(np.r_[xs - h, xs + h])
+            n = xs.size
+            ext = (g['g_ext'][n:] - g['g_ext'][:n]) * RAD2ARCSEC / (2 * HALF_STEP_S)
+            itl = (g['g_int'][n:] - g['g_int'][:n]) * RAD2ARCSEC / (2 * HALF_STEP_S)
+            sun_larger = (g['rs'][:n] + g['rs'][n:]) > (g['rbi'][:n] + g['rbi'][n:])
+        k = 0
+        for kind in kinds:
+            if kind is None:
+                out.append((None, None))
+                continue
+            with np.errstate(divide='ignore'):
+                if kind == 'ext':
+                    out.append((1.0 / ext[k], 1.0 / ext[k]))
+                else:
+                    s = 1.0 if sun_larger[k] else -1.0      # transit / annular: +1, total: -1
+                    out.append((s / itl[k], -s / itl[k]))
+            k += 1
+        return out
 
     def _summarise(self, e):
         body = self.body
@@ -628,13 +727,21 @@ class LocalSearch:
         xi = np.sum(bu * east, axis=0) / bs * RAD2ARCSEC
         eta = np.sum(bu * north, axis=0) / bs * RAD2ARCSEC
         pa = np.degrees(np.arctan2(xi, eta)) % 360.0
+        # P angle: the Sun's rotation axis projected on the sky, from celestial north toward east;
+        # turning (xi, eta) by it gives the solar-north-up X (toward solar west) / Y of solar images.
+        pole = np.einsum('ij...,j->i...', TOD.rotation_at(t), SUN_POLE)
+        P = np.arctan2(np.sum(pole * east, axis=0), np.sum(pole * north, axis=0))
+        cp, sp = np.cos(P), np.sin(P)
+        sep, rs, rb = g['sep'] * RAD2ARCSEC, g['rs'] * RAD2ARCSEC, g['rbe'] * RAD2ARCSEC
         out = dict(
             time=iso_utc(t), jd_tt=self.jd0 + x,
-            sep_arcsec=g['sep'] * RAD2ARCSEC, rho_s=g['rs'] * RAD2ARCSEC,
-            rho_b=g['rbe'] * RAD2ARCSEC, rho_b_int=g['rbi'] * RAD2ARCSEC,
+            sep_arcsec=sep, rho_s=rs, rho_b=rb, rho_b_int=g['rbi'] * RAD2ARCSEC,
             magnitude=magnitude(g['rs'], g['rbe'], g['sep']),
             obscuration=obscuration(g['rs'], g['rbe'], g['sep']),
             xi=xi, eta=eta, pa=pa, vis=g['vis'],
+            p_angle=np.degrees(P), hpc_x=-(xi * cp - eta * sp), hpc_y=xi * sp + eta * cp,
+            pa_solar=(pa - np.degrees(P)) % 360.0,
+            limb_dist=sep - rs, limb_depth=(rs - sep) / rb,
             sun_dist_km=g['ds'], body_dist_km=g['db'],
         )
         kind = self.observer.kind
@@ -651,9 +758,7 @@ class LocalSearch:
             out.update(sun_alt=alt.degrees, sun_az=az.degrees, parallactic=q,
                        v_angle=(pa - q) % 360.0)
         elif kind == 'space':
-            pos = self.observer.vf.at(t)
-            r = pos.position.km
-            sep_e, reff, rn = earth_disk(r, g['S'])
+            sep_e, reff, rn, pos = self.E.earth_view(g)
             rho_e = np.arcsin(np.minimum(reff / rn, 1.0))
             r_tod = pos.frame_xyz(TOD).km
             eu = -r_tod / norm(r_tod)
@@ -665,6 +770,20 @@ class LocalSearch:
                        earth_atm_deg=np.degrees(np.arcsin(np.minimum(
                            (reff + self.p.earth_atm_km) / rn, 1.0))),
                        earth_pa=pa_e, dist_earth_km=rn)
+        return out
+
+    def geometry_at(self, x):
+        """details() at the times jd0 + x (e.g. those of images) and the motion there:
+        hpc_vx, hpc_vy (solar-north-up X / Y, arcsec/s) and sep_rate (arcsec/s), by central
+        differences over 1 s.  The observer must be prepared for these times."""
+        x = np.atleast_1d(np.asarray(x, float))
+        n, h = x.size, HALF_STEP_S / DAY_S
+        d = self.details(np.concatenate([x, x - h, x + h]))
+        out = {k: v[:n] if isinstance(v, (list, np.ndarray)) and len(v) == 3 * n else v
+               for k, v in d.items()}
+        for key, rate in (('hpc_x', 'hpc_vx'), ('hpc_y', 'hpc_vy'), ('sep_arcsec', 'sep_rate')):
+            v = np.asarray(d[key], float)
+            out[rate] = (v[2 * n:] - v[n:2 * n]) / (2 * HALF_STEP_S)
         return out
 
     def timeseries(self, e, n=480):

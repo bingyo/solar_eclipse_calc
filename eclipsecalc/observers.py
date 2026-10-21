@@ -24,8 +24,8 @@ import numpy as np
 from skyfield.api import EarthSatellite, wgs84
 from skyfield.vectorlib import VectorFunction
 
-from .constants import (AU_KM, DAY_S, EARTH_OMEGA, GM_EARTH, J2_EARTH, WGS84_A,
-                        WGS84_B)
+from .constants import (AU_KM, DAY_S, EARTH_OMEGA, GM_EARTH, GM_MOON, J2_EARTH, MOON_RADIUS_MEAN,
+                        MOON_SOI_KM, WGS84_A, WGS84_B)
 from .context import CACHE_DIR
 from .geometry import norm
 from .i18n import tr
@@ -368,6 +368,83 @@ class KeplerObserver(Observer):
 # JPL Horizons
 # ---------------------------------------------------------------------------
 HORIZONS_URL = 'https://ssd.jpl.nasa.gov/api/horizons.api'
+HERMITE_EPS_KM = 0.01         # largest position error allowed for the interpolation of Horizons vectors
+
+
+def hermite_step_min(r_km, v_km_s, eps_km=HERMITE_EPS_KM):
+    """Longest step (minutes) of the cubic Hermite interpolation of positions and velocities
+    whose position error stays below ``eps_km`` for motion at radius ``r_km`` and speed
+    ``v_km_s`` (the smallest over arrays).  The error is h^4 |x''''| / 384 with
+    |x''''| = r (v / r)^4 for circular motion, so h = (r / v) (384 eps / r)^(1/4): 2 min in a
+    low Earth orbit (60 min would give ~3,000 km), 22 min in the geostationary orbit (0.5 km)."""
+    r = np.asarray(r_km, float)
+    v = np.maximum(np.asarray(v_km_s, float), 1e-9)
+    return float(np.min((r / v) * (384.0 * eps_km / r) ** 0.25 / 60.0))
+
+
+def _pericentres(jd, pos, vel, gm, r_body, a_max, window):
+    """The distances and speeds at the pericentres (above ``r_body``) of the osculating two-body
+    orbits of states relative to a body: of the bound orbits with a < ``a_max``, and of the
+    hyperbolic ones whose pericentre passage falls within ``window`` (TDB JDs; a flyby that a
+    coarse table can miss)."""
+    r, v = norm(pos), norm(vel)
+    h = norm(np.cross(pos, vel, axis=0))
+    en = 0.5 * v * v - gm / r                         # energy per unit mass
+    e = np.sqrt(np.maximum(0.0, 1.0 + 2.0 * en * h * h / (gm * gm)))
+    rp = h * h / (gm * (1.0 + e))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        a = -gm / (2.0 * en)                          # negative for a hyperbola
+        # time from the pericentre of a hyperbola: r = |a| (e cosh F - 1), M = e sinh F - F
+        F = np.arccosh(np.maximum(1.0, (1.0 - r / a) / e))
+        dt = (e * np.sinh(F) - F) * np.sqrt(-a ** 3 / gm)
+        t_peri = jd - np.sign(np.sum(pos * vel, axis=0)) * dt / DAY_S
+        keep = np.where(en < 0, a < a_max, (t_peri >= window[0]) & (t_peri <= window[1])) & (rp > r_body)
+    return list(rp[keep]), list(h[keep] / rp[keep])
+
+
+def _orbit_step_min(jd, pos, vel, ctx=None):
+    """hermite_step_min() of a tabulated orbit (geocentric states at the TDB JDs ``jd``): at the
+    smallest distance with the largest speed, at the largest distance, at the perigees of the
+    osculating orbits about the Earth (a coarse table can miss the perigee of an eccentric orbit
+    or of a flyby) and, within the Moon's sphere of influence, at the distances and speeds
+    relative to the Moon and at the perilunes (a lunar orbiter)."""
+    r, v = norm(pos), norm(vel)
+    k = int(np.argmax(r))
+    rr, vv = [float(r.min()), float(r[k])], [float(v.max()), float(v[k])]
+    window = (float(jd[0]), float(jd[-1]))
+    near = np.zeros(r.size, bool)
+    if ctx is not None:             # (the survey may reach a little past the ends of the ephemeris)
+        moon = (ctx.moon - ctx.earth).at(ctx.ts.tdb_jd(np.clip(jd, ctx.jd_min, ctx.jd_max)))
+        mp, mv = pos - moon.position.km, vel - moon.velocity.km_per_s
+        near = (norm(mp) < MOON_SOI_KM) & (jd >= ctx.jd_min) & (jd <= ctx.jd_max)
+        if np.any(near):
+            mp, mv = mp[:, near], mv[:, near]
+            rr += list(norm(mp))
+            vv += list(norm(mv))
+            p, s = _pericentres(jd[near], mp, mv, GM_MOON, MOON_RADIUS_MEAN, MOON_SOI_KM, window)
+            rr += p
+            vv += s
+    # Earth satellites (farther bound orbits follow the Moon) and flybys of the Earth
+    far = ~near
+    p, s = _pericentres(jd[far], pos[:, far], vel[:, far], GM_EARTH, WGS84_A, 150_000.0, window)
+    return hermite_step_min(rr + p, vv + s)
+
+
+def _table_step_min(jd, pos, vel, eps_km=HERMITE_EPS_KM):
+    """The step (minutes) for an interpolation error below ``eps_km`` measured on a table itself:
+    each sample interpolated from its neighbours (twice the table's step), the error scaled by
+    h^4 (inf with fewer than 3 samples).  It holds for any motion the table resolves; a sharper
+    turn than the table's step is underestimated (the error saturates at the size of the turn)."""
+    if jd.size < 3:
+        return math.inf
+    h = (jd[2:] - jd[:-2]) * DAY_S
+    s = (jd[1:-1] - jd[:-2]) * DAY_S / h
+    p0, p1 = pos[:, :-2], pos[:, 2:]
+    v0, v1 = vel[:, :-2] * h, vel[:, 2:] * h
+    s2, s3 = s * s, s * s * s
+    p = (2 * s3 - 3 * s2 + 1) * p0 + (s3 - 2 * s2 + s) * v0 + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * v1
+    err = np.maximum(norm(p - pos[:, 1:-1]), 1e-12)
+    return float(np.min(h / 60.0 * (eps_km / err) ** 0.25))
 
 
 def _horizons_request(command, jd_start_tdb, jd_stop_tdb, step_min):
@@ -468,7 +545,8 @@ class _HorizonsVF(VectorFunction):
 
 class HorizonsObserver(Observer):
     needs_network = True
-    MAX_POINTS = 60_000
+    MAX_POINTS = 60_000            # one request
+    MAX_TOTAL_POINTS = 600_000     # all the windows of one search (~34 MB)
 
     def __init__(self, ctx, command, step_min=5, name=''):
         command = str(command).strip()
@@ -476,6 +554,9 @@ class HorizonsObserver(Observer):
             raise ObserverError(tr('Horizons の天体 ID を指定してください（例: -170 = JWST）'))
         self.command = command
         self.step_min = max(1, int(step_min))
+        self.requested_step_min = self.step_min    # survey() makes step_min finer for close orbits
+        self.survey_step_min = None
+        self.step_unresolved = False
         self.name = name or f'Horizons {command}'
         self.vf = _HorizonsVF(self.name)
         self.ctx = ctx
@@ -502,7 +583,10 @@ class HorizonsObserver(Observer):
         return jd, pos, vel
 
     def survey(self, jd_a, jd_b):
-        """Coarse fetch to learn the distance range (used for pre-filtering)."""
+        """Coarse fetch to learn the distance range (used for pre-filtering) and the step needed
+        for an interpolation error below HERMITE_EPS_KM, from the motion about the Earth and the
+        Moon and as measured on the table: a coarser step_min is made finer (requested_step_min
+        keeps the one asked for)."""
         span = jd_b - jd_a
         step = max(self.step_min, int(math.ceil(span * 1440 / 3000)))
         jd, pos, vel = self._fetch(jd_a - 0.01, jd_b + 0.01 + step / 1440.0, step)
@@ -514,14 +598,45 @@ class HorizonsObserver(Observer):
         self.v_max_km_s = float(v.max()) * 1.05 + 0.01
         if self.r_min_km < WGS84_A:
             self.r_min_km = WGS84_A
+        self.survey_step_min = step
+        model = _orbit_step_min(jd, pos, vel, self.ctx)
+        measured = _table_step_min(jd, pos, vel)
+        self.step_limit_min = min(model, measured)
+        if self.step_min > self.step_limit_min:
+            self.step_min = max(1, int(math.floor(self.step_limit_min)))
+        # the table turns more sharply than the gravity of the Earth and the Moon explains and than
+        # its own step resolves, so the step measured on it may still be too coarse (step_warnings)
+        self.step_unresolved = bool(measured < min(0.5 * model, step) and self.step_min > 0.5 * measured)
         return jd, pos, vel
 
+    def step_warnings(self):
+        """The warnings about the step that survey() chose (for the results)."""
+        out = []
+        if self.step_min < self.requested_step_min:
+            out.append(tr('地球や月に近い軌道のため、JPL Horizons の位置の刻みを {old} 分から {new} 分に'
+                          '細かくしました（位置の補間の誤差を {eps:g} m 以下にするため）',
+                          old=self.requested_step_min, new=self.step_min, eps=HERMITE_EPS_KM * 1000))
+        if self.step_unresolved:
+            out.append(tr('JPL Horizons の軌道が {step} 分刻みの下調べでは追えないほど急に曲がっているため、'
+                          '位置の補間の誤差が {eps:g} m を超えるおそれがあります（期間を短くするか、位置の刻みを'
+                          '小さくしてください）', step=self.survey_step_min, eps=HERMITE_EPS_KM * 1000))
+        return out
+
     def prepare(self, ctx, jd_windows):
-        # Pad by one output step so that the samples bracket the window.
-        pad = self.step_min / 1440.0 + 0.01
-        for a, b in jd_windows:
-            if not self.vf.covers(a - 0.002, b + 0.002):
-                jd, pos, vel = self._fetch(a - pad, b + pad, self.step_min)
+        # Pad by one output step so that the samples bracket the window; a long window is
+        # fetched in parts of at most MAX_POINTS points.
+        step = self.step_min / 1440.0
+        pad = step + 0.01
+        part = (self.MAX_POINTS - 10) * step
+        todo = [(a, b) for a, b in jd_windows if not self.vf.covers(a - 0.002, b + 0.002)]
+        n = sum(b - a + 2 * pad for a, b in todo) / step
+        if n > self.MAX_TOTAL_POINTS:
+            raise ObserverError(tr('JPL Horizons から取得するデータ点が多すぎます（位置の刻み {step} 分で {n} 点）。'
+                                   '期間を短くしてください', step=self.step_min, n=int(n)))
+        for a, b in todo:
+            edges = np.linspace(a - pad, b + pad, int(math.ceil((b - a + 2 * pad) / part)) + 1)
+            for lo, hi in zip(edges[:-1], edges[1:]):
+                jd, pos, vel = self._fetch(lo, hi, self.step_min)
                 self.vf.add(jd, pos, vel)
         for a, b in jd_windows:
             if not self.vf.covers(a - 1e-4, b + 1e-4):
@@ -534,6 +649,7 @@ class HorizonsObserver(Observer):
     def describe(self):
         return {'kind': 'space', 'model': 'horizons', 'name': self.name,
                 'command': self.command, 'step_min': self.step_min,
+                'step_min_requested': self.requested_step_min,
                 'r_min_km': self.r_min_km, 'r_max_km': self.r_max_km}
 
 

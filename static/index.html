@@ -195,8 +195,12 @@
           <label class="field">ΔT の値 (秒)<input id="dtValue" type="number" step="any" placeholder="例 69.2" disabled></label>
         </div>
         <label class="field">太陽の半径
-          <select id="sunR"><option value="iau2015">IAU 2015 公称値 (695,700 km)</option><option value="nasa">NASA 互換 (959.63″ = 695,992 km)</option><option value="custom">数値で指定</option></select></label>
-        <label class="field" id="sunRCustomWrap" hidden>太陽半径 (km)<input id="sunRCustom" type="number" step="any" value="695700"></label>
+          <select id="sunR"><option value="observed">観測される縁（実測 959.96″ = 696,231 km）</option><option value="nasa">NASA 互換 (959.63″ = 695,992 km)</option><option value="iau2015">IAU 2015 公称値（光球 τ=1, 695,700 km）</option><option value="custom">数値で指定</option></select>
+          <small>接触は画像に見える太陽の縁で起こります（IAU 2015 公称値の光球より 0.73″ 大きい）</small></label>
+        <div class="row" id="sunRCustomWrap" hidden>
+          <label class="field grow">太陽半径<input id="sunRCustom" type="number" step="any" value="696231"></label>
+          <label class="field">単位<select id="sunRUnit"><option value="km">km</option><option value="as">″（1 AU での角度）</option></select></label>
+        </div>
         <label class="field">月の半径
           <select id="moonR"><option value="nasa">NASA方式 (外接 k=0.2725076 / 内接 k=0.272281)</option><option value="mean">平均半径 1737.4 km</option><option value="custom">数値で指定</option></select></label>
         <div class="grid2" id="moonRCustomWrap" hidden>
@@ -204,12 +208,14 @@
           <label class="field">内接用 (km)<input id="moonRInt" type="number" step="any" value="1736.65"></label>
         </div>
         <label class="field">水星・金星の半径
-          <select id="planetR"><option value="iau">IAU 固体表面 (水星 2439.4 / 金星 6051.8 km)</option><option value="nasa">NASA 互換 (3.36″ / 8.41″ at 1 AU)</option></select></label>
+          <select id="planetR"><option value="observed">観測される円盤（水星 2439.4 / 金星 6131 km, 可視光）</option><option value="iau">IAU 固体表面 (2439.4 / 6051.8 km)</option><option value="nasa">NASA 互換 (3.36″ / 8.41″ at 1 AU)</option><option value="xray">X 線の円盤（金星 6202 km）</option></select>
+          <small>金星は雲と大気の分だけ固体表面より大きく見えます（Reale ほか 2015）</small></label>
         <div class="grid2">
           <label class="field">太陽高度の下限 (°)<input id="minAlt" type="number" step="any" value="0">
             <small>太陽中心がこの高度以上で「見える」</small></label>
           <label class="field">衛星: 地球大気の遮蔽高度 (km)<input id="atm" type="number" step="any" value="0">
-            <small>地球の縁＋この高さまでは太陽が隠れる</small></label>
+            <small>地球の縁＋この高さまでは太陽が隠れる</small>
+            <small>目安: 可視光 約 0 km、軟 X 線 約 140 km、EUV 約 250 km</small></label>
         </div>
         <label class="check"><input type="checkbox" id="refraction" checked> 大気差（大気による浮き上がり）を太陽高度に反映</label>
         <label class="check"><input type="checkbox" id="includeInvisible"> 観測地から見えない現象（夜間・地球の陰）も一覧に含める</label>
@@ -307,8 +313,17 @@
             <div class="readout" id="readout"></div>
             <label class="field">向き
               <select id="orient"></select></label>
+            <label class="field">表示範囲
+              <select id="zoom"></select></label>
             <label class="check"><input type="checkbox" id="showGrid" checked> 方位の目印を表示</label>
+            <label class="check"><input type="checkbox" id="showAxes"> 角度の目盛り（″）を表示</label>
             <div class="jump" id="jumpBtns"></div>
+            <div class="field at-time">
+              <label for="atTime">時刻を指定（UTC）</label>
+              <div class="row"><input id="atTime" type="text" class="grow" spellcheck="false" autocomplete="off" placeholder="21-Aug-2017 16:53:59.204 UT"><button type="button" class="secondary small" id="atBtn">表示</button></div>
+              <small>2017-08-21T16:53:59.204Z のような ISO 8601 の形式や、画像の時刻の形式（21-Aug-2017 16:53:59.204 UT）で入力します</small>
+              <div id="atStatus" class="status"></div>
+            </div>
             <p class="hint" id="viewNote"></p>
           </div>
         </div>
@@ -317,6 +332,19 @@
           <input type="range" id="timeSlider" min="0" max="1000" value="0" step="1">
           <select id="speed" aria-label="再生速度"></select>
         </div>
+        <details class="compare" id="comparePanel">
+          <summary>観測画像と比べる</summary>
+          <p class="hint">画像 1 枚につき 1 行で「時刻, X, Y」を入力すると、その時刻の計算値と、画像で測った位置との差（O−C）を表にします。X, Y は太陽の北が上の太陽の中心からの角度（″、ひので・SDO などの画像の座標）で、省略できます。時刻は UTC です。</p>
+          <div class="field"><textarea id="cmpText" rows="5" spellcheck="false" placeholder="21-Aug-2017 16:53:59.204 UT, -850.21, 120.50&#10;2017-08-21T16:54:29.204Z, -846.95, 121.10"></textarea></div>
+          <div class="row gap cmp-row">
+            <label class="field">露光時間（秒）<input id="cmpExp" type="number" step="any" min="0" placeholder="0">
+              <small>時刻が露光の始まりのとき。露光の中央の時刻で計算します</small></label>
+            <button type="button" class="primary small" id="cmpBtn">計算する</button>
+            <button type="button" class="secondary small" id="cmpCsv" disabled>CSV で保存</button>
+          </div>
+          <div id="cmpStatus" class="status"></div>
+          <div class="table-scroll"><table id="cmpTable" class="contacts cmp"></table></div>
+        </details>
       </div>
       <div class="tabpane" data-tabpane="chart" hidden>
         <div id="chart1" class="chart"></div>
@@ -366,12 +394,15 @@
     <h3>結果の保存と見返し</h3>
     <p>一覧の「結果を保存」で、一覧と計算条件を JSON ファイルに保存します。上の「保存した結果を開く」でそのファイルを選ぶと、一覧が保存したときのまま表示され、左の設定も保存した条件に戻ります。
       一覧の行をクリックすると、保存した計算条件でその現象の詳細（接触時刻・動画・グラフ・地図）を計算し直して表示します。詳細の「データ」タブの「JSON をダウンロード」で保存した 1 件の現象や、cli.py の <code>--format json</code> の出力も開けます。</p>
+    <h3>観測画像と比べる</h3>
+    <p>詳細の「見え方（動画）」タブで向きを「太陽の北が上」にして「角度の目盛り」と「表示範囲」を選ぶと、ひので・SDO などの画像と同じ座標（太陽の中心からの X, Y、″）で見られます。「時刻を指定（UTC）」に画像の時刻を入れるとその時刻の値を、「観測画像と比べる」に画像ごとの時刻と測った位置を入れると計算との差（O−C）を表にします。概要の「半径による接触時刻の変化」には、太陽や天体の半径を変えたときに接触時刻がどれだけ変わるかを示します。</p>
     <h3>用語</h3>
     <dl>
       <dt>食分</dt><dd>太陽の<b>直径</b>のうち月に隠された割合。皆既日食では 1 以上になります（地球全体の一覧では NASA と同じく中心食の場合は月と太陽の視直径比）。</dd>
       <dt>食面積率</dt><dd>太陽の<b>面積</b>のうち隠された割合。体感的な暗さに近い指標です。</dd>
       <dt>第1〜第4接触</dt><dd>月（惑星）の縁と太陽の縁が接する瞬間。第1接触＝欠け始め、第2接触＝皆既・金環（または内接）の始まり、第3接触＝その終わり、第4接触＝欠け終わり。</dd>
-      <dt>位置角 P / 天頂角 V</dt><dd>太陽の中心から見た接触点の方向。P は天の北極方向から東回り、V は天頂方向から測った角度です。</dd>
+      <dt>位置角 / 天頂角 V</dt><dd>太陽の中心から見た接触点の方向。位置角は天の北極方向から東回り、V は天頂方向から測った角度です。「太陽の北から」の位置角は、太陽の自転軸の北から東回りに測ります。</dd>
+      <dt>太陽の P 角・X, Y</dt><dd>P 角は、太陽の自転軸の北が天の北から東へ傾いている角度です。X, Y は太陽の北を上にしたときの太陽の中心からの角度（″、X は西、Y は北が正）で、ひので・SDO などの画像の座標（helioprojective）と同じです。</dd>
       <dt>γ（ガンマ）</dt><dd>月の影の軸が地球中心から最も近づいたときの距離（地球赤道半径単位）。小さいほど地球の中央付近を影が通ります。</dd>
       <dt>サロス番号</dt><dd>約18年周期で似た日食が繰り返す系列の番号。</dd>
       <dt>ΔT</dt><dd>地球自転の不規則さを表す TT と UT の差。将来・過去ほど不確かで、主に食の見える場所（経度）に影響します。</dd>
@@ -380,6 +411,7 @@
     <h3>精度について</h3>
     <ul>
       <li>天体位置は JPL DE440（DE440s）暦、時刻系は IERS 観測値にもとづく ΔT を使用。接触時刻は光行時間を反復計算し、0.1 ms 以下まで収束させています。</li>
+      <li>太陽の半径は、画像に見える太陽の縁（1 AU で 959.96″ = 696,231 km。ひので SOT が撮った 2006 年の水星の太陽面通過の接触を 1 秒ほどで再現）を既定にしています。IAU 2015 公称値（695,700 km）は光球（τ=1）の半径で、これを使うと太陽面通過の接触時刻が 10 秒ほど変わります。金星は大気があるため、可視光では 6131 km、軟 X 線では 6202 km の円盤に見えます（Reale ほか 2015）。</li>
       <li>月の縁の凹凸（山や谷）は考慮していません。NASA 方式の 2 種類の月半径でその平均的な効果を近似しています。実際の接触時刻は月縁地形により ±1〜2 秒ほど変わることがあります。</li>
       <li>人工衛星の精度は軌道情報の精度で決まります。TLE は元期から日数が経つと数 km〜数百 km の誤差を生じます。</li>
     </ul>
