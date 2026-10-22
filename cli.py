@@ -54,6 +54,8 @@ from eclipsecalc import i18n  # noqa: E402
 from eclipsecalc.i18n import tr  # noqa: E402
 
 PHENOMENA = ('moon', 'mercury', 'venus')
+# earth: the Earth's shadow on a satellite (the times at which the Earth hides the Sun); not a default
+ALL_PHENOMENA = PHENOMENA + ('earth',)
 # --sun-radius and --planet-radius (as the presets of the web UI, /api/info)
 SUN_RADIUS = {'observed': C.SUN_RADIUS_OBSERVED, 'nasa': C.SUN_RADIUS_NASA, 'iau2015': C.SUN_RADIUS_IAU2015}
 PLANET_RADIUS = {'observed': (C.MERCURY_RADIUS, C.VENUS_RADIUS_VISIBLE), 'iau': (C.MERCURY_RADIUS, C.VENUS_RADIUS),
@@ -290,7 +292,8 @@ def build_parser():
     p.add_argument('--start', metavar='DATE', help=tr('開始日（UTC）。例 2027-07-25'))
     p.add_argument('--end', metavar='DATE', help=tr('終了日（UTC）。例 2027-08-10'))
     p.add_argument('--phenomena', metavar='LIST',
-                   help=tr('計算する現象をカンマ区切りで: moon（日食）, mercury, venus（既定 すべて）'))
+                   help=tr('計算する現象をカンマ区切りで: moon（日食）, mercury, venus（既定 この 3 つ）、'
+                           'earth（人工衛星が地球の影に入る時間。季節・周回ごとの入りと出・長さ）'))
     p.add_argument('--sweep', type=float, metavar='STEP',
                    help=tr('軌道要素・TLE の衛星のみ: 平均近点角（軌道上の位置）をこの刻み (°, 5〜90) で変えて一括計算する'
                            '（打ち上げ前や、TLE の元期から何か月も先の検討。期間は 1 年以内）'))
@@ -321,6 +324,9 @@ def build_parser():
     s.add_argument('--atm', type=float, metavar='KM',
                    help=tr('人工衛星: 地球大気の遮蔽高度 (km)（既定 0。目安は可視光 0、軟X線 約 140 km、'
                            '極紫外線 約 250 km）'))
+    s.add_argument('--atm-levels', metavar='KM,KM,...',
+                   help=tr('地球の影（--phenomena earth）で比べる遮蔽高度 (km) をカンマ区切りで（既定 0,140,250。'
+                           '--atm の値も加える）'))
     s.add_argument('--min-sun-alt', type=float, metavar='DEG',
                    help=tr('地上: 太陽中心がこの高度以上で「見える」とする (°)（既定 0）'))
     s.add_argument('--no-refraction', action='store_true', help=tr('地上: 大気差を太陽高度に反映しない'))
@@ -400,8 +406,8 @@ def parse_args(argv):
         raise UsageError(tr('--at と --at-file は --sweep・--detail と同時には使えません'))
     if args.mode == 'request':
         clash = [k for k in ORBIT_ONLY + CCSDS_ONLY + ('elev', 'horizons_step', 'name', 'start', 'end', 'phenomena', 'sweep',
-                                          'ephemeris', 'delta_t', 'sun_radius', 'planet_radius', 'atm', 'min_sun_alt',
-                                          'no_refraction', 'include_invisible') if _given(args, k)]
+                                          'ephemeris', 'delta_t', 'sun_radius', 'planet_radius', 'atm', 'atm_levels',
+                                          'min_sun_alt', 'no_refraction', 'include_invisible') if _given(args, k)]
         if clash:
             raise UsageError(tr('--request と {opts} は併用できません（JSON の中で指定してください）',
                                 opts=' '.join('--' + k.replace('_', '-') for k in clash)))
@@ -669,6 +675,12 @@ def _settings_from_args(args):
         s['mercury_radius_km'], s['venus_radius_km'] = PLANET_RADIUS[args.planet_radius]
     if args.atm is not None:
         s['earth_atm_km'] = args.atm
+    if args.atm_levels is not None:
+        from eclipsecalc.earth_shadow import check_levels
+        try:
+            s['shadow_atm_levels_km'] = check_levels(args.atm_levels)
+        except ValueError as exc:
+            raise InputError(f'--atm-levels: {exc}')
     if args.min_sun_alt is not None:
         s['min_sun_alt_deg'] = args.min_sun_alt
     if args.no_refraction:
@@ -790,11 +802,19 @@ def build_request(args, log):
     ph = req['phenomena']
     if isinstance(ph, str):
         ph = [x.strip() for x in ph.split(',') if x.strip()]
-    bad = [x for x in ph if x not in PHENOMENA] if isinstance(ph, list) else ['?']
+    bad = [x for x in ph if x not in ALL_PHENOMENA] if isinstance(ph, list) else ['?']
     if bad or not ph:
-        raise InputError(tr('現象は moon, mercury, venus から選んでください（指定: {given}）',
+        raise InputError(tr('現象は moon, mercury, venus, earth から選んでください（指定: {given}）',
                             given=', '.join(map(str, bad)) or tr('なし')))
     req['phenomena'] = list(dict.fromkeys(ph))      # each once (moon,moon would list every eclipse twice)
+    if 'earth' in req['phenomena']:
+        if req.get('step_deg') is not None:
+            raise InputError(tr('地球の影は、位相を変えた一括計算では計算できません（影に入る時期と長さは軌道上の位置によらないため、'
+                                '一括計算をやめて計算してください）'))
+        if req['observer'].get('type') in ('ground', 'global'):
+            raise InputError(tr('地球の影は人工衛星・探査機から見たときだけ計算できます（観測者を「人工衛星」にしてください）'))
+        if args.format == 'csv' and len(req['phenomena']) > 1:
+            raise InputError(tr('CSV では地球の影（earth）とほかの現象を一緒に出力できません。--phenomena earth だけで計算してください'))
     if req.get('step_deg') is not None and req['observer'].get('type') not in ('kepler', 'tle') and not (
             req['observer'].get('type') == 'ccsds' and _mean_elements_only(req['observer'])):
         raise InputError(tr('--sweep は軌道要素・TLE・OMM（--ccsds）で指定した衛星だけで使えます') if args.sweep is not None
@@ -907,6 +927,12 @@ def preflight(req, obs):
         raise InputError(tr('人工衛星の観測者では期間を 20 年以内にしてください'))
     if req.get('step_deg') is not None and jd_b - jd_a > server.SWEEP_MAX_DAYS:
         raise InputError(tr('位相を変えた一括計算では期間を 1 年以内にしてください'))
+    if 'earth' in req['phenomena'] and obs is not None:
+        from eclipsecalc.earth_shadow import check_period
+        try:
+            check_period(obs, jd_a, jd_b)
+        except ObserverError as exc:
+            raise InputError(str(exc))
     warnings = list(getattr(obs, 'notes', None) or [])
     if isinstance(obs, SGP4Observer):        # the re-entry that SGP4 predicts
         try:
@@ -1190,10 +1216,19 @@ def _visible_intervals(e, tz):
 
 
 def search_table(res, args, phenomena=PHENOMENA):
+    lines = _event_table(res, args, phenomena)
+    if res.get('earth_shadow') is not None:
+        lines += shadow_table(res, args)
+    return lines
+
+
+def _event_table(res, args, phenomena):
     evs = res['events']
     kind = res['observer']['kind']
-    lines = _header(res, args, phenomena=phenomena) + ['', tr('{n} 件の現象が見つかりました', n=len(evs)) if evs
-                                                       else tr('この期間に見られる現象はありません')]
+    lines = _header(res, args, phenomena=phenomena)
+    if not any(p in PHENOMENA for p in phenomena):      # the Earth's shadow only
+        return lines
+    lines += ['', tr('{n} 件の現象が見つかりました', n=len(evs)) if evs else tr('この期間に見られる現象はありません')]
     if not evs:
         return lines
     tz = args.tz_hours
@@ -1291,6 +1326,77 @@ def sweep_table(res, args, phenomena=PHENOMENA):
     lines += [''] + _table(head, rows, right={2, 3, 4})
     lines += ['', tr('位相（平均近点角）ごとの結果は --format csv または --format json で出力できます。')]
     return lines
+
+
+def _clock(iso, tz, ref=None):
+    """A time of the Earth's shadow: the date and time in the time zone, the date left out when it
+    is that of ``ref``."""
+    return _time_on(iso, ref, tz, '%H:%M:%S') if ref else _time(iso, tz, '%Y-%m-%d %H:%M')
+
+
+def shadow_table(res, args):
+    """The Earth's shadow on the satellite (--phenomena earth): per height of the absorbing
+    atmosphere, its seasons and, with --detail, every pass for the height of --atm."""
+    sh, tz = res['earth_shadow'], args.tz_hours
+    h0 = sh['atm_km']
+    lines = ['', '■ ' + tr('地球の影（衛星から見て太陽が地球に隠れる時間。遮蔽高度 {h} km で太陽の中心が隠れている時間）',
+                          h=f'{h0:g}')]
+    levels = sh['levels']
+    if not any(lv['n'] for lv in levels):
+        return lines + [tr('この期間には、どの遮蔽高度でも地球の影に入りません。')]
+    head = [tr(k) for k in ('遮蔽高度', '影に入る回数', '最長', '最長の日', '影の合計', '影の時間の割合', '季節の数')]
+    rows = []
+    for lv in levels:
+        rows.append([f'{lv["atm_km"]:g} km' + (' *' if lv['atm_km'] == h0 else ''), tr('{n} 回', n=f'{lv["n"]:,}'),
+                     _dur(lv['max_s']), _time(lv['max_at'], tz, '%Y-%m-%d') if lv['max_at'] else '—',
+                     _dur(lv['total_s']), f'{100 * lv["fraction"]:.1f}%', len(lv['seasons'])])
+    lines += _table(head, rows, right={1, 2, 4, 5, 6})
+    head = [tr(k) for k in ('遮蔽高度', '季節の始まり', '季節の終わり', '日数', '影に入る回数', '最長', '最長の日', '最短')]
+    rows = []
+    for lv in levels:
+        for s in lv['seasons']:
+            rows.append([f'{lv["atm_km"]:g} km', ('… ' if s['cut_start'] else '') + _clock(s['start'], tz),
+                         _clock(s['end'], tz) + (' …' if s['cut_end'] else ''), f'{s["days"]:.1f}',
+                         tr('{n} 回', n=f'{s["n"]:,}'), _dur(s['max_s']), _time(s['max_at'], tz, '%Y-%m-%d'),
+                         _dur(s['min_s'])])
+    if rows:
+        lines += ['', tr('影の季節（数日以上あいだが空くまでを 1 つの季節とします）:')] + _table(head, rows, right={3, 4, 5, 7})
+    lines += ['', tr('* は --atm の遮蔽高度（周回ごとの値はこの高さ）、… は期間の端で途切れていることを示します。'
+                     '遮蔽高度は、地球の縁からその高さまでの大気が太陽を隠すとする高さです'
+                     '（目安: 可視光 0 km、軟X線 約 140 km、極紫外線 約 250 km）。')]
+    if not args.detail:
+        return lines + [tr('周回ごとの影に入る・出る時刻は --detail、--format csv または --format json で出力できます。')]
+    head = [tr(k) for k in ('日付', '欠け始め', '中心が隠れる', '完全に隠れる', '出始め', '中心が出る', '全部出る',
+                            '長さ', '深さ', '影の中央の衛星直下点')]
+    rows = []
+    for p in sh['passes']:
+        ref = p['partial_start']
+        rows.append([_time(ref, tz, '%Y-%m-%d'), _clock(ref, tz, ref), _clock(p['start'], tz, ref) if p['start'] else '—',
+                     _clock(p['total_start'], tz, ref) if p['total_start'] else '—',
+                     _clock(p['total_end'], tz, ref) if p['total_end'] else '—',
+                     _clock(p['end'], tz, ref) if p['end'] else '—', _clock(p['partial_end'], tz, ref),
+                     _dur(p['duration_s']) if p['duration_s'] is not None else '—', f'{p["depth_deg"]:+.2f}°',
+                     _latlon(p['sat_lat'], p['sat_lon'])])
+    lines += ['', tr('周回ごとの地球の影（遮蔽高度 {h} km、{n} 回）:', h=f'{h0:g}', n=f'{len(rows):,}')]
+    lines += _table(head, rows, right={7, 8})
+    lines += ['', tr('欠け始め・全部出るは太陽の一部、中心が隠れる・出るは太陽の中心、完全に隠れる・出始めは太陽の全体が'
+                     '地球（＋遮蔽高度）に隠れる・出る時刻、長さは中心が隠れている時間、深さは影の中央で太陽の中心が'
+                     '地球の縁（＋遮蔽高度）より内側にある角度です（負なら中心は隠れない）。')]
+    return lines
+
+
+SHADOW_CSV = ('start', 'end', 'duration_s', 'partial_start', 'partial_end', 'partial_s', 'total_start', 'total_end',
+              'total_s', 'mid', 'depth_deg', 'sat_lat', 'sat_lon', 'sat_alt_km', 'cut_start', 'cut_end')
+
+
+def shadow_csv(res):
+    # one row per pass for the height of --atm (as the web UI's CSV of the Earth's shadow)
+    sh = res['earth_shadow']
+    rows = [['atm_km'] + [k + '_utc' if k in ('start', 'end', 'partial_start', 'partial_end', 'total_start',
+                                              'total_end', 'mid') else k for k in SHADOW_CSV]]
+    for p in sh['passes']:
+        rows.append([sh['atm_km']] + [int(p[k]) if k.startswith('cut_') else p.get(k) for k in SHADOW_CSV])
+    return rows
 
 
 def search_csv(res):
@@ -1484,7 +1590,8 @@ def run(args):
     if args.format == 'csv':
         for w in res.get('warnings') or []:      # the table shows them in its header
             log(tr('注意: {w}', w=w))
-        rows = sweep_csv(res) if sweep else contacts_csv(res) if args.detail else search_csv(res)
+        rows = (sweep_csv(res) if sweep else shadow_csv(res) if res.get('earth_shadow') is not None
+                else contacts_csv(res) if args.detail else search_csv(res))
         _emit(_csv_text(rows), args, csv_out=True)
     else:
         table = sweep_table if sweep else search_table

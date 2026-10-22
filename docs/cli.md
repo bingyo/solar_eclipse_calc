@@ -53,8 +53,9 @@ python cli.py --help
 | よく使う都市（東京、ルクソールなど） | `--city 東京`（7 言語のどの名前でも可。`--city Tokyo` など。一覧は `--list-cities`） |
 | 「世界のどこで見られるか」 | `--global` |
 | 観測画像（ひので・SDO など）の撮影時刻・画像で測った位置 | 観測者に `--phenomena` で現象を 1 つと `--at 時刻` または `--at-file ファイル`（[観測画像と比べる](#観測画像と比べる--at)） |
+| 「衛星が地球の影に入るのはいつか」（衛星から見て太陽が地球に隠れる時間。日食とは別の「食」） | 衛星の観測者に `--phenomena earth`（[地球の影](#地球の影--phenomena-earth)） |
 
-期間は `--start` `--end`（UTC の日付）、現象は `--phenomena moon,mercury,venus`（既定はすべて。`moon` が日食）で指定します。
+期間は `--start` `--end`（UTC の日付）、現象は `--phenomena moon,mercury,venus`（既定はこの 3 つ。`moon` が日食）で指定します。衛星が地球の影に入る時間は `earth` です（既定には含まれません。`--phenomena moon,earth` のように一緒にも計算できます）。
 
 ### 軌道要素についての注意
 
@@ -96,7 +97,7 @@ python cli.py --ccsds pass.tdm --station USUDA=36.1325,138.3628,1456 --station K
 | 項目 | 範囲 |
 |---|---|
 | 期間（既定の暦 de440s） | 1849-12-26〜2150-01-20。1550〜2650 年は `python tools/download_ephemeris.py de440` のあと `--ephemeris de440` |
-| 人工衛星の期間 | 20 年以内（`--sweep` は 1 年以内） |
+| 人工衛星の期間 | 20 年以内（`--sweep` は 1 年以内。地球の影 `earth` は約 8,000 周以内: 低軌道で約 1.5 年、静止軌道で約 22 年） |
 | TLE | 元期から離れるほど誤差が大きくなります（7 日超・30 日超で `warnings` に注意が入ります）。現象の数日前の TLE を使うと秒単位の精度になります。何週間も先なら `--sweep` で位置による幅を確かめます |
 | JPL Horizons・SSCWeb | 各サービスが軌道データを提供している期間のみ。範囲外は `warnings` に入るか、エラーになります |
 | CCSDS | OEM・OCM の状態の並びは書かれた期間のみ。OPM・OCM の状態と TDM の軌道決定は元期から前後 1,000 周（低軌道で約 2 か月）・20 年まで。範囲外は `warnings` に入るか、エラーになります |
@@ -153,7 +154,7 @@ python cli.py --request request.json --format json
 
 `step_deg`（5〜90）を加えると、`kepler` と `tle`、OMM か TLE だけの `ccsds` で平均近点角を変えた一括計算になります。
 `times`（時刻の文字列の配列）を加えると、現象を探さずにその時刻の位置を計算します（`--at` と同じ。`measured`・`exposure_s` も使えます。`start`・`end` は省略でき、`phenomena` は 1 つ）。`--request` に `--at`・`--at-file`・`--exposure` を加えると、JSON の時刻の代わりにそれを使います。
-`settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`。省略すると画面の既定値です（半径は上の「半径の選び方」の既定。以前の `request` の半径は同じ節の注意を参照）。
+`settings` の項目: `ephemeris`、`delta_t`（秒）、`sun_radius_km`、`moon_radius_ext_km`、`moon_radius_int_km`、`mercury_radius_km`、`venus_radius_km`、`min_sun_alt_deg`、`refraction`、`earth_atm_km`、`include_invisible`、`shadow_atm_levels_km`（地球の影で比べる遮蔽高度の配列、km）。省略すると画面の既定値です（半径は上の「半径の選び方」の既定。以前の `request` の半径は同じ節の注意を参照）。
 
 ## 出力（`--format json`）
 
@@ -166,6 +167,7 @@ python cli.py --request request.json --format json
 | `request` | 計算に使った条件（`--request` にそのまま渡せる） |
 | `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準）。CCSDS なら `model: "ccsds"` と `message`（OEM・OPM・OMM・OCM・TDM）、`version`、`format`（KVN・XML・JSON・CSV）、`object_name`、`object_id`、`ref_frame`、`center`、`time_system`。OEM・OCM の状態の並びは `start`・`end`（データの期間）、`n_states`、`segments`、`interpolation_error_km`、OMM は TLE と同じ要素、OPM・OCM の状態と TDM は元期の接触軌道要素（`a_km` など。GCRS 基準）、`forces`（伝搬に使った力）、`drag`・`srp`（C·A/m、m²/kg）、`maneuvers`、`state_gcrs`（元期の位置・速度、km・km/s）。TDM はさらに `target`（衛星）、`stations`、`apriori`（初期値に使ったメッセージ）と `od`（軌道決定: `n_used`・`n_rejected`、観測の種類ごとの `types`（`n`、`rejected`、残差の `rms` と `unit`、往復を半分にした `factor`）、`sigma_pos_km`・`sigma_vel_km_s`（推定誤差 1σ）、`arc_s`（観測の期間、秒）、`first_guess`（`apriori`・`positions`・`gauss`）） |
 | `events` | 現象の一覧（最大の時刻順。下の表） |
+| `earth_shadow` | `--phenomena` に `earth` があるときだけ。衛星が地球の影に入る時間（[地球の影](#地球の影--phenomena-earth)） |
 | `warnings` | 注意（文字列の配列）。人に伝えてください。TLE の古さの注意にある日数は、通常の計算では見つかった現象のうち元期から最も遠いものまでの日数、`--dry-run` と `--sweep` では期間の端のうち元期から遠いほうまでの日数です |
 | `start`、`end`、`ephemeris`、`delta_t_mid_s`、`params` | 期間、暦、期間中央の ΔT（秒）、計算に使った半径などの設定 |
 | `dry_run` | `--dry-run` のときだけ `true`（`events` はありません） |
@@ -252,6 +254,32 @@ python cli.py --request request.json --format json
 | `time_first`、`time_last` | 最大の時刻の範囲 |
 | `rows` | 位相ごとの結果（`m_deg`、`count`、`best`＝最も深い現象、`events`） |
 
+## 地球の影（`--phenomena earth`）
+
+人工衛星・探査機から見て太陽が地球に隠れる時間（衛星が地球の影に入る時間。「衛星の食」とも呼ばれます）を、周回ごとに計算します。判定は日食・太陽面通過の「見えるか」（`vis_fraction`）と同じで、太陽の中心が地球の縁（WGS84 の楕円体、その日の極、地球の速度による光行差）と、その上の遮蔽高度 `--atm` までの大気より内側にあるあいだを「影」とします。太陽の一部・全体が隠れる時刻も求めます。周回ごとの境の時刻は 1 ms まで追い込み、0.5 秒より長い影は見落としません。
+
+```bash
+python cli.py --norad 29479 --phenomena earth --start 2027-03-01 --end 2027-10-01 --tz 9
+python cli.py --norad 29479 --phenomena earth --start 2027-06-18 --end 2027-06-19 --atm 140 --detail --format json
+```
+
+- 地上の地点・地球全体（`--global`）では使えません（終了コード 1）。`--sweep` とも一緒に使えません（影に入る時期と長さは軌道上の位置によらないため）。
+- 期間は約 8,000 周まで（低軌道で約 1.5 年）。計算には低軌道の 1 年で 20 秒ほどかかります。
+- 遮蔽高度は波長で変わります（目安: 可視光 0 km、軟X線 約 140 km、極紫外線 約 250 km）。`--atm` の高さで周回ごとの値を、`--atm-levels`（既定 `0,140,250`。`--atm` の値も加わる）の高さごとに季節と長さを出して比べます。
+- 表（`--format table`）は遮蔽高度ごとのまとめと影の季節、`--detail` で周回ごとの表です。`--format csv` は周回ごとに 1 行（`--atm` の高さ。`earth` だけを計算するときに使えます）。
+- TLE の元期から何か月も先でも、影の季節（始まりと終わりの日）と 1 回の長さは β角（軌道面と太陽の方向の角）と高度で決まるため、ほぼ確かです。周回ごとの時刻は衛星が軌道上のどこにいるかで変わるので、元期の近い軌道で計算し直します。
+
+`earth_shadow` の項目:
+
+| 項目 | 内容 |
+|---|---|
+| `atm_km` | 周回ごとの値（`passes`）の遮蔽高度（`--atm`） |
+| `period_start`、`period_end` | 計算した期間（軌道データのある期間に限られることがあります） |
+| `levels` | 遮蔽高度ごと（`atm_km` の小さい順）: `n`（太陽の中心が隠れた回数）、`total_s`（合計、秒）、`fraction`（期間のうち影の時間の割合）、`max_s`・`max_at`（最長とその入りの時刻）、`seasons`（影の季節。数日以上あいだが空くまで: `start`・`end`・`days`・`n`・`max_s`・`max_at`・`min_s`・`total_s`、期間の端で途切れていれば `cut_start`・`cut_end` が `true`）、`daily`（UTC の日ごとの `[日付, 回数, 最長の秒, 合計の秒]`） |
+| `passes` | 周回ごと（`atm_km` の高さで、太陽の一部でも隠れた回）: `partial_start`・`partial_end`（太陽の一部が隠れ始める・全部出る）、`start`・`end`・`duration_s`（太陽の中心が隠れる・出る、その長さ。中心が隠れない回は `null`）、`total_start`・`total_end`・`total_s`（太陽の全体が隠れている）、`mid`（影の中央）、`depth_deg`（影の中央で太陽の中心が地球の縁＋遮蔽高度より内側にある角度。負なら中心は隠れない）、`sat_lat`・`sat_lon`・`sat_alt_km`（影の中央の衛星直下点）、`cut_start`・`cut_end`（期間の端で途切れている） |
+
+画面では「計算する現象」の「地球の影」にチェックを入れ、観測者を「人工衛星」にします。結果の上に遮蔽高度ごとの季節、日ごとの最長の影のグラフ、選んだ日の周回ごとの表が出ます。
+
 ## 観測画像と比べる（`--at`）
 
 ひので・SDO などの画像には撮影時刻（ミリ秒まで）があり、座標は太陽の北が上の太陽中心からの角距離（″）です。`--at` は、現象を探さずに、指定した時刻の月・惑星の位置を同じ向きで計算します（`--detail` の接触と同じ計算）。観測者と `--phenomena` の現象 1 つを指定します（`--global` は使えません）。
@@ -300,7 +328,7 @@ python cli.py --sscweb hinode --phenomena mercury --start 2006-11-08 --end 2006-
 
 計算を検証したいときは、次の方法があります。
 
-- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと、`--at` が接触と同じ位置を返すこと）、`python tests/test_geometry.py`（P 角・太陽の北が上の位置・接触の時刻の半径への感度・うるう秒など）、`python tests/test_orbit_planning.py`、`python tests/test_ccsds.py`（CCSDS のメッセージ: OMM と TLE の一致、OEM の補間と現象、OPM・OCM の伝搬と軌道制御、TDM からの軌道決定、誤った入力のメッセージ）、`python tests/test_hinode.py`（「ひので」の実観測との比較。2006 年の水星の太陽面通過の接触は画像から測った時刻と 1.5 秒以内。要インターネット）。どれも全項目が `PASS` になることを確かめます。
+- **計算機自体の検証**: `python tests/test_validation.py`（NASA の公表値との比較）、`python tests/test_cli.py`（CLI が画面と同じ結果を返すこと、`--at` が接触と同じ位置を返すこと）、`python tests/test_geometry.py`（P 角・太陽の北が上の位置・接触の時刻の半径への感度・うるう秒など）、`python tests/test_orbit_planning.py`、`python tests/test_earth_shadow.py`（地球の影: 境の時刻が日食の「見えるか」の判定と一致すること、影の見落としがないこと、静止衛星の春分・秋分の季節）、`python tests/test_ccsds.py`（CCSDS のメッセージ: OMM と TLE の一致、OEM の補間と現象、OPM・OCM の伝搬と軌道制御、TDM からの軌道決定、誤った入力のメッセージ）、`python tests/test_hinode.py`（「ひので」の実観測との比較。2006 年の水星の太陽面通過の接触は画像から測った時刻と 1.5 秒以内。要インターネット）。どれも全項目が `PASS` になることを確かめます。
 - **観測画像との比較**: 画像の撮影時刻を `--at` で渡し、画像で測った位置を `--at-file` の `X Y` に書くと、O−C（″）と時間の差 `oc_dt`（秒）が出ます（[観測画像と比べる](#観測画像と比べる--at)）。
 - **地球全体の結果**: `--global` の日食の時刻・γ・食分・中心食の継続時間は、NASA の日食カタログ（Espenak & Meeus）と比べられます（一致の程度は [README](../README.ja.md) の「精度と検証」）。
 - **地上の結果**: 同じ日食を `--global` で計算し、その地点が中心食帯の中にあるか、最大の時刻が `p1`〜`p4` に入っているかなどで整合を確かめられます。

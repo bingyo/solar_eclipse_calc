@@ -47,7 +47,10 @@
             <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f6a821"/><circle cx="9" cy="13" r="1.6" fill="#111"/></svg>水星の太陽面通過</span></label>
           <label class="phen-chip"><input type="checkbox" name="ph" value="venus" checked>
             <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#f6a821"/><circle cx="9" cy="13" r="2.6" fill="#111"/></svg>金星の太陽面通過</span></label>
+          <label class="phen-chip" id="earthChip"><input type="checkbox" name="ph" value="earth">
+            <span><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="4" fill="#f6a821"/><circle cx="15" cy="12" r="8" fill="#2463c9"/><path d="M15 4a8 8 0 0 1 0 16z" fill="#1d2433"/></svg>地球の影（人工衛星が影に入る時間）</span></label>
         </div>
+        <p class="hint" id="earthHint" hidden>「地球の影」は、観測者が人工衛星・探査機のときだけ計算します。</p>
       </section>
 
       <section class="card">
@@ -235,6 +238,8 @@
             <small>地球の縁＋この高さまでは太陽が隠れる</small>
             <small>目安: 可視光 約 0 km、軟 X 線 約 140 km、EUV 約 250 km</small></label>
         </div>
+        <label class="field">地球の影: 比べる遮蔽高度 (km)<input id="shadowLevels" type="text" value="0, 140, 250" spellcheck="false" autocomplete="off">
+          <small>カンマ区切りで 6 個まで。「衛星: 地球大気の遮蔽高度」の値も加えて比べます</small></label>
         <label class="check"><input type="checkbox" id="refraction" checked> 大気差（大気による浮き上がり）を太陽高度に反映</label>
         <label class="check"><input type="checkbox" id="includeInvisible"> 観測地から見えない現象（夜間・地球の陰）も一覧に含める</label>
       </details>
@@ -285,6 +290,7 @@
         <div id="warnings" class="warnings"></div>
         <div class="filters" id="filters"></div>
       </div>
+      <div class="card shadow-card" id="shadowArea" hidden></div>
       <div class="card table-card" id="listCard">
         <div class="table-wrap"><table id="eventTable" class="events"></table></div>
       </div>
@@ -411,6 +417,8 @@
     </ol>
     <h3>CCSDS のメッセージ</h3>
     <p>「人工衛星」の「CCSDS」に、CCSDS の軌道データメッセージ（OEM・OPM・OMM・OCM）や追跡データメッセージ（TDM）を貼り付けるか、ファイルを開きます。OEM は書かれた状態を補間し、OPM と OCM の状態ベクトルは数値積分で軌道を伝搬し、OMM は SGP4 で計算します。TDM には観測局の位置が書かれていないため、衛星以外の参加者（観測局）の緯度・経度・標高を入力すると、角度・距離・ドップラーの観測から軌道を決めて計算します（同じ衛星の OPM・OMM・TLE を一緒に入れると、それを初期値にします）。「内容を確認」で、読み取った内容と軌道の大きさを計算の前に確かめられます。</p>
+    <h3>地球の影</h3>
+    <p>「計算する現象」の「地球の影」にチェックを入れて観測者を「人工衛星」にすると、衛星から見て太陽が地球に隠れる時間（衛星が地球の影に入る時間）を周回ごとに計算します。影の季節（影に入る周回が続く期間）と、周回ごとに太陽が欠け始める・中心が隠れる・完全に隠れる時刻とその逆、長さ、影の中央の衛星直下点を表示します。地球の大気が太陽を隠す高さ（遮蔽高度）は波長で変わるため、「詳細設定」の遮蔽高度と比べる高さ（既定 0・140・250 km）ごとに季節と長さを並べます。日食・太陽面通過と一緒に計算でき、影に入る時期と長さは衛星が軌道上のどこにいてもほとんど変わりません。</p>
     <h3>結果の保存と見返し</h3>
     <p>一覧の「結果を保存」で、一覧と計算条件を JSON ファイルに保存します。上の「保存した結果を開く」でそのファイルを選ぶと、一覧が保存したときのまま表示され、左の設定も保存した条件に戻ります。
       一覧の行をクリックすると、保存した計算条件でその現象の詳細（接触時刻・動画・グラフ・地図）を計算し直して表示します。詳細の「データ」タブの「JSON をダウンロード」で保存した 1 件の現象や、cli.py の <code>--format json</code> の出力も開けます。</p>

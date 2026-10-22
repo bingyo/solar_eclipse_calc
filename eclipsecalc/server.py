@@ -25,6 +25,7 @@ from .constants import (DAY_S, MERCURY_RADIUS, MERCURY_RADIUS_NASA, MOON_K_EXTER
 from .conjunctions import find_conjunctions
 from .context import (DEFAULT_EPHEMERIS, DOWNLOADABLE, ROOT_DIR, available_ephemerides,
                       ensure_ephemeris, get_context)
+from .earth_shadow import ShadowSearch, atm_levels
 from .eclipse_map import solar_eclipse_map, transit_map
 from .global_eclipse import search_global
 from .i18n import span, tr
@@ -374,6 +375,11 @@ def sscweb_satellites():
         raise HTTPException(502, str(exc))
 
 
+BODIES = ('moon', 'mercury', 'venus')
+# 'earth': the times at which the Earth hides the Sun from a spacecraft (earth_shadow.py)
+PHENOMENA = BODIES + ('earth',)
+
+
 def _parse_request(req):
     '''Common validation of search requests -> (ctx, params, jd_a, jd_b, phenomena).'''
     try:
@@ -390,7 +396,7 @@ def _parse_request(req):
     if jd_a < ctx.jd_min or jd_b > ctx.jd_max:
         raise HTTPException(400, tr('期間が暦 {name} の範囲（{start}〜{end}）を超えています',
                                      name=ctx.ephemeris_name, start=cov_a, end=cov_b))
-    phen = [p for p in req.phenomena if p in ('moon', 'mercury', 'venus')]
+    phen = [p for p in dict.fromkeys(req.phenomena) if p in PHENOMENA]
     if not phen:
         raise HTTPException(400, tr('計算する現象を 1 つ以上選んでください'))
     return ctx, params, jd_a, jd_b, phen
@@ -403,6 +409,7 @@ def search(req: SearchRequest):
     spec = dict(req.observer)
     years = (jd_b - jd_a) / 365.25
     warnings = []
+    shadow = None
     with _compute_lock:
         try:
             if spec.get('type') == 'global':
@@ -417,7 +424,16 @@ def search(req: SearchRequest):
             if observer.kind == 'space' and years > 20:
                 raise ObserverError(tr('人工衛星の観測者では期間を 20 年以内にしてください'))
             events = []
+            if 'earth' in phen:
+                sh = ShadowSearch(ctx, observer, params, jd_a, jd_b, atm_levels(params))
+                shadow = sh.run()
+                warnings += [w for w in sh.warnings if w not in warnings]
+                epoch = getattr(observer, 'epoch_jd', None)       # an old TLE: judged at the far end
+                far = jd_b if epoch is None or abs(jd_b - epoch) >= abs(jd_a - epoch) else jd_a
+                warnings += [w for w in observer.warnings_for(ctx, far) if w not in warnings]
             for body in phen:
+                if body == 'earth':
+                    continue
                 if spec.get('type') == 'global' and body == 'moon':
                     for ev in search_global(ctx, jd_a, jd_b, params):
                         eid = _put({'kind': 'global', 'event': ev, 'ctx': ctx, 'params': params,
@@ -452,17 +468,20 @@ def search(req: SearchRequest):
     worst = max((e for e in events if e.get('warnings')),
                 key=lambda e: abs(e['jd_max'] - getattr(observer, 'epoch_jd', e['jd_max'])),
                 default=None)
-    if worst is not None:
+    if worst is not None and shadow is None:     # the Earth's shadow judged them at the end of the period
         for w in worst['warnings']:
             if w not in warnings:
                 warnings.append(w)
     dt_now = float(ctx.ts.tt_jd(0.5 * (jd_a + jd_b)).delta_t)
-    return _clean({
+    out = {
         'events': events, 'observer': obs_desc, 'warnings': warnings,
         'elapsed_s': time.time() - t0, 'ephemeris': ctx.ephemeris_name,
         'delta_t_mid_s': dt_now, 'delta_t_override': ctx.delta_t_override,
         'params': params.as_dict(), 'start': req.start, 'end': req.end,
-    })
+    }
+    if shadow is not None:
+        out['earth_shadow'] = shadow
+    return _clean(out)
 
 
 SWEEP_MAX_DAYS = 366.0 + 3 / 86400   # 1 year; the dates are TT, and leap seconds (2 in 1972) lengthen a UTC year
@@ -497,6 +516,9 @@ def phase_sweep(req: SweepRequest):
     if spec.get('type') not in ('kepler', 'tle') and not (spec.get('type') == 'ccsds'
                                                          and ccsds.mean_elements_only(spec)):
         raise HTTPException(400, tr('位相を変えた一括計算は「軌道要素」・TLE・OMM で指定した衛星だけで使えます'))
+    if 'earth' in phen:
+        raise HTTPException(400, tr('地球の影は、位相を変えた一括計算では計算できません（影に入る時期と長さは軌道上の位置によらないため、'
+                                    '一括計算をやめて計算してください）'))
     step = float(req.step_deg)
     if not 5.0 <= step <= 90.0:
         raise HTTPException(400, tr('位相の刻みは 5〜90° で指定してください'))

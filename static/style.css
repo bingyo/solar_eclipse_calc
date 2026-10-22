@@ -314,3 +314,12 @@ table.cmp caption { caption-side: bottom; text-align: left; font-size: 12px; col
 table.cmp tbody tr.click { cursor: pointer; }
 table.cmp tbody tr.click:hover td { background: #fff8ee; }
 table.cmp tfoot td { font-size: 12px; color: var(--ink2); padding: 6px 8px; }
+
+/* the Earth's shadow on a satellite */
+.phen-chip.na span { opacity: .35; }
+.shadow-card h3 { font-size: 15px; margin: 0 0 4px; }
+.shadow-card > .muted { font-size: 12px; margin: 0 0 10px; }
+.shadow-card .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.shadow-card .contacts td { vertical-align: top; }
+.shadow-card .contacts caption { caption-side: bottom; text-align: left; font-size: 12px; color: var(--muted); padding-top: 6px; }
+.shadow-card .row .field { margin-bottom: 0; }

@@ -64,6 +64,9 @@ class Params:
     refraction: bool = True
     earth_atm_km: float = 0.0
     include_invisible: bool = False
+    # the heights of the absorbing atmosphere compared in the Earth's shadow (earth_shadow.py); a tuple,
+    # so that the values of as_dict() can be a key
+    shadow_atm_levels_km: tuple = (0.0, 140.0, 250.0)
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -77,6 +80,12 @@ class Params:
         for k in ('refraction', 'include_invisible'):
             if k in d and d[k] is not None:
                 setattr(p, k, bool(d[k]))
+        if d.get('shadow_atm_levels_km') not in (None, ''):
+            from .earth_shadow import check_levels
+            try:
+                p.shadow_atm_levels_km = tuple(check_levels(d['shadow_atm_levels_km']))
+            except ValueError as exc:
+                raise ObserverError(str(exc))
         return p
 
     def body_radii(self, body):
@@ -89,7 +98,7 @@ class Params:
         return {k: getattr(self, k) for k in (
             'sun_radius_km', 'moon_radius_ext_km', 'moon_radius_int_km', 'mercury_radius_km',
             'venus_radius_km', 'min_sun_alt_deg', 'refraction', 'earth_atm_km',
-            'include_invisible')}
+            'include_invisible', 'shadow_atm_levels_km')}
 
 
 def earth_disk(r_obs_km, sun_vec, pole=None):
@@ -156,6 +165,17 @@ class Evaluator:
         if need_vis:
             g['vis'] = self.visibility(g)
         return g
+
+    def sun_only(self, x):
+        """The Sun from the observer at jd0 + x, without the body (for earth_view and the Earth's
+        shadow): the keys t, o, sa, x, ds and rs of geom()."""
+        x = np.atleast_1d(np.asarray(x, float))
+        t = self.time(x)
+        o = self.obs.at(t)
+        sa = o.observe(self.ctx.sun)
+        ds = norm(sa.position.km)
+        self.n_eval += x.size
+        return dict(x=x, t=t, o=o, sa=sa, ds=ds, rs=np.arcsin(self.Rs / ds))
 
     def visibility(self, g):
         """Visibility margin in degrees (>0: Sun centre visible)."""
@@ -388,42 +408,7 @@ class LocalSearch:
         if self.jd_b <= self.jd_a:
             return []
         margin = 0.6
-        if isinstance(self.observer, HorizonsObserver):
-            pad = self.observer.step_min / 1440.0 + 0.02
-            if self.observer.coverage is None:
-                self.observer.survey(self.jd_a - margin - pad, self.jd_b + margin + pad)
-            self.warnings += self.observer.step_warnings()
-            ca, cb = self.observer.coverage
-            if ca + pad > self.jd_a - margin or cb - pad < self.jd_b + margin:
-                a2 = max(self.jd_a, ca + pad + margin)
-                b2 = min(self.jd_b, cb - pad - margin)
-                if b2 <= a2:
-                    raise ObserverError(tr('指定期間には JPL Horizons の軌道データがありません'))
-                self.warnings.append(tr('JPL Horizons の軌道データがある期間（{start}〜{end}）に限定して計算しました',
-                                        start=iso_utc(self.ctx.ts.tt_jd(a2))[:10],
-                                        end=iso_utc(self.ctx.ts.tt_jd(b2))[:10]))
-                self.jd_a, self.jd_b = a2, b2
-            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
-        elif isinstance(self.observer, SSCWebObserver):
-            cov = self.observer.coverage_jd()
-            if cov and (cov[0] > self.jd_a - margin or cov[1] < self.jd_b + margin):
-                a2 = max(self.jd_a, cov[0] + margin + 0.01)
-                b2 = min(self.jd_b, cov[1] - margin - 0.01)
-                period = span(iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10], iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10])
-                if b2 <= a2:
-                    raise ObserverError(tr('指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）', period=period))
-                self.warnings.append(tr('NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました', period=period))
-                self.jd_a, self.jd_b = a2, b2
-            if not self.observer.surveyed:
-                self.observer.survey(self.jd_a, self.jd_b)
-            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
-        elif isinstance(self.observer, SGP4Observer):
-            self.jd_b, w = tle_decay(ctx, self.observer, self.jd_a, self.jd_b, margin)
-            self.warnings += [x for x in list(self.observer.notes) + w if x not in self.warnings]
-        else:      # orbit data of limited extent (CCSDS ephemerides, propagated state vectors)
-            self.jd_a, self.jd_b, w = self.observer.limit_period(ctx, self.jd_a, self.jd_b, margin)
-            self.warnings += [x for x in w if x not in self.warnings]
-            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
+        self.limit_period(margin)
         wins, _ = candidate_windows(ctx, self.observer, self.body, self.jd_a - margin,
                                     self.jd_b + margin, self.p)
         wins = self.observer.clip_windows(wins)
@@ -470,6 +455,48 @@ class LocalSearch:
             out.append(e)
         self._finalise(out)
         return out
+
+    def limit_period(self, margin):
+        """The period limited to the orbit data of the observer (and before the re-entry that SGP4
+        predicts), with the orbit data of a service surveyed for it and the step of the scan for
+        them; the warnings go to self.warnings."""
+        ctx = self.ctx
+        if isinstance(self.observer, HorizonsObserver):
+            pad = self.observer.step_min / 1440.0 + 0.02
+            if self.observer.coverage is None:
+                self.observer.survey(self.jd_a - margin - pad, self.jd_b + margin + pad)
+            self.warnings += self.observer.step_warnings()
+            ca, cb = self.observer.coverage
+            if ca + pad > self.jd_a - margin or cb - pad < self.jd_b + margin:
+                a2 = max(self.jd_a, ca + pad + margin)
+                b2 = min(self.jd_b, cb - pad - margin)
+                if b2 <= a2:
+                    raise ObserverError(tr('指定期間には JPL Horizons の軌道データがありません'))
+                self.warnings.append(tr('JPL Horizons の軌道データがある期間（{start}〜{end}）に限定して計算しました',
+                                        start=iso_utc(self.ctx.ts.tt_jd(a2))[:10],
+                                        end=iso_utc(self.ctx.ts.tt_jd(b2))[:10]))
+                self.jd_a, self.jd_b = a2, b2
+            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
+        elif isinstance(self.observer, SSCWebObserver):
+            cov = self.observer.coverage_jd()
+            if cov and (cov[0] > self.jd_a - margin or cov[1] < self.jd_b + margin):
+                a2 = max(self.jd_a, cov[0] + margin + 0.01)
+                b2 = min(self.jd_b, cov[1] - margin - 0.01)
+                period = span(iso_utc(self.ctx.ts.tt_jd(cov[0]))[:10], iso_utc(self.ctx.ts.tt_jd(cov[1]))[:10])
+                if b2 <= a2:
+                    raise ObserverError(tr('指定期間には NASA SSCWeb の軌道データがありません（提供期間 {period}）', period=period))
+                self.warnings.append(tr('NASA SSCWeb の軌道データがある期間（{period}）に限定して計算しました', period=period))
+                self.jd_a, self.jd_b = a2, b2
+            if not self.observer.surveyed:
+                self.observer.survey(self.jd_a, self.jd_b)
+            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
+        elif isinstance(self.observer, SGP4Observer):
+            self.jd_b, w = tle_decay(ctx, self.observer, self.jd_a, self.jd_b, margin)
+            self.warnings += [x for x in list(self.observer.notes) + w if x not in self.warnings]
+        else:      # orbit data of limited extent (CCSDS ephemerides, propagated state vectors)
+            self.jd_a, self.jd_b, w = self.observer.limit_period(ctx, self.jd_a, self.jd_b, margin)
+            self.warnings += [x for x in w if x not in self.warnings]
+            self.h0 = base_step_seconds(self.observer, self.body) / DAY_S
 
     # -- phases ---------------------------------------------------------------
     def _internal(self, events):

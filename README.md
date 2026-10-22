@@ -13,6 +13,8 @@ The observer can be **any place on the ground**, **an artificial satellite (TLE 
 | **Seen from the ground**: the total solar eclipse of 2 August 2027 at Luxor (Egypt). Totality lasts 6 min 18.9 s, and the progress of the eclipse can be played as an animation | **Seen from a satellite**: the annular eclipse that the solar observatory Hinode saw in orbit on 4 January 2011, with solar north up and arcsecond ticks as in images of Hinode or SDO |
 | ![List of the solar eclipses and transits in the world from 2026 to 2035](docs/images/en/global_list.png) | ![Results for a satellite before launch, summarised by mean anomaly](docs/images/en/prelaunch_sweep.png) |
 | **List**: the solar eclipses and transits in the world from 2026 to 2035 (type, magnitude, duration of the central eclipse, Saros number) | **Planning before launch**: the eclipse of 2 August 2027 seen from a 680 km sun-synchronous orbit, computed for each position of the satellite (mean anomaly) |
+| ![When Hinode is in the Earth's shadow in 2027](docs/images/en/earth_shadow.png) | |
+| **Earth's shadow**: when Hinode is in the Earth's shadow in 2027. The shadow seasons for each height of the blocking atmosphere (visible light 0 km, soft X-rays 140 km, EUV 250 km), the longest shadow of each day, and the entry and exit on each pass | |
 
 ## Getting started
 
@@ -92,7 +94,12 @@ python cli.py --epoch 2027-07-30T12:00:00 --a 7058.1 --e 0.0012 --i 98.13 --raan
 python cli.py --city Tokyo --start 2026-01-01 --end 2056-01-01 --phenomena moon --tz 9 --detail --lang en
 ```
 
-The period is given by `--start` `--end` (dates in UTC), and the phenomena by `--phenomena` (`moon`, `mercury`, `venus`; all by default).
+The period is given by `--start` `--end` (dates in UTC), and the phenomena by `--phenomena` (`moon`, `mercury`, `venus`; these three by default). `earth` computes, for a satellite, when it is in the Earth's shadow (below).
+
+```bash
+python cli.py --norad 29479 --phenomena earth --start 2027-03-01 --end 2027-10-01 --tz 9 --lang en
+```
+
 The output is `--format table` (the default; `--tz 9` shows Japan time), `csv` (the same columns as "Save list as CSV" on the page) or `json` (with the computation settings `request`; meant for generative AI). `--detail` also outputs the time, Sun altitude, position angle and so on of each contact. `--dry-run` computes nothing and outputs only how the input was interpreted (the satellite's period, altitude and so on).
 The language is chosen with `--lang` (`ja`, `en`, `fr`, `ru`, `es`, `zh`, `hi`; by default the language of the environment).
 See `python cli.py --help` for the other arguments.
@@ -126,7 +133,7 @@ The `Dockerfile` also works anywhere else Docker runs (`docker build -t eclipsec
 | Observer | Details |
 |---|---|
 | A place on the ground | Latitude, longitude and elevation (WGS84). City presets, picking a place by clicking a map. Takes the horizon, atmospheric refraction and a minimum Sun altitude into account |
-| Artificial satellite | Latest TLE fetched from CelesTrak by NORAD number (SGP4) / pasted TLE / Keplerian orbital elements (with J2 secular perturbations; besides entering the six orbital elements directly [epoch, semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of perigee, mean anomaly], an orbit can be given by its altitude, with the inclination of a sun-synchronous orbit computed automatically, and by the local time of the ascending node) / ideal geostationary satellite / any spacecraft in JPL Horizons (JWST, SOHO, etc.) / past orbits of science satellites from NASA SSCWeb (Hinode etc.; for reproducing past events) / **CCSDS Orbit Data Messages** (the international standard that JAXA and other space agencies use to exchange orbits: an OEM is interpolated, the state vectors of an OPM or OCM are propagated by numerical integration [the Earth's gravity field, the Sun and the Moon, drag, solar radiation pressure, manoeuvres], an OMM is computed with SGP4) and **Tracking Data Messages (TDM)** (with the positions of the stations, the orbit is determined from the angle, range and Doppler measurements). Takes into account **the Sun being hidden by the Earth** (the height of the atmosphere can also be given) |
+| Artificial satellite | Latest TLE fetched from CelesTrak by NORAD number (SGP4) / pasted TLE / Keplerian orbital elements (with J2 secular perturbations; besides entering the six orbital elements directly [epoch, semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of perigee, mean anomaly], an orbit can be given by its altitude, with the inclination of a sun-synchronous orbit computed automatically, and by the local time of the ascending node) / ideal geostationary satellite / any spacecraft in JPL Horizons (JWST, SOHO, etc.) / past orbits of science satellites from NASA SSCWeb (Hinode etc.; for reproducing past events) / **CCSDS Orbit Data Messages** (the international standard that JAXA and other space agencies use to exchange orbits: an OEM is interpolated, the state vectors of an OPM or OCM are propagated by numerical integration [the Earth's gravity field, the Sun and the Moon, drag, solar radiation pressure, manoeuvres], an OMM is computed with SGP4) and **Tracking Data Messages (TDM)** (with the positions of the stations, the orbit is determined from the angle, range and Doppler measurements). Takes into account **the Sun being hidden by the Earth** (the height of the atmosphere can also be given), and also computes **when the satellite is in the Earth's shadow** ("Earth's shadow" among the phenomena: the shadow seasons and, for each orbit, when the Sun is partly, centrally and fully hidden and the length, compared for several heights of the blocking atmosphere) |
 | The whole Earth | Finds every solar eclipse seen anywhere in the world (type, γ, magnitude, point of greatest eclipse, duration of the central eclipse, width of the central path, Saros number). Transits are given with geocentric contact times |
 
 The results (switch between the start page and the results with "Start page" / "Results" at the top; "↑ Back to the list" in the details returns to the list):
@@ -135,6 +142,7 @@ The results (switch between the start page and the results with "Start page" / "
 - **Overview**: a description in plain language, the key values, and for the 1st to 4th contacts the time, Sun altitude/azimuth, position angle (from celestial north / from solar north), vertex angle V, the sub-satellite point, the solar-north-up X, Y (″) and the distance from the solar limb; **how the contact times change with the radii** (seconds per +1″ of the apparent radius of the Sun and of the Moon or planet); a table of the intervals when the Sun is visible from a satellite
 - **View (animation)**: plays the discs of the Sun and the Moon or planet at true scale (zenith up / celestial north up / Earth down / **solar north up**, the orientation of Hinode or SDO images), with arcsecond ticks and zoom (whole Sun down to 30″; the ingress and egress of a transit of Mercury become visible). Also shows the horizon, the limb of the Earth seen from a satellite and the corona during totality
 - **Time and comparison with images**: enter the time of an image (forms like `21-Aug-2017 16:53:59.204 UT` are accepted) to get the position of the Moon or planet at that instant (solar-north-up X, Y), its distance from the limb and the magnitude, to the millisecond. With measured positions it tabulates observed − computed (in ″ and as a time along the motion), at mid-exposure if the exposure time is given (`cli.py --at` does the same)
+- **Earth's shadow** (satellites): the shadow seasons for each height of the blocking atmosphere (0, 140 and 250 km and that of the advanced settings by default), a chart of the longest shadow of each day, and the table of the passes of a chosen day (when the Sun begins to be hidden, when its centre and all of it are hidden and the reverse, length, depth, sub-satellite point). Saved with "Save results"; the passes as CSV
 - **Charts**: magnitude and obscuration (for transits, the distance between centres), and the Sun's altitude or its "angle above the Earth's limb"
 - **Eclipse diagram**: one figure with the path of the Moon or planet across the Sun, the discs at the 1st contact, maximum and 4th contact, the times and positions of the contacts (in arcseconds from the centre of the Sun) and the key values (celestial north up / the Sun's rotation axis north up; saved as PNG or SVG)
 - **Map**: central line, northern and southern limits of the path of totality or annularity, the umbra every 10 minutes, limits of the partial eclipse, distribution of the greatest magnitude (only while the Sun is above the horizon), the region where a transit is visible, and the satellite's ground track. **Click the map to compute the circumstances at that place**
@@ -227,6 +235,7 @@ eclipsecalc/
   local.py                  Contact times, maximum and visibility for each observer
   shadow.py                 Penumbral/umbral cones in ITRS
   global_eclipse.py         Search for eclipses over the whole Earth
+  earth_shadow.py           The Earth's shadow on a satellite (seasons and every pass)
   eclipse_map.py            Central line, limits, magnitude distribution, transit visibility
   server.py                 Web API (FastAPI)
   i18n.py                   Translations of the Web API's errors and warnings
@@ -238,6 +247,7 @@ tests/test_orbit_planning.py  Tests of sun-synchronous orbits, local time of the
 tests/test_saved_result.py  Tests of recomputing the details when saved results are opened
 tests/test_geometry.py      Tests of the solar-north-up coordinates, contact sensitivities, image times and the Earth's occultation of the Sun
 tests/test_ui_i18n.py       Test that every text of the page has its 6 translations
+tests/test_earth_shadow.py  Tests of the Earth's shadow on a satellite (agreement with the visibility of the events, no shadow missed, geostationary seasons)
 tests/test_ccsds.py         Tests of reading CCSDS messages, propagating orbits and orbit determination
 tools/hinode_ql.py          Reading the Hinode quick-look movies (frames, exposure times and axes by character recognition; needs ffmpeg)
 tools/validate_hinode_ql.py Validation with the Hinode quick-look movies
@@ -261,6 +271,7 @@ build/ dist/                Working area and output of the distribution ZIPs (no
 - `POST /api/search` … `{"phenomena": ["moon","mercury","venus"], "observer": {...}, "start": "2026-01-01", "end": "2036-01-01", "settings": {...}}`
   - observer examples: `{"type":"ground","lat":35.68,"lon":139.77,"elevation_m":40}`, `{"type":"celestrak","norad":25544}`, `{"type":"geo","lon":140.7}`, `{"type":"horizons","command":"-170","step_min":60}`, `{"type":"sscweb","id":"hinode"}`, `{"type":"ccsds","text":"CCSDS_OPM_VERS = 3.0 …"}`, `{"type":"global"}`
   - With orbital elements (`kepler`), `"sso": true` (inclination computed automatically) and `"ltan_h": 18.0` (orbital plane given by the local time of the ascending node) can also be used
+  - `"earth"` among the phenomena (a satellite only) adds `earth_shadow`: when the satellite is in the Earth's shadow, for `settings.earth_atm_km` and the heights `settings.shadow_atm_levels_km` (default `[0, 140, 250]`)
 - `POST /api/phase_sweep` … the same form as `/api/search` plus `"step_deg": 10`; computes a `kepler` or `tle` satellite (or a `ccsds` one given only by OMMs or TLEs) for many mean anomalies (period of at most 1 year)
 - `POST /api/ccsds/inspect` … `{"text": "CCSDS message", "object": "…", "stations": "…"}` returns what the messages hold (objects, TDM participants) and how the observer is interpreted ("Check contents" on the page)
 - `POST /api/ephemeris/download?name=de440.bsp` … downloads a JPL ephemeris into `data/` ("Add de440.bsp" on the page)

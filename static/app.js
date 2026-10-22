@@ -23,7 +23,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const state = {
   info: null, obsTab: 'ground', satMode: 'celestrak', kInput: 'plan', fetchedTle: null, sscSats: null,
-  sweep: null, sweepGroup: 0,
+  sweep: null, sweepGroup: 0, shadowDay: null,   // shadowDay: the date (shown time zone) of the passes listed in the Earth's shadow
   result: null, filters: new Set(), selectedId: null,
   detail: null, local: null, stack: [], rootId: null, saved: null, view: 'welcome',
   t: 0, playing: false, mapData: {}, map: null, mapLayers: null, pickMap: null,
@@ -282,6 +282,7 @@ async function init() {
   renderEphemerisDownloads();
 
   $$('#obsTabs button').forEach((b) => b.addEventListener('click', () => setObsTab(b.dataset.obs)));
+  $('#earthChip input').addEventListener('change', updateEarthChip);
   $$('#satModes button').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.mode !== state.satMode) {     // a name the page filled in for another source does not carry over
       $('#satPreset').value = '';
@@ -496,7 +497,15 @@ function setObsTab(tab) {
   state.obsTab = tab;
   $$('#obsTabs button').forEach((b) => b.classList.toggle('active', b.dataset.obs === tab));
   $$('.obs-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab; });
+  updateEarthChip();
   if (tab === 'ground' && state.pickMap) setTimeout(() => state.pickMap.invalidateSize(), 50);
+}
+/* The Earth's shadow is computed for a spacecraft only: its chip is dimmed for the other observers,
+   with a note when it is checked. */
+function updateEarthChip() {
+  const na = state.obsTab !== 'space';
+  $('#earthChip').classList.toggle('na', na);
+  $('#earthHint').hidden = !na || !$('#earthChip input').checked;
 }
 function setSatMode(mode) {
   state.satMode = mode;
@@ -882,8 +891,18 @@ function bodyModelText(body, p) {
   const m = state.info ? planetModel(p) : null;
   return m ? s + paren(t(PLANET_MODEL_NAMES[m])) : s;
 }
+/* The heights of the absorbing atmosphere compared in the Earth's shadow: numbers when they can be
+   read (else the text, and the server names the error). */
+function shadowLevels() {
+  const text = $('#shadowLevels').value.trim();
+  if (!text) return null;
+  const v = text.split(/[\s,、，]+/).filter(Boolean).map(Number);
+  return v.every(isFinite) ? v : text;
+}
 function buildRequest() {
-  const phenomena = $$('input[name=ph]:checked').map((i) => i.value);
+  let phenomena = $$('input[name=ph]:checked').map((i) => i.value);
+  // the Earth's shadow with another observer: left out (alone, the server says why it cannot be computed)
+  if (state.obsTab !== 'space' && phenomena.length > 1) phenomena = phenomena.filter((p) => p !== 'earth');
   let observer;
   if (state.obsTab === 'ground') {
     observer = { type: 'ground', lat: num('#lat'), lon: num('#lon'), elevation_m: num('#elev'), name: $('#placeName').value.trim() };
@@ -954,6 +973,7 @@ function buildRequest() {
     min_sun_alt_deg: num('#minAlt'), refraction: $('#refraction').checked,
     earth_atm_km: num('#atm'), include_invisible: $('#includeInvisible').checked,
   };
+  if (phenomena.includes('earth')) settings.shadow_atm_levels_km = shadowLevels();
   const sweepStep = observer.type === 'kepler' && $('#kSweep').checked ? num('#kSweepStep', 10) : null;
   return { phenomena, observer, start: $('#start').value, end: $('#end').value, settings, sweepStep };
 }
@@ -995,6 +1015,7 @@ async function runSearch() {
     state.sweep = null;
     state.saved = null;
     state.filters = new Set();
+    state.shadowDay = null;
     setStatus(st, t('完了（{s} 秒）', { s: r.elapsed_s.toFixed(1) }));
     closeDetail();
     showView('results');
@@ -1039,6 +1060,7 @@ function runExample(name) {
     $$('input[name=ph]').forEach((i) => { i.checked = i.value === 'moon'; });
     $('#start').value = '2011-01-04'; $('#end').value = '2011-01-05';
   }
+  updateEarthChip();
   runSearch();
 }
 
@@ -1080,16 +1102,22 @@ function ccsdsItems(o) {
 
 function renderResults() {
   const r = state.result;
-  $('#listCard').hidden = false;
-  $('#sweepArea').hidden = true;
   const evs = r.events;
+  // the eclipses and transits were computed (else only the Earth's shadow)
+  const phen = (r.request && r.request.phenomena) || [];
+  const bodies = !r.earth_shadow || evs.length > 0 || phen.some((p) => p !== 'earth');
+  $('#listCard').hidden = !bodies;
+  $('#sweepArea').hidden = true;
+  renderShadow();
   const global = r.observer.kind === 'global';
   const counts = {};
   evs.forEach((e) => { counts[catOf(e)] = (counts[catOf(e)] || 0) + 1; });
   const visCount = evs.filter((e) => e.kind === 'global' || (e.vis_fraction || 0) > 0).length;
+  const sh = r.earth_shadow, lv = sh && sh.levels.find((x) => x.atm_km === sh.atm_km);
   $('#summaryText').innerHTML =
-    '<div>' + t('<span class="big">{n} 件</span> の現象が見つかりました', { n: evs.length }) +
-    (!global && r.params.include_invisible ? esc(t('（うち見えるもの {n} 件）', { n: visCount })) : '') + '</div>' +
+    '<div>' + (bodies ? t('<span class="big">{n} 件</span> の現象が見つかりました', { n: evs.length }) +
+      (!global && r.params.include_invisible ? esc(t('（うち見えるもの {n} 件）', { n: visCount })) : '')
+      : t('地球の影に入る回数 <span class="big">{n} 回</span>', { n: fmtInt(lv ? lv.n : 0) })) + '</div>' +
     savedNote() +
     `<div class="muted">${esc(t('観測者: {obs}', { obs: observerText(r.observer) }))}<br>` +
     esc([t('期間: {start} 〜 {end}（UTC）', { start: r.start, end: r.end }), t('暦 {name}', { name: r.ephemeris }),
@@ -1099,6 +1127,7 @@ function renderResults() {
 
   const fbox = $('#filters');
   fbox.innerHTML = '';
+  if (!bodies) return;
   for (const [k, c] of Object.entries(CAT)) {
     if (!counts[k]) continue;
     const b = el('button', { type: 'button', class: state.filters.has(k) ? 'off' : '' },
@@ -1130,12 +1159,179 @@ function renderResults() {
 }
 
 /* ------------------------------------------------------------------ */
+/* the Earth's shadow on a satellite (the phenomenon "earth")          */
+/* ------------------------------------------------------------------ */
+const SHADOW_COLORS = ['#2463c9', '#e8850c', '#8a3fd1', '#19875f', '#c0392b', '#7a8396'];
+function atmKm(h) { return km(+(+h).toFixed(1)); }
+function shortDT(iso) { return `${fmtDateShort(iso)} ${fmtHM(iso)}`; }
+/* The passes of the height of the settings, by date in the shown time zone (the date of the
+   start of each). */
+function shadowDays(sh) {
+  const days = new Map();
+  sh.passes.forEach((p, i) => {
+    const k = fmtDateShort(p.partial_start);
+    if (!days.has(k)) days.set(k, []);
+    days.get(k).push(i);
+  });
+  return days;
+}
+function renderShadow() {
+  const r = state.result, box = $('#shadowArea');
+  const sh = r && r.earth_shadow;
+  box.hidden = !sh;
+  if (!sh) return;
+  const h0 = sh.atm_km;
+  const kids = [
+    el('h3', {}, t('地球の影（人工衛星が影に入る時間）')),
+    el('p', { class: 'muted' }, sentences([
+      t('衛星から見て太陽が地球に隠れる時間を、周回ごとに計算しました。'),
+      t('回数と長さは、太陽の中心が地球の縁と遮蔽高度の大気に隠れている時間です。周回ごとの表は「詳細設定」の遮蔽高度（{h}）の値で、ほかの高さは比べるための値です。', { h: atmKm(h0) }),
+    ])),
+  ];
+  if (!sh.levels.some((l) => l.n)) {
+    kids.push(el('p', {}, t('この期間には、どの遮蔽高度でも地球の影に入りません。')));
+    box.replaceChildren(...kids);
+    return;
+  }
+  const color = (k) => SHADOW_COLORS[k % SHADOW_COLORS.length];
+  const head = [t('遮蔽高度'), t('影に入る回数'), t('影の季節'), t('最長'), t('影の合計'), t('影の時間の割合')];
+  const rows = sh.levels.map((lv, k) => el('tr', {},
+    el('td', { class: 'lbl' }, el('span', { class: 'dot', style: `background:${color(k)}` }), atmKm(lv.atm_km),
+      lv.atm_km === h0 && el('span', { class: 'sub' }, t('設定の遮蔽高度'))),
+    el('td', { class: 'num' }, t('{n} 回', { n: fmtInt(lv.n) })),
+    el('td', {}, lv.seasons.length ? lv.seasons.map((s) => el('div', {},
+      span((s.cut_start ? '… ' : '') + shortDT(s.start), shortDT(s.end) + (s.cut_end ? ' …' : '')) + paren(t('{n} 回', { n: fmtInt(s.n) })))) : '—'),
+    el('td', { class: 'num' }, lv.max_s != null ? fmtDur(lv.max_s) : '—', lv.max_at && el('span', { class: 'sub' }, fmtDateShort(lv.max_at))),
+    el('td', { class: 'num' }, fmtDur(lv.total_s)),
+    el('td', { class: 'num' }, pct(lv.fraction)),
+  ));
+  kids.push(el('div', { class: 'table-scroll' }, el('table', { class: 'contacts' },
+    el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, rows))));
+  if (sh.levels.some((l) => l.seasons.some((s) => s.cut_start || s.cut_end))) {
+    kids.push(el('p', { class: 'hint' }, t('… は期間の端で影の季節が途切れていることを示します。')));
+  }
+  const days = shadowDays(sh);
+  if (!days.has(state.shadowDay)) {
+    const lv = sh.levels.find((x) => x.atm_km === h0);
+    const best = sh.passes.findIndex((p) => lv && p.start === lv.max_at);
+    state.shadowDay = best >= 0 ? fmtDateShort(sh.passes[best].partial_start) : days.keys().next().value;
+  }
+  const chart = el('div', { class: 'sweep-chart' }, shadowChart(sh, color, (ms) => {
+    const k = sh.passes.findIndex((p) => msOf(p.partial_end) >= ms);
+    if (k >= 0) { state.shadowDay = fmtDateShort(sh.passes[k].partial_start); renderShadow(); }
+  }));
+  kids.push(el('div', { class: 'section-title' }, t('日ごとの最長の影（分）')), chart);
+  if (days.size) {
+    const sel = el('select', { id: 'shadowDay' }, [...days].map(([k, idx]) => el('option', { value: k },
+      fmtDate(sh.passes[idx[0]].partial_start) + paren(t('{n} 回', { n: idx.length })))));
+    sel.value = state.shadowDay;
+    sel.addEventListener('change', () => { state.shadowDay = sel.value; renderShadow(); });
+    kids.push(el('div', { class: 'section-title' }, t('周回ごとの影（遮蔽高度 {h}）', { h: atmKm(h0) })),
+      el('div', { class: 'row gap' }, el('label', { class: 'field' }, t('日付'), sel),
+        el('button', { type: 'button', class: 'secondary small', onclick: downloadShadowCsv }, t('周回ごとの一覧をCSV保存'))),
+      shadowPassTable(sh, days.get(state.shadowDay) || []));
+  }
+  box.replaceChildren(...kids);
+}
+function shadowPassTable(sh, idx) {
+  const first = idx.length ? sh.passes[idx[0]].partial_start : null;
+  const tm = (iso) => (iso ? (dayDiff(iso, first) ? fmtDateShort(iso).slice(5) + ' ' : '') + fmtTime(iso) : '—');
+  const head = ['#', t('欠け始め'), t('中心が隠れる'), t('完全に隠れる'), t('出始め'), t('中心が出る'), t('全部出る'), t('長さ'), t('深さ'),
+    t('影の中央の衛星直下点')];
+  const body = idx.map((i, n) => {
+    const p = sh.passes[i];
+    return el('tr', {}, el('td', { class: 'num' }, String(n + 1)),
+      ...[p.partial_start, p.start, p.total_start, p.total_end, p.end, p.partial_end].map((iso) => el('td', { class: 'num' }, tm(iso))),
+      el('td', { class: 'num' }, p.duration_s != null ? fmtDur(p.duration_s) : t('中心は隠れない')),
+      el('td', { class: 'num' }, `${signed(p.depth_deg, 2)}°`),
+      el('td', {}, fmtLatLon(p.sat_lat, p.sat_lon) + sep() + km(p.sat_alt_km.toFixed(0))));
+  });
+  return el('div', {},
+    el('div', { class: 'table-scroll' }, el('table', { class: 'contacts' },
+      el('caption', {}, t('時刻（{tz}）', { tz: tzLabel(first) })),
+      el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, body))),
+    el('p', { class: 'hint' }, t('欠け始め・全部出るは太陽の一部、中心が隠れる・出るは太陽の中心、完全に隠れる・出始めは太陽の全体が地球（＋遮蔽高度）に隠れる・出る時刻です。深さは影の中央で太陽の中心が地球の縁（＋遮蔽高度）より内側にある角度です（負なら中心は隠れない）。')));
+}
+/* The longest shadow of each day (UTC dates) against the date, a line per height. */
+function shadowChart(sh, color, onPick) {
+  const W = 900, H = 230, L = 52, R = 14, T = 12, B = 36;
+  const a = msOf(sh.period_start), b = Math.max(msOf(sh.period_end), a + 864e5);
+  const X = (ms) => L + (W - L - R) * (ms - a) / (b - a);
+  const top = Math.max(1, ...sh.levels.map((l) => (l.max_s || 0) / 60)) * 1.1;
+  const Y = (v) => T + (H - T - B) * (1 - v / top);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('日ごとの最長の影') });
+  const text = (attrs, s) => { const n = svg('text', attrs); n.textContent = s; root.append(n); };
+  const ys = niceStep(top, 5);
+  for (let v = 0; v <= top + 1e-9; v += ys) {
+    root.append(svg('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), class: 'grid' }));
+    text({ x: L - 6, y: Y(v) + 4, 'text-anchor': 'end', class: 'tick' }, +v.toFixed(1));
+  }
+  // date ticks: days, months or years, at most ~10
+  const days = (b - a) / 864e5;
+  const d0 = new Date(a);
+  const ticks = [];
+  if (days <= 60) {
+    const step = [1, 2, 7, 14, 28].find((s) => days / s <= 10) || 28;
+    for (let ms = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate() + 1); ms <= b; ms += step * 864e5) ticks.push([ms, new Date(ms).toISOString().slice(5, 10).replace('-', '/')]);
+  } else {
+    const step = [1, 2, 3, 6, 12, 24, 60, 120].find((s) => days / 30.4 / s <= 10) || 120;
+    for (let m = Math.ceil((d0.getUTCFullYear() * 12 + d0.getUTCMonth() + (d0.getUTCDate() > 1 ? 1 : 0)) / step) * step; ; m += step) {
+      const ms = Date.UTC(Math.floor(m / 12), m % 12, 1);
+      if (ms > b) break;
+      if (ms >= a) ticks.push([ms, step >= 12 ? String(Math.floor(m / 12)) : `${Math.floor(m / 12)}/${String(m % 12 + 1).padStart(2, '0')}`]);
+    }
+  }
+  for (const [ms, label] of ticks) {
+    root.append(svg('line', { x1: X(ms), x2: X(ms), y1: H - B, y2: H - B + 4, stroke: '#9aa4b8' }));
+    // labels at the ends of the axis kept inside the chart
+    const anchor = X(ms) > W - R - 30 ? 'end' : X(ms) < L + 30 ? 'start' : 'middle';
+    text({ x: X(ms), y: H - B + 17, 'text-anchor': anchor, class: 'tick' }, label);
+  }
+  text({ x: W - R, y: H - 3, 'text-anchor': 'end', class: 'tick' }, t('日付（UTC）'));
+  root.append(svg('line', { x1: L, x2: W - R, y1: H - B, y2: H - B, stroke: '#9aa4b8' }));
+  sh.levels.forEach((lv, k) => {
+    const max = new Map(lv.daily.map(([d, , m]) => [d, m / 60]));
+    let d = '';
+    for (let ms = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()); ms < b; ms += 864e5) {
+      const v = max.get(new Date(ms).toISOString().slice(0, 10)) || 0;
+      d += (d ? 'L' : 'M') + X(Math.max(a, ms + 432e5)).toFixed(1) + ',' + Y(v).toFixed(1);
+    }
+    root.append(svg('path', { d, fill: 'none', stroke: color(k), 'stroke-width': lv.atm_km === sh.atm_km ? 2.4 : 1.3, 'stroke-linejoin': 'round' }));
+  });
+  let lx = L + 8;
+  sh.levels.forEach((lv, k) => {
+    root.append(svg('rect', { x: lx, y: T + 4, width: 14, height: 3, fill: color(k) }));
+    const s = atmKm(lv.atm_km);
+    text({ x: lx + 18, y: T + 9, class: 'tick' }, s);
+    lx += 34 + s.length * 6.5;
+  });
+  root.style.cursor = 'pointer';
+  root.addEventListener('click', (ev) => {
+    const rc = root.getBoundingClientRect();
+    const x = (ev.clientX - rc.left) / rc.width * W;
+    onPick(a + (x - L) / (W - L - R) * (b - a));
+  });
+  return root;
+}
+function downloadShadowCsv() {
+  const sh = state.result && state.result.earth_shadow;
+  if (!sh) return;
+  const keys = ['start', 'end', 'duration_s', 'partial_start', 'partial_end', 'partial_s', 'total_start', 'total_end', 'total_s', 'mid',
+    'depth_deg', 'sat_lat', 'sat_lon', 'sat_alt_km', 'cut_start', 'cut_end'];
+  const utc = new Set(['start', 'end', 'partial_start', 'partial_end', 'total_start', 'total_end', 'mid']);
+  const rows = [['atm_km', ...keys.map((k) => (utc.has(k) ? k + '_utc' : k))]];
+  for (const p of sh.passes) rows.push([sh.atm_km, ...keys.map((k) => (k.startsWith('cut_') ? +p[k] : p[k] ?? ''))]);
+  saveFile('earth_shadow.csv', toCsv(rows), 'text/csv');
+}
+
+/* ------------------------------------------------------------------ */
 /* phase sweep (satellite position along the orbit unknown)            */
 /* ------------------------------------------------------------------ */
 function phenLabel(b) { return { moon: t('日食'), mercury: t('水星の太陽面通過'), venus: t('金星の太陽面通過') }[b]; }
 function renderSweep() {
   const r = state.sweep;
   $('#listCard').hidden = true;
+  $('#shadowArea').hidden = true;
   $('#sweepArea').hidden = false;
   const n = r.phases.length;
   const counts = {};
@@ -1334,6 +1530,7 @@ function downloadListCsv() {
   if (state.sweep) { downloadSweepCsv(); return; }
   const r = state.result;
   if (!r) return;
+  if ($('#listCard').hidden) { downloadShadowCsv(); return; }     // the Earth's shadow only
   const rows = [['date_utc', 'type', 'max_utc', 'c1_utc', 'c4_utc', 'magnitude', 'obscuration', 'ratio', 'min_sep_arcsec', 'gamma',
     'central_duration_s', 'duration_s', 'path_width_km', 'ge_lat', 'ge_lon', 'sun_alt_max', 'visible_fraction', 'saros']];
   for (const e of r.events) {
@@ -1417,7 +1614,7 @@ async function openSavedFile(file) {
    used (`params` of the result or the detail) fill the others; then the form and /api/restore
    give the saved numbers. */
 const PARAM_KEYS = ['sun_radius_km', 'moon_radius_ext_km', 'moon_radius_int_km', 'mercury_radius_km', 'venus_radius_km',
-  'min_sun_alt_deg', 'refraction', 'earth_atm_km'];
+  'min_sun_alt_deg', 'refraction', 'earth_atm_km', 'shadow_atm_levels_km'];
 function withParams(req, params) {
   if (!req || typeof req !== 'object' || !params || typeof params !== 'object') return req;
   if (req.settings != null && typeof req.settings !== 'object') return req;
@@ -1453,7 +1650,7 @@ function openSavedResult(data, name) {
     state.sweep = r; state.sweepGroup = 0; state.result = null;
     renderSweep();
   } else {
-    state.result = r; state.sweep = null; state.filters = new Set();
+    state.result = r; state.sweep = null; state.filters = new Set(); state.shadowDay = null;
     renderResults();
   }
   showView('results');
@@ -1591,6 +1788,8 @@ function applyRequestToForm(req) {
     || Object.keys(rp.mercury).find((k) => near(rp.mercury[k], s.mercury_radius_km)) || 'observed';
   $('#minAlt').value = s.min_sun_alt_deg;
   $('#atm').value = s.earth_atm_km;
+  const lv = s.shadow_atm_levels_km;
+  $('#shadowLevels').value = Array.isArray(lv) ? lv.join(', ') : lv ?? '';
   $('#refraction').checked = !!s.refraction;
   $('#includeInvisible').checked = !!s.include_invisible;
 }
