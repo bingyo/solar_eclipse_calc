@@ -342,7 +342,7 @@ def test_dry_run():
                          '--start', '2027-01-01', '--end', '2027-02-01', '--dry-run'])
     o = d['observer']
     assert code == 0 and d['ok'] and d['dry_run'] and 'events' not in d
-    assert abs(o['period_min'] - 94.6) < 0.2 and abs(o['i_deg'] - 97.4) < 0.05 and abs(o['ltan_h'] - 10.5) < 1e-6
+    assert abs(o['period_min'] - 94.6) < 0.2 and abs(o['i_date_deg'] - 97.4) < 0.05 and abs(o['ltan_h'] - 10.5) < 1e-6
 
 
 def test_secular_rates():

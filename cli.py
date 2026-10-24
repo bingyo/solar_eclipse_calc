@@ -1123,7 +1123,9 @@ def observer_text(o):
         if model == 'tle' and o.get('i_deg') is not None:
             items += [tr('傾斜角 {v}°', v=f'{o["i_deg"]:.2f}'), tr('離心率 {v}', v=f'{o["e"]:.5f}')]
         if model == 'kepler':
-            items += [tr('傾斜角 {v}°', v=f'{o["i_deg"]:.2f}'), tr('昇交点赤経 {v}°', v=f'{o["raan_deg"]:.2f}')]
+            # a sun-synchronous inclination is of the equator of date (the given one of the J2000 equator)
+            inc = o['i_date_deg'] if o.get('sso') and o.get('i_date_deg') is not None else o['i_deg']
+            items += [tr('傾斜角 {v}°', v=f'{inc:.2f}'), tr('昇交点赤経 {v}°', v=f'{o["raan_deg"]:.2f}')]
             if o.get('ltan_h') is not None:
                 t = round(o['ltan_h'] * 60) % 1440
                 items.append(tr('昇交点の地方時 {v}', v=f'{t // 60:02d}:{t % 60:02d}'))

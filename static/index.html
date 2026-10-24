@@ -137,7 +137,7 @@
                 <label class="field">昇交点赤経の変化率 (°/日)<input id="kRaanRate" type="number" step="any"></label>
                 <label class="field">近地点引数の変化率 (°/日)<input id="kArgpRate" type="number" step="any"></label>
               </div>
-              <p class="hint">元期の要素と同じ基準の平均の変化率です。空欄の項目は軌道要素から J2 の式で計算します（薄い字がその値）。</p>
+              <p class="hint">元期の平均赤道（J2 が軌道を回す赤道）に対する平均の変化率です。空欄の項目は軌道要素から J2 の式で計算します（薄い字がその値）。</p>
             </details>
             <label class="check"><input type="checkbox" id="kJ2" checked> 地球の扁平(J2)による軌道面の歳差を考慮</label>
             <label class="check"><input type="checkbox" id="kSweep"> 平均近点角を変えて一括計算（打ち上げ前の検討）</label>
@@ -150,7 +150,7 @@
                 <option value="45">45°（8 通り）</option>
               </select>
               <small>衛星が軌道上のどこにいても起こりうる結果の範囲を、現象ごとにまとめます（期間は 1 年以内）。</small></label>
-            <p class="hint">GCRS（J2000赤道）基準の平均要素。計画中・仮想の衛星の検討向けです。
+            <p class="hint">GCRS（J2000赤道）基準の平均要素。J2 による歳差は元期の平均赤道のまわりで計算し、太陽同期の傾斜角と昇交点の地方時も元期の平均赤道を基準にします。計画中・仮想の衛星の検討向けです。
               <span data-kin-pane="elements" hidden>TLE の要素は SGP4 専用の平均要素（TEME 基準）なので、「TLE貼付」から入力してください。</span></p>
           </div>
           <div class="sat-pane" data-sat="geo" hidden>

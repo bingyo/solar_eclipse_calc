@@ -304,7 +304,7 @@ async function init() {
   $('#ccsdsObject').addEventListener('change', () => { state.ccsdsObject = $('#ccsdsObject').value; inspectCcsds(); });
   $('#ccsdsStations').addEventListener('change', () => inspectCcsds());
   $$('#kInput button').forEach((b) => b.addEventListener('click', () => setKeplerInput(b.dataset.kin)));
-  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE', '#kInc', '#kJ2'].forEach((q) => {
+  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE', '#kInc', '#kRaan', '#kEpoch', '#kJ2'].forEach((q) => {
     $(q).addEventListener('change', updateKeplerForm);
     $(q).addEventListener('input', updateKeplerForm);
   });
@@ -768,6 +768,26 @@ function ssoInclination(periKm, apoKm) {
 /* The secular rates given with the elements (fields, keys of the observer); an empty field
    leaves the rate to the model. */
 const K_RATES = [['#kN', 'n_rev_day'], ['#kRaanRate', 'raan_rate_deg_day'], ['#kArgpRate', 'argp_rate_deg_day']];
+/* The mean pole of date (about which the server's J2 turns orbits) in the J2000 frame, from the
+   IAU 1976 precession angles; jdTT: the epoch. */
+function poleOfDate(jdTT) {
+  const T = (jdTT - 2451545) / 36525, AS = Math.PI / 648000;
+  const zeta = (2306.2181 * T + 0.30188 * T * T + 0.017998 * T ** 3) * AS;
+  const theta = (2004.3109 * T - 0.42665 * T * T - 0.041833 * T ** 3) * AS;
+  return [Math.sin(theta) * Math.cos(zeta), -Math.sin(theta) * Math.sin(zeta), Math.cos(theta)];
+}
+/* The inclination (°) of the form's orbit to the equator of date, which sets the J2 rates: the
+   sun-synchronous one is of that equator already; the inclination and node typed in are of the
+   J2000 equator (with a local time instead of the node, the J2000 inclination is a close value). */
+function inclinationOfDate(elements) {
+  const iDeg = num('#kInc', NaN);
+  if (!elements && ($('#kSso').checked || $('#kPlane').value === 'ltan')) return iDeg;
+  const ep = Date.parse(($('#kEpoch').value || '') + 'Z');
+  if (!isFinite(ep) || !isFinite(iDeg)) return iDeg;
+  const p = poleOfDate(ep / 86400000 + 2440587.5), D = Math.PI / 180, i = iDeg * D, O = num('#kRaan') * D;
+  const c = p[0] * Math.sin(O) * Math.sin(i) - p[1] * Math.cos(O) * Math.sin(i) + p[2] * Math.cos(i);
+  return Math.acos(Math.max(-1, Math.min(1, c))) / D;
+}
 /* The rates of the model (as the server's _KeplerVF: J2 secular, or two-body without it), shown
    in the empty fields: mean motion (rev/day), node and perigee (°/day). */
 function keplerModelRates(a, e, iDeg, j2) {
@@ -810,8 +830,9 @@ function updateKeplerForm() {
       t('周期 {p} 分', { p: (2 * Math.PI * Math.sqrt(a ** 3 / 398600.4418) / 60).toFixed(1) })
     : '';
   const p = num('#kPeri', NaN), q = num('#kApo', NaN);
-  const rates = elements ? keplerModelRates(a, e, num('#kInc', NaN), $('#kJ2').checked)
-    : keplerModelRates(R_EARTH + 0.5 * (p + q), Math.abs(q - p) / (2 * R_EARTH + p + q), num('#kInc', NaN), $('#kJ2').checked);
+  const inc = inclinationOfDate(elements);
+  const rates = elements ? keplerModelRates(a, e, inc, $('#kJ2').checked)
+    : keplerModelRates(R_EARTH + 0.5 * (p + q), Math.abs(q - p) / (2 * R_EARTH + p + q), inc, $('#kJ2').checked);
   K_RATES.forEach(([id], k) => { $(id).placeholder = rates ? rates[k].toFixed(k ? 6 : 8) : ''; });
 }
 async function fetchTle() {
@@ -1103,7 +1124,8 @@ function observerText(o) {
   if (o.perigee_km != null) items.push(t('高度 {lo}〜{hi} km', { lo: o.perigee_km.toFixed(0), hi: o.apogee_km.toFixed(0) }));
   if (o.model === 'fixed') items.push(fmtLon(o.lon), t('高度 {v} km', { v: o.height_km.toFixed(0) }));
   if (o.model === 'kepler') {
-    items.push(t('傾斜角 {v}°', { v: o.i_deg.toFixed(2) }));
+    // a sun-synchronous inclination is of the equator of date (the given one of the J2000 equator)
+    items.push(t('傾斜角 {v}°', { v: (o.sso && o.i_date_deg != null ? o.i_date_deg : o.i_deg).toFixed(2) }));
     if (o.raan_deg != null && !o.sso) items.push(t('昇交点赤経 {v}°', { v: o.raan_deg.toFixed(2) }));
     if (o.ltan_h != null) items.push(t('昇交点の地方時 {v}', { v: fmtLtan(o.ltan_h) }));
     if (o.sso) items.push(t('太陽同期'));

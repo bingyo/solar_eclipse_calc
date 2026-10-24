@@ -17,7 +17,8 @@ from eclipsecalc import server  # noqa: E402
 from eclipsecalc.constants import WGS84_A  # noqa: E402
 from eclipsecalc.context import get_context  # noqa: E402
 from eclipsecalc.observers import (ObserverError, SSCWebObserver, build_observer,  # noqa: E402
-                                   ltan_from_raan, mean_sun_ra_deg, sun_synchronous_inclination)
+                                   ltan_from_raan, mean_equator_matrix, mean_sun_ra_deg,
+                                   sun_synchronous_inclination)
 from eclipsecalc.timeutil import parse_utc  # noqa: E402
 
 CTX = get_context()
@@ -41,9 +42,9 @@ def test_ltan_stays_fixed_for_sso():
                          parse_time=lambda s: parse_utc(CTX, s))
     vf, jd0 = obs.vf, obs.params['epoch_jd_tt']
     assert abs(obs.params['ltan_h'] - 10.5) < 1e-6
-    for days in (90, 180, 365):
+    for days in (90, 180, 365):      # the node turns on the mean equator of the epoch
         raan = math.degrees(vf.raan0 + vf.raan_dot * days * 86400.0) % 360
-        assert abs(ltan_from_raan(CTX, jd0 + days, raan) - 10.5) < 0.02, days
+        assert abs(ltan_from_raan(CTX, jd0 + days, raan, ref_jd=jd0) - 10.5) < 0.02, days
 
 
 def test_hinode_ltan():
@@ -121,17 +122,19 @@ def test_secular_rates():
     o = obs.describe()
     assert o['rate_source'] == dict.fromkeys(keys, 'input') and all(abs(o[k] - v) < 1e-12 for k, v in rates.items())
     assert abs(o['period_min'] - 1440 / 14.6) < 1e-9 and not obs.notes
-    # 10 days later: the node and the argument of latitude (circular orbit: argp + M) from the position
+    # 10 days later: the node and the argument of latitude (circular orbit: argp + M) from the
+    # position, on the mean equator of the epoch in which the rates are measured
     days = 10.0
+    frame = mean_equator_matrix(CTX, 2461000.5)
     st = obs.vf.at(CTX.ts.tt_jd(2461000.5 + days))
-    r, v = st.position.km, st.velocity.km_per_s
+    r, v = frame @ st.position.km, frame @ st.velocity.km_per_s
     h = np.cross(r, v)
     h /= np.linalg.norm(h)
-    raan = math.radians(30.0 + 0.97 * days)
+    raan = math.radians(o['raan_date_deg'] + 0.97 * days)
     node = np.array([math.cos(raan), math.sin(raan), 0.0])
     assert abs(math.degrees(math.atan2(h[0], -h[1])) - math.degrees(raan)) < 1e-7
     u = math.degrees(math.atan2(np.cross(node, r) @ h, node @ r))
-    want = 90.0 + 10.0 + (-1.8 + 14.6 * 360.0) * days
+    want = o['argp_date_deg'] + 10.0 + (-1.8 + 14.6 * 360.0) * days
     assert abs((u - want + 180) % 360 - 180) < 1e-6, (u, want % 360)
     # a mean motion far from that of the semi-major axis: a warning (given with the results even
     # when nothing is found), and beyond 10 % an error; rates that are not numbers are refused
@@ -149,6 +152,34 @@ def test_secular_rates():
             assert key in str(exc), (spec, exc)
     # empty values (as from the web UI) leave the rates to the model
     assert build_observer(CTX, dict(kep, n_rev_day='', raan_rate_deg_day=None)).describe()['rate_source'] == d['rate_source']
+
+
+def test_j2_about_pole_of_date():
+    # J2 turns the orbit about the mean pole of the epoch (0.15 deg from the J2000 pole in 2027):
+    # the inclination to that equator stays, the one to the J2000 equator does not.
+    kep = {'type': 'kepler', 'epoch': '2027-08-01T00:00:00', 'a_km': 6798.0, 'e': 0.0005, 'i_deg': 51.6,
+           'raan_deg': 120.0, 'argp_deg': 60.0, 'm_deg': 0.0}
+    jd0 = parse_utc(CTX, kep['epoch'])
+    obs = build_observer(CTX, kep, parse_time=lambda s: parse_utc(CTX, s))
+    pole = mean_equator_matrix(CTX, jd0)[2]
+    assert 0.15 < math.degrees(math.acos(pole[2])) < 0.16
+    st = obs.vf.at(CTX.ts.tt_jd(jd0 + np.linspace(0, 60, 121)))
+    h = np.cross(st.position.km.T, st.velocity.km_per_s.T)
+    h /= np.linalg.norm(h, axis=1)[:, None]
+    to_pole, to_z = np.degrees(np.arccos(h @ pole)), np.degrees(np.arccos(h[:, 2]))
+    o = obs.describe()
+    assert np.ptp(to_pole) < 1e-9 and abs(to_pole[0] - o['i_date_deg']) < 1e-9 and np.ptp(to_z) > 0.25
+    assert o['i_deg'] == 51.6 and abs(o['i_date_deg'] - 51.6) > 0.1        # the elements given stay as given
+    # A planned orbit: the sun-synchronous inclination and the node of a local time are of the equator
+    # of date; the numbers given with them are of the J2000 equator.
+    plan = {'type': 'kepler', 'epoch': kep['epoch'], 'perigee_alt_km': 680, 'apogee_alt_km': 680, 'argp_deg': 0}
+    i_sso = sun_synchronous_inclination(WGS84_A + 680)
+    for extra, want in (({'sso': True, 'ltan_h': 18.0}, {'i_date_deg': i_sso, 'ltan_h': 18.0}),
+                        ({'sso': True, 'raan_deg': 77.0}, {'i_date_deg': i_sso, 'raan_deg': 77.0}),
+                        ({'i_deg': 97.0, 'ltan_h': 10.5}, {'i_deg': 97.0, 'ltan_h': 10.5}),
+                        ({'i_deg': 97.0, 'raan_deg': 77.0}, {'i_deg': 97.0, 'raan_deg': 77.0})):
+        o = build_observer(CTX, dict(plan, **extra), parse_time=lambda s: parse_utc(CTX, s)).describe()
+        assert all(abs(o[k] - v) < 1e-9 for k, v in want.items()), (extra, o)
 
 
 if __name__ == '__main__':

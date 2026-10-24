@@ -22,6 +22,7 @@ import urllib.parse
 
 import numpy as np
 from skyfield.api import EarthSatellite, wgs84
+from skyfield.framelib import ICRS_to_J2000
 from skyfield.vectorlib import VectorFunction
 
 from .constants import (AU_KM, DAY_S, EARTH_OMEGA, GM_EARTH, GM_MOON, J2_EARTH, MOON_RADIUS_MEAN,
@@ -268,17 +269,47 @@ def tle_with_mean_anomaly(line2, m_deg):
     return body + str(_tle_checksum(body))
 
 
+J2000_JD = 2451545.0
+
+
+def mean_equator_matrix(ctx, jd_tt):
+    """Rotation from the GCRS to the mean equator and equinox of a date (frame bias and
+    precession, without the nutation of a few arcseconds): the pole about which J2 turns orbits,
+    0.15 deg from the J2000 pole in 2027."""
+    return ctx.ts.tt_jd(jd_tt).precession_matrix() @ ICRS_to_J2000
+
+
+def _orientation(raan, i, argp):
+    """Rotation from the perifocal frame (perigee, 90 deg ahead, orbit normal) to the frame of
+    the angles (radians): R3(-raan) R1(-i) R3(-argp)."""
+    cO, sO, ci, si, cw, sw = math.cos(raan), math.sin(raan), math.cos(i), math.sin(i), math.cos(argp), math.sin(argp)
+    return np.array([[cO * cw - sO * sw * ci, -cO * sw - sO * cw * ci, sO * si],
+                     [sO * cw + cO * sw * ci, -sO * sw + cO * cw * ci, -cO * si],
+                     [sw * si, cw * si, ci]])
+
+
+def _angles(R):
+    """(raan, i, argp) in radians of a perifocal rotation (the node along x for an equatorial orbit)."""
+    w, p = R[:, 2], R[:, 0]
+    s = math.hypot(w[0], w[1])
+    raan = math.atan2(w[0], -w[1]) if s > 1e-14 else 0.0
+    node = np.array([math.cos(raan), math.sin(raan), 0.0])
+    return raan, math.atan2(s, w[2]), math.atan2(np.cross(node, p) @ w, node @ p)
+
+
 class _KeplerVF(VectorFunction):
     center = 399
     ephemeris = None
 
-    def __init__(self, name, epoch_jd, a, e, i, raan, argp, m0, j2=True, rates=(None, None, None)):
+    def __init__(self, name, epoch_jd, a, e, i, raan, argp, m0, j2=True, rates=(None, None, None), frame=None):
+        """Elements (km, degrees) of the GCRS.  J2 turns the orbit about the pole of ``frame`` (the
+        rotation from the GCRS to the mean equator and equinox of the epoch; None: the GCRS), in
+        which the secular rates given are measured too; i, raan0 and argp0 are of that frame."""
         self.target = name
         self.epoch_jd = epoch_jd
         self.a, self.e = a, e
-        self.i = math.radians(i)
-        self.raan0 = math.radians(raan)
-        self.argp0 = math.radians(argp)
+        self.frame = np.eye(3) if frame is None else np.asarray(frame, float)
+        self.raan0, self.i, self.argp0 = _angles(self.frame @ _orientation(*map(math.radians, (raan, i, argp))))
         self.m0 = math.radians(m0)
         n0 = math.sqrt(GM_EARTH / a ** 3)
         if j2:
@@ -328,7 +359,8 @@ class _KeplerVF(VectorFunction):
         r32 = cw * si
         pos = np.array([r11 * xp + r12 * yp, r21 * xp + r22 * yp, r31 * xp + r32 * yp])
         vel = np.array([r11 * vxp + r12 * vyp, r21 * vxp + r22 * vyp, r31 * vxp + r32 * vyp])
-        return pos / AU_KM, vel * AU_PER_DAY_PER_KM_S, None, None
+        back = self.frame.T                 # to the GCRS
+        return back @ pos / AU_KM, back @ vel * AU_PER_DAY_PER_KM_S, None, None
 
 
 TROPICAL_YEAR_DAYS = 365.24219
@@ -336,23 +368,46 @@ TROPICAL_YEAR_DAYS = 365.24219
 PRECESSION_RA_DEG_PER_YEAR = 46.1 / 3600.0
 
 
-def mean_sun_ra_deg(ctx, jd_tt):
-    """Right ascension of the fictitious mean Sun (J2000 equator), degrees.
+def mean_sun_ra_deg(ctx, jd_tt, ref_jd=J2000_JD):
+    """Right ascension of the fictitious mean Sun, degrees, from the mean equinox of ``ref_jd``
+    (TT JD; J2000 by default, the equinox moving with the general precession).
     Local mean solar time is defined by it: GMST = alpha + UT1 + 12 h."""
     t = ctx.ts.tt_jd(jd_tt)
     ut_h = ((float(t.ut1) - 0.5) % 1.0) * 24.0
     ra_of_date = ((float(t.gmst) - ut_h - 12.0) * 15.0) % 360.0
-    return (ra_of_date - PRECESSION_RA_DEG_PER_YEAR * (jd_tt - 2451545.0) / 365.25) % 360.0
+    return (ra_of_date - PRECESSION_RA_DEG_PER_YEAR * (jd_tt - ref_jd) / 365.25) % 360.0
 
 
-def raan_from_ltan(ctx, jd_tt, ltan_h):
-    """Right ascension of the ascending node for a local (mean) solar time
-    of the ascending node, e.g. 18.0 for a dusk-side ascending node."""
-    return (mean_sun_ra_deg(ctx, jd_tt) + (ltan_h - 12.0) * 15.0) % 360.0
+def raan_from_ltan(ctx, jd_tt, ltan_h, ref_jd=J2000_JD):
+    """Right ascension of the ascending node (from the mean equinox of ``ref_jd``) for a local
+    (mean) solar time of the ascending node, e.g. 18.0 for a dusk-side ascending node."""
+    return (mean_sun_ra_deg(ctx, jd_tt, ref_jd) + (ltan_h - 12.0) * 15.0) % 360.0
 
 
-def ltan_from_raan(ctx, jd_tt, raan_deg):
-    return ((raan_deg - mean_sun_ra_deg(ctx, jd_tt)) / 15.0 + 12.0) % 24.0
+def ltan_from_raan(ctx, jd_tt, raan_deg, ref_jd=J2000_JD):
+    return ((raan_deg - mean_sun_ra_deg(ctx, jd_tt, ref_jd)) / 15.0 + 12.0) % 24.0
+
+
+def _plane(frame, i_deg=None, raan_deg=None, i_date_deg=None, raan_date_deg=None):
+    """Inclination and node (degrees, GCRS) of the orbit plane with an inclination and a node,
+    each given either of the GCRS or (``*_date_deg``) of ``frame`` (the rotation from the GCRS
+    to the mean equator and equinox of the epoch)."""
+    if i_date_deg is None and raan_date_deg is None:
+        return i_deg, raan_deg
+    if i_date_deg is not None and raan_date_deg is not None:
+        w = frame.T @ _orientation(math.radians(raan_date_deg), math.radians(i_date_deg), 0.0)[:, 2]
+    else:
+        # the inclination x in the frame of the node from the other one: the orbit normal
+        # (sin node sin x, -cos node sin x, cos x) makes the angle i with that frame's pole
+        if raan_date_deg is None:               # node of the GCRS, inclination of the date
+            node, i, pole, back = math.radians(raan_deg), math.radians(i_date_deg), frame[2], np.eye(3)
+        else:                                   # node of the date, inclination of the GCRS
+            node, i, pole, back = math.radians(raan_date_deg), math.radians(i_deg), frame[:, 2], frame.T
+        a, b = pole[0] * math.sin(node) - pole[1] * math.cos(node), pole[2]
+        phi, c = math.atan2(a, b), math.acos(max(-1.0, min(1.0, math.cos(i) / math.hypot(a, b))))
+        x = min(phi + c, phi - c, key=lambda x: abs(x - i))
+        w = back @ _orientation(node, x, 0.0)[:, 2]
+    return math.degrees(math.atan2(math.hypot(w[0], w[1]), w[2])), math.degrees(math.atan2(w[0], -w[1])) % 360.0
 
 
 def sun_synchronous_inclination(a_km, e=0.0):
@@ -401,7 +456,8 @@ class KeplerObserver(Observer):
                            raan_deg=raan_deg, argp_deg=argp_deg, m_deg=m_deg, j2=j2)
         self.rates_given = tuple(rates)
         self.vf = _KeplerVF(self.name, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg,
-                            m_deg, j2, [None if r is None else r * u for r, u in zip(rates, RATE_UNITS)])
+                            m_deg, j2, [None if r is None else r * u for r, u in zip(rates, RATE_UNITS)],
+                            mean_equator_matrix(ctx, epoch_jd_tt))
         self.notes = []
         n_model = self.vf.model_rates[0] / RATE_UNITS[0]
         diff = 0.0 if rates[0] is None else abs(rates[0] / n_model - 1)
@@ -434,6 +490,9 @@ class KeplerObserver(Observer):
              'period_min': self.period_min,
              'perigee_km': self.r_min_km - WGS84_A, 'apogee_km': self.r_max_km - WGS84_A}
         d.update(self.params)
+        # the plane and the perigee of the mean equator and equinox of the epoch (J2 turns the orbit about its pole)
+        d.update(i_date_deg=math.degrees(self.vf.i), raan_date_deg=math.degrees(self.vf.raan0) % 360.0,
+                 argp_date_deg=math.degrees(self.vf.argp0) % 360.0)
         # the secular rates used, and where they come from: 'input', 'j2' or 'two_body' (without J2)
         used = (self.vf.n, self.vf.raan_dot, self.vf.argp_dot)
         d.update({k: r / u for k, r, u in zip(RATE_KEYS, used, RATE_UNITS)})
@@ -1407,18 +1466,23 @@ def build_observer(ctx, spec, parse_time=None):
             a = WGS84_A + 0.5 * (hp + ha)
             spec = dict(spec, e=(ha - hp) / (2 * a))
         e = float(spec.get('e', 0))
+        # The numbers are of the GCRS (J2000 equator); the sun-synchronous inclination and the node
+        # of a local time are of the mean equator and equinox of the epoch, as J2 and the mean Sun.
+        plane = {}
         sso = bool(spec.get('sso'))
         if sso:
             if not 0 <= e < 1:
                 raise ObserverError(tr('離心率は 0 以上 1 未満で指定してください'))
-            i_deg = sun_synchronous_inclination(a, e)
+            plane['i_date_deg'] = sun_synchronous_inclination(a, e)
         else:
-            i_deg = float(spec['i_deg'])
+            plane['i_deg'] = float(spec['i_deg'])
         ltan = spec.get('ltan_h')
         if ltan is not None and ltan != '':
-            raan = raan_from_ltan(ctx, epoch, float(ltan) % 24.0)
+            plane['raan_date_deg'] = raan_from_ltan(ctx, epoch, float(ltan) % 24.0, ref_jd=epoch)
         else:
-            raan = float(spec.get('raan_deg', 0))
+            plane['raan_deg'] = float(spec.get('raan_deg', 0))
+        frame = mean_equator_matrix(ctx, epoch) if 'i_deg' not in plane or 'raan_deg' not in plane else None
+        i_deg, raan = _plane(frame, **plane)
         rates = []
         for k in RATE_KEYS:                 # optional; empty for the rates of the model
             v = spec.get(k)
@@ -1428,7 +1492,7 @@ def build_observer(ctx, spec, parse_time=None):
                 raise ObserverError(tr('永年変化率は数値で指定してください'))
         obs = KeplerObserver(ctx, epoch, a, e, i_deg, raan, float(spec.get('argp_deg', 0)),
                              float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name, rates)
-        obs.params.update(sso=sso, ltan_h=ltan_from_raan(ctx, epoch, raan))
+        obs.params.update(sso=sso, ltan_h=ltan_from_raan(ctx, epoch, math.degrees(obs.vf.raan0), ref_jd=epoch))
         return obs
     if kind == 'horizons':
         return HorizonsObserver(ctx, spec['command'], int(spec.get('step_min', 5) or 5), name)
