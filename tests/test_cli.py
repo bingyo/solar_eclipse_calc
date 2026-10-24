@@ -345,6 +345,31 @@ def test_dry_run():
     assert abs(o['period_min'] - 94.6) < 0.2 and abs(o['i_deg'] - 97.4) < 0.05 and abs(o['ltan_h'] - 10.5) < 1e-6
 
 
+def test_secular_rates():
+    # --n --raan-rate --argp-rate go to the observer of the web API (and to the "request"), the
+    # table names the rates that were given, and they belong to the orbital elements only.
+    base = ['--epoch', '2027-07-30T12:00:00', '--a', '7058.1', '--e', '0.0012', '--i', '98.13', '--raan', '220.5',
+            '--argp', '90', '--m', '45', '--start', '2027-07-25', '--end', '2027-08-10', '--dry-run']
+    code, d = _cli_json(base + ['--n', '14.62', '--raan-rate', '0.9856'])
+    o, req = d['observer'], d['request']['observer']
+    assert code == 0 and req['n_rev_day'] == 14.62 and req['raan_rate_deg_day'] == 0.9856, d
+    assert 'argp_rate_deg_day' not in req and not d['warnings']
+    assert o['rate_source'] == {'n_rev_day': 'input', 'raan_rate_deg_day': 'input', 'argp_rate_deg_day': 'j2'}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert cli.main(base + ['--n', '14.62', '--argp-rate', '-1.8', '--lang', 'ja']) == 0
+    head = out.getvalue().splitlines()[0]
+    assert '平均運動 14.62 周回/日' in head and '近地点引数の変化率 -1.8°/日' in head and '昇交点赤経の変化率' not in head, head
+    code, d = _cli_json(base + ['--n', '15', '--lang', 'en'])           # 2.5 % from that of --a: a warning
+    assert code == 0 and any('rev/day' in w for w in d['warnings']), d
+    code, d = _cli_json(base + ['--n', '5267'])                          # degrees per day: not the same orbit
+    assert code == 1 and '周回/日' in d['error'], d
+    for argv in (base + ['--n', '0'], ['--geo-lon', '140', '--raan-rate', '1', '--start', '2027-01-01',
+                                      '--end', '2027-02-01']):
+        code, d = _cli_json(argv)
+        assert code == 2, (argv, d)
+
+
 def test_errors_and_exit_codes():
     # wrong options -> 2, input that cannot be calculated -> 1; always JSON with --format json
     code, d = _cli_json(['--city', '東京', '--start', '2027-01-01'])

@@ -4,6 +4,7 @@ web UI). Meant for people and for AI agents alike; see docs/cli.md.
 The observer is chosen by the options that are given (exactly one kind):
 
     --epoch --a --e --i --raan [--argp --m]     satellite, six orbital elements
+        [--n --raan-rate --argp-rate]           (secular rates given with them; else J2)
     --epoch --alt|--perigee-alt --apogee-alt --sso|--i --ltan|--raan
                                                 satellite, planned orbit (altitude, SSO, LTAN)
     --tle FILE | --norad N                      satellite, TLE (SGP4)
@@ -73,7 +74,9 @@ BODY_JA = {'moon': '日食', 'mercury': '水星の太陽面通過', 'venus': '�
 TYPE_JA = {'total': '皆既日食', 'annular': '金環日食', 'hybrid': '金環皆既日食', 'partial': '部分日食'}
 CONTACT_JA = {'C1': '第1接触', 'C2': '第2接触', 'MAX': '最大', 'C3': '第3接触', 'C4': '第4接触'}
 ORBIT_ARGS = ('epoch', 'a', 'e', 'i', 'raan', 'alt', 'perigee_alt', 'apogee_alt', 'sso', 'ltan')
-ORBIT_ONLY = ('argp', 'm', 'no_j2')
+ORBIT_ONLY = ('argp', 'm', 'n', 'raan_rate', 'argp_rate', 'no_j2')
+# the secular rates and their keys in the web API's observer
+RATE_ARGS = (('n', 'n_rev_day'), ('raan_rate', 'raan_rate_deg_day'), ('argp_rate', 'argp_rate_deg_day'))
 CCSDS_ONLY = ('ccsds_object', 'station', 'stations')
 LANG_ENV = 'ECLIPSECALC_LANG'
 
@@ -186,7 +189,7 @@ def _width(s):
 
 def _epilog():
     kinds = [
-        (tr('軌道6要素'), tr('--epoch --a --e --i --raan（と --argp --m）')),
+        (tr('軌道6要素'), tr('--epoch --a --e --i --raan（と --argp --m、永年変化率 --n --raan-rate --argp-rate）')),
         (tr('計画中の軌道'), tr('--epoch と、大きさ --alt または --perigee-alt --apogee-alt、傾斜角 --i または --sso、\n'
                                 '軌道面 --raan または --ltan（軌道6要素の指定と組み合わせも可）')),
         ('TLE', tr('--tle ファイル（- で標準入力）または --norad 番号（CelesTrak から最新の TLE を取得）')),
@@ -243,6 +246,10 @@ def build_parser():
     g.add_argument('--ltan', metavar='HH:MM', help=tr('昇交点の地方時（平均太陽時。例 18:00 や 10.5。--raan の代わり）'))
     g.add_argument('--argp', type=float, metavar='DEG', help=tr('近地点引数 (°)（既定 0）'))
     g.add_argument('--m', type=float, metavar='DEG', help=tr('平均近点角 (°)（既定 0）'))
+    g.add_argument('--n', type=float, metavar='REV/DAY',
+                   help=tr('平均運動 (周回/日)。平均近点角の変化率。省略すると軌道長半径から J2 の式で計算'))
+    g.add_argument('--raan-rate', type=float, metavar='DEG/DAY', help=tr('昇交点赤経の変化率 (°/日)。省略すると J2 の式で計算'))
+    g.add_argument('--argp-rate', type=float, metavar='DEG/DAY', help=tr('近地点引数の変化率 (°/日)。省略すると J2 の式で計算'))
     g.add_argument('--no-j2', action='store_true', help=tr('地球の扁平 (J2) による軌道面の歳差を考慮しない'))
 
     t = ap.add_argument_group(tr('観測者: TLE（SGP4 で軌道を計算）'))
@@ -478,6 +485,8 @@ def _check_orbit(args):
         raise UsageError(tr('軌道面は --raan（昇交点赤経）または --ltan（昇交点の地方時）のどちらか一方で指定してください'))
     if _given(args, 'ltan'):
         args.ltan_h = _parse_hours(args.ltan, tr('--ltan（昇交点の地方時）は 18:00 や 10.5 のように指定してください'))
+    if _given(args, 'n') and not args.n > 0:
+        raise UsageError(tr('--n（平均運動）は正の値で指定してください'))
 
 
 def _parse_hours(text, message):
@@ -616,6 +625,7 @@ def observer_from_args(args, log):
             spec.update(perigee_alt_km=args.perigee_alt, apogee_alt_km=args.apogee_alt)
         spec.update(sso=True) if args.sso else spec.update(i_deg=args.i)
         spec.update(ltan_h=args.ltan_h) if _given(args, 'ltan') else spec.update(raan_deg=args.raan)
+        spec.update({key: getattr(args, k) for k, key in RATE_ARGS if _given(args, k)})
         return spec
     if args.mode == 'tle':
         if args.norad is not None:
@@ -1119,6 +1129,11 @@ def observer_text(o):
                 items.append(tr('昇交点の地方時 {v}', v=f'{t // 60:02d}:{t % 60:02d}'))
             if o.get('sso'):
                 items.append(tr('太陽同期'))
+            src = o.get('rate_source') or {}        # only the rates given with the elements
+            for key, text in (('n_rev_day', '平均運動 {v} 周回/日'), ('raan_rate_deg_day', '昇交点赤経の変化率 {v}°/日'),
+                              ('argp_rate_deg_day', '近地点引数の変化率 {v}°/日')):
+                if src.get(key) == 'input':
+                    items.append(tr(text, v=f'{o[key]:.10g}'))
     if o.get('epoch'):
         items.append(tr('元期 {v}', v=_time(o['epoch'], 0, '%Y-%m-%d %H:%M:%S') + ' UTC'))
     return o['name'] + _paren(_sep().join(items))

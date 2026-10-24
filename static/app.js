@@ -304,7 +304,7 @@ async function init() {
   $('#ccsdsObject').addEventListener('change', () => { state.ccsdsObject = $('#ccsdsObject').value; inspectCcsds(); });
   $('#ccsdsStations').addEventListener('change', () => inspectCcsds());
   $$('#kInput button').forEach((b) => b.addEventListener('click', () => setKeplerInput(b.dataset.kin)));
-  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE'].forEach((q) => {
+  ['#kSso', '#kPlane', '#kSweep', '#kPeri', '#kApo', '#kA', '#kE', '#kInc', '#kJ2'].forEach((q) => {
     $(q).addEventListener('change', updateKeplerForm);
     $(q).addEventListener('input', updateKeplerForm);
   });
@@ -717,6 +717,8 @@ function applySatSpec(spec) {
     if (spec.ltan_h != null) { $('#kPlane').value = 'ltan'; $('#kLtan').value = fmtLtan(spec.ltan_h); }
     else { $('#kPlane').value = 'raan'; $('#kRaan').value = spec.raan_deg ?? 0; }
     $('#kArgp').value = spec.argp_deg ?? 0; $('#kM').value = spec.m_deg ?? 0;
+    for (const [q, key] of K_RATES) $(q).value = spec[key] ?? '';
+    $('#kRates').open = K_RATES.some(([, key]) => spec[key] != null && spec[key] !== '');
     // the six elements cannot hold the sun-synchronous / LTAN shortcuts; the plan form holds every combination
     setKeplerInput(spec.a_km && !spec.sso && spec.ltan_h == null ? 'elements' : 'plan', false);
   }
@@ -763,6 +765,20 @@ function ssoInclination(periKm, apoKm) {
   }
   return i * 180 / Math.PI;
 }
+/* The secular rates given with the elements (fields, keys of the observer); an empty field
+   leaves the rate to the model. */
+const K_RATES = [['#kN', 'n_rev_day'], ['#kRaanRate', 'raan_rate_deg_day'], ['#kArgpRate', 'argp_rate_deg_day']];
+/* The rates of the model (as the server's _KeplerVF: J2 secular, or two-body without it), shown
+   in the empty fields: mean motion (rev/day), node and perigee (°/day). */
+function keplerModelRates(a, e, iDeg, j2) {
+  if (!(a > R_EARTH) || !(e >= 0 && e < 1) || !isFinite(iDeg)) return null;
+  const MU = 398600.4418, J2 = 1.08262668e-3, DAY = 86400, DEG = 180 / Math.PI;
+  const n0 = Math.sqrt(MU / a ** 3);
+  if (!j2) return [n0 * DAY / (2 * Math.PI), 0, 0];
+  const i = iDeg / DEG, f = 1.5 * J2 * (R_EARTH / (a * (1 - e * e))) ** 2, si2 = Math.sin(i) ** 2;
+  const n = n0 * (1 + f * Math.sqrt(1 - e * e) * (1 - 1.5 * si2));
+  return [n * DAY / (2 * Math.PI), -f * n * Math.cos(i) * DAY * DEG, 0.5 * f * n * (4 - 5 * si2) * DAY * DEG];
+}
 function ltanHours() {
   const [h, m] = ($('#kLtan').value || '').split(':').map(Number);
   if (!isFinite(h)) throw new Error(t('昇交点の地方時を入力してください（例: 18:00）'));
@@ -793,6 +809,10 @@ function updateKeplerForm() {
     ? t('高度 {lo}〜{hi} km', { lo: (a * (1 - e) - R_EARTH).toFixed(0), hi: (a * (1 + e) - R_EARTH).toFixed(0) }) + sep() +
       t('周期 {p} 分', { p: (2 * Math.PI * Math.sqrt(a ** 3 / 398600.4418) / 60).toFixed(1) })
     : '';
+  const p = num('#kPeri', NaN), q = num('#kApo', NaN);
+  const rates = elements ? keplerModelRates(a, e, num('#kInc', NaN), $('#kJ2').checked)
+    : keplerModelRates(R_EARTH + 0.5 * (p + q), Math.abs(q - p) / (2 * R_EARTH + p + q), num('#kInc', NaN), $('#kJ2').checked);
+  K_RATES.forEach(([id], k) => { $(id).placeholder = rates ? rates[k].toFixed(k ? 6 : 8) : ''; });
 }
 async function fetchTle() {
   const box = $('#satInfo'), norad = $('#norad').value, req = ++state.tleReq;
@@ -936,6 +956,11 @@ function buildRequest() {
         Object.assign(observer, { perigee_alt_km: num('#kPeri'), apogee_alt_km: num('#kApo') });
         if ($('#kSso').checked) observer.sso = true; else observer.i_deg = num('#kInc');
         if ($('#kPlane').value === 'ltan') observer.ltan_h = ltanHours(); else observer.raan_deg = num('#kRaan');
+      }
+      for (const [q, key] of K_RATES) {
+        const f = $(q);
+        if (f.validity.badInput) throw new Error(t('永年変化率は数値で入力してください'));
+        if (f.value.trim() !== '') observer[key] = Number(f.value);
       }
     } else if (m === 'geo') {
       observer = { type: 'geo', lon: num('#geoLon'), name };
@@ -1082,6 +1107,10 @@ function observerText(o) {
     if (o.raan_deg != null && !o.sso) items.push(t('昇交点赤経 {v}°', { v: o.raan_deg.toFixed(2) }));
     if (o.ltan_h != null) items.push(t('昇交点の地方時 {v}', { v: fmtLtan(o.ltan_h) }));
     if (o.sso) items.push(t('太陽同期'));
+    const src = o.rate_source || {};      // only the rates given with the elements
+    if (src.n_rev_day === 'input') items.push(t('平均運動 {v} 周回/日', { v: +o.n_rev_day.toPrecision(10) }));
+    if (src.raan_rate_deg_day === 'input') items.push(t('昇交点赤経の変化率 {v}°/日', { v: +o.raan_rate_deg_day.toPrecision(10) }));
+    if (src.argp_rate_deg_day === 'input') items.push(t('近地点引数の変化率 {v}°/日', { v: +o.argp_rate_deg_day.toPrecision(10) }));
   }
   if (o.epoch) items.push(t('元期 {v}', { v: fmtDT(o.epoch) }));
   return o.name + paren(items.join(sep()));

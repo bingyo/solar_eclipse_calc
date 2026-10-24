@@ -442,6 +442,48 @@ MESSAGES = {
         'zh': '轨道根数须为数值',
         'hi': 'कक्षीय तत्व संख्याएँ होनी चाहिए',
     },
+    '永年変化率は数値で指定してください': {
+        'en': 'The secular rates must be numbers',
+        'fr': 'Les taux de variation séculaire doivent être des nombres',
+        'ru': 'Вековые скорости изменения должны быть числами',
+        'es': 'Las tasas de variación secular deben ser números',
+        'zh': '长期变化率须为数值',
+        'hi': 'दीर्घकालिक परिवर्तन दरें संख्याएँ होनी चाहिए',
+    },
+    '平均運動は正の値で指定してください': {
+        'en': 'The mean motion must be positive',
+        'fr': 'Le moyen mouvement doit être positif',
+        'ru': 'Среднее движение должно быть положительным',
+        'es': 'El movimiento medio debe ser positivo',
+        'zh': '平均运动须为正值',
+        'hi': 'माध्य गति धनात्मक होनी चाहिए',
+    },
+    '平均運動 {n} 周回/日は、軌道長半径 {a} km から求まる {n0} 周回/日と {pct}% 違います。単位（周回/日）や値の取り違えがないか確かめてください': {
+        'en': 'The mean motion of {n} rev/day differs by {pct}% from the {n0} rev/day given by the semi-major axis of {a} km. '
+              'Check the unit (revolutions per day) and the value',
+        'fr': 'Le moyen mouvement de {n}\xa0tours/jour diffère de {pct}\xa0% des {n0}\xa0tours/jour donnés par le demi-grand axe '
+              'de {a}\xa0km. Vérifiez l’unité (tours par jour) et la valeur',
+        'ru': 'Среднее движение {n} об./сут отличается на {pct}% от {n0} об./сут, получаемых из большой полуоси {a} км. '
+              'Проверьте единицы (обороты в сутки) и значение',
+        'es': 'El movimiento medio de {n} rev/día difiere en un {pct} % de los {n0} rev/día que da el semieje mayor de {a} km. '
+              'Compruebe la unidad (revoluciones por día) y el valor',
+        'zh': '平均运动 {n} 圈/日与由半长轴 {a} km 求得的 {n0} 圈/日相差 {pct}%。请检查单位（圈/日）和数值是否有误',
+        'hi': 'माध्य गति {n} परिक्रमा/दिन, {a} किमी के अर्ध-दीर्घ अक्ष से मिलने वाली {n0} परिक्रमा/दिन से {pct}% भिन्न है। '
+              'इकाई (परिक्रमा प्रति दिन) और मान जाँच लें',
+    },
+    '平均運動 {n} 周回/日が軌道長半径 {a} km から求まる {n0} 周回/日と {pct}% 違い、同じ軌道の値になりません。単位（周回/日）と値を確かめてください': {
+        'en': 'The mean motion of {n} rev/day differs by {pct}% from the {n0} rev/day given by the semi-major axis of {a} km, '
+              'too much for the same orbit. Check the unit (revolutions per day) and the value',
+        'fr': 'Le moyen mouvement de {n}\xa0tours/jour diffère de {pct}\xa0% des {n0}\xa0tours/jour donnés par le demi-grand axe '
+              'de {a}\xa0km, trop pour la même orbite. Vérifiez l’unité (tours par jour) et la valeur',
+        'ru': 'Среднее движение {n} об./сут отличается на {pct}% от {n0} об./сут, получаемых из большой полуоси {a} км, — '
+              'слишком сильно для одной орбиты. Проверьте единицы (обороты в сутки) и значение',
+        'es': 'El movimiento medio de {n} rev/día difiere en un {pct} % de los {n0} rev/día que da el semieje mayor de {a} km, '
+              'demasiado para la misma órbita. Compruebe la unidad (revoluciones por día) y el valor',
+        'zh': '平均运动 {n} 圈/日与由半长轴 {a} km 求得的 {n0} 圈/日相差 {pct}%，不可能属于同一轨道。请检查单位（圈/日）和数值',
+        'hi': 'माध्य गति {n} परिक्रमा/दिन, {a} किमी के अर्ध-दीर्घ अक्ष से मिलने वाली {n0} परिक्रमा/दिन से {pct}% भिन्न है, '
+              'जो एक ही कक्षा के लिए बहुत अधिक है। इकाई (परिक्रमा प्रति दिन) और मान जाँच लें',
+    },
     '地球固定点 {lon:.2f}°': {
         'en': 'Earth-fixed point {lon:.2f}°', 'fr': 'Point fixe terrestre {lon:.2f}°',
         'ru': 'Точка, неподвижная относительно Земли, {lon:.2f}°', 'es': 'Punto fijo terrestre {lon:.2f}°',
@@ -1699,13 +1741,61 @@ MESSAGES = {
         'en': 'Six orbital elements', 'fr': 'Six éléments orbitaux', 'ru': '6 элементов орбиты',
         'es': 'Seis elementos orbitales', 'zh': '轨道六根数', 'hi': 'छह कक्षीय तत्व',
     },
-    '--epoch --a --e --i --raan（と --argp --m）': {
-        'en': '--epoch --a --e --i --raan (and --argp --m)',
-        'fr': '--epoch --a --e --i --raan (et --argp --m)',
-        'ru': '--epoch --a --e --i --raan (и --argp --m)',
-        'es': '--epoch --a --e --i --raan (y --argp --m)',
-        'zh': '--epoch --a --e --i --raan（以及 --argp --m）',
-        'hi': '--epoch --a --e --i --raan (और --argp --m)',
+    '--epoch --a --e --i --raan（と --argp --m、永年変化率 --n --raan-rate --argp-rate）': {
+        'en': '--epoch --a --e --i --raan (and --argp --m, secular rates --n --raan-rate --argp-rate)',
+        'fr': '--epoch --a --e --i --raan (et --argp --m, taux séculaires --n --raan-rate --argp-rate)',
+        'ru': '--epoch --a --e --i --raan (и --argp --m, вековые скорости --n --raan-rate --argp-rate)',
+        'es': '--epoch --a --e --i --raan (y --argp --m, tasas seculares --n --raan-rate --argp-rate)',
+        'zh': '--epoch --a --e --i --raan（以及 --argp --m、长期变化率 --n --raan-rate --argp-rate）',
+        'hi': '--epoch --a --e --i --raan (और --argp --m, दीर्घकालिक दरें --n --raan-rate --argp-rate)',
+    },
+    '平均運動 (周回/日)。平均近点角の変化率。省略すると軌道長半径から J2 の式で計算': {
+        'en': 'Mean motion (rev/day): the rate of the mean anomaly. If omitted, computed from the semi-major axis with J2',
+        'fr': 'Moyen mouvement (tours/jour)\xa0: vitesse de variation de l’anomalie moyenne. Sinon calculé à partir du '
+              'demi-grand axe avec J2',
+        'ru': 'Среднее движение (об./сут): скорость изменения средней аномалии. Если не задано, вычисляется по большой '
+              'полуоси с учётом J2',
+        'es': 'Movimiento medio (rev/día): ritmo de variación de la anomalía media. Si se omite, se calcula a partir del '
+              'semieje mayor con J2',
+        'zh': '平均运动（圈/日），即平近点角的变化率。省略时由半长轴按 J2 公式计算',
+        'hi': 'माध्य गति (परिक्रमा/दिन): माध्य असंगति के बदलने की दर। न देने पर अर्ध-दीर्घ अक्ष से J2 के सूत्र से गणना',
+    },
+    '昇交点赤経の変化率 (°/日)。省略すると J2 の式で計算': {
+        'en': 'Rate of the right ascension of the ascending node (°/day). If omitted, computed with J2',
+        'fr': 'Vitesse de variation de l’ascension droite du nœud ascendant (°/jour). Sinon calculée avec J2',
+        'ru': 'Скорость изменения прямого восхождения восходящего узла (°/сут). Если не задана, вычисляется с учётом J2',
+        'es': 'Ritmo de variación de la ascensión recta del nodo ascendente (°/día). Si se omite, se calcula con J2',
+        'zh': '升交点赤经的变化率（°/日）。省略时按 J2 公式计算',
+        'hi': 'आरोही पात के विषुवांश के बदलने की दर (°/दिन)। न देने पर J2 के सूत्र से गणना',
+    },
+    '近地点引数の変化率 (°/日)。省略すると J2 の式で計算': {
+        'en': 'Rate of the argument of perigee (°/day). If omitted, computed with J2',
+        'fr': 'Vitesse de variation de l’argument du périgée (°/jour). Sinon calculée avec J2',
+        'ru': 'Скорость изменения аргумента перигея (°/сут). Если не задана, вычисляется с учётом J2',
+        'es': 'Ritmo de variación del argumento del perigeo (°/día). Si se omite, se calcula con J2',
+        'zh': '近地点幅角的变化率（°/日）。省略时按 J2 公式计算',
+        'hi': 'उपभू कोणांक के बदलने की दर (°/दिन)। न देने पर J2 के सूत्र से गणना',
+    },
+    '--n（平均運動）は正の値で指定してください': {
+        'en': 'Give --n (mean motion) as a positive value',
+        'fr': 'Indiquez --n (moyen mouvement) par une valeur positive',
+        'ru': 'Укажите --n (среднее движение) положительным числом',
+        'es': 'Indique --n (movimiento medio) con un valor positivo',
+        'zh': '--n（平均运动）请指定为正值',
+        'hi': '--n (माध्य गति) धनात्मक मान में दें',
+    },
+    '平均運動 {v} 周回/日': {
+        'en': 'mean motion {v} rev/day', 'fr': 'moyen mouvement {v}\xa0tours/jour', 'ru': 'среднее движение {v} об./сут',
+        'es': 'movimiento medio {v} rev/día', 'zh': '平均运动 {v} 圈/日', 'hi': 'माध्य गति {v} परिक्रमा/दिन',
+    },
+    '昇交点赤経の変化率 {v}°/日': {
+        'en': 'RAAN rate {v}°/day', 'fr': 'variation du nœud ascendant {v}°/jour', 'ru': 'скорость узла {v}°/сут',
+        'es': 'variación del nodo {v}°/día', 'zh': '升交点赤经变化率 {v}°/日', 'hi': 'पात की दर {v}°/दिन',
+    },
+    '近地点引数の変化率 {v}°/日': {
+        'en': 'argument of perigee rate {v}°/day', 'fr': 'variation de l’argument du périgée {v}°/jour',
+        'ru': 'скорость перигея {v}°/сут',
+        'es': 'variación del perigeo {v}°/día', 'zh': '近地点幅角变化率 {v}°/日', 'hi': 'उपभू की दर {v}°/दिन',
     },
     '計画中の軌道': {
         'en': 'Planned orbit', 'fr': 'Orbite prévue', 'ru': 'Проектируемая орбита', 'es': 'Órbita prevista',

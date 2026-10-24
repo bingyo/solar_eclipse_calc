@@ -129,6 +129,16 @@
               <label class="field">平均近点角 (°)<input id="kM" type="number" step="any" value="0">
                 <small>元期に衛星が軌道上のどこにいるか</small></label>
             </div>
+            <details class="k-rates" id="kRates">
+              <summary>永年変化率（任意）</summary>
+              <div class="grid2">
+                <label class="field">平均運動 (周回/日)<input id="kN" type="number" step="any" min="0">
+                  <small>平均近点角の変化率</small></label>
+                <label class="field">昇交点赤経の変化率 (°/日)<input id="kRaanRate" type="number" step="any"></label>
+                <label class="field">近地点引数の変化率 (°/日)<input id="kArgpRate" type="number" step="any"></label>
+              </div>
+              <p class="hint">元期の要素と同じ基準の平均の変化率です。空欄の項目は軌道要素から J2 の式で計算します（薄い字がその値）。</p>
+            </details>
             <label class="check"><input type="checkbox" id="kJ2" checked> 地球の扁平(J2)による軌道面の歳差を考慮</label>
             <label class="check"><input type="checkbox" id="kSweep"> 平均近点角を変えて一括計算（打ち上げ前の検討）</label>
             <label class="field" id="kSweepWrap" hidden>平均近点角の刻み

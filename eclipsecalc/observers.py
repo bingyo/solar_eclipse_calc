@@ -272,7 +272,7 @@ class _KeplerVF(VectorFunction):
     center = 399
     ephemeris = None
 
-    def __init__(self, name, epoch_jd, a, e, i, raan, argp, m0, j2=True):
+    def __init__(self, name, epoch_jd, a, e, i, raan, argp, m0, j2=True, rates=(None, None, None)):
         self.target = name
         self.epoch_jd = epoch_jd
         self.a, self.e = a, e
@@ -290,6 +290,11 @@ class _KeplerVF(VectorFunction):
             self.argp_dot = 0.5 * f * self.n * (4 - 5 * si2)
         else:
             self.n, self.raan_dot, self.argp_dot = n0, 0.0, 0.0
+        self.model_rates = (self.n, self.raan_dot, self.argp_dot)
+        # secular rates given with the elements (rad/s): the mean motion (rate of the mean
+        # anomaly) and the rates of the node and of the perigee replace those of the model
+        given = [m if r is None else r for r, m in zip(rates, self.model_rates)]
+        self.n, self.raan_dot, self.argp_dot = given
 
     def _at(self, t):
         dt = ((t.whole - self.epoch_jd) + t.tt_fraction) * DAY_S
@@ -366,11 +371,27 @@ def sun_synchronous_inclination(a_km, e=0.0):
     return math.degrees(i)
 
 
+RATE_KEYS = ('n_rev_day', 'raan_rate_deg_day', 'argp_rate_deg_day')
+# rad/s per unit of RATE_KEYS (revolutions per day, degrees per day)
+RATE_UNITS = (2 * math.pi / DAY_S, math.pi / 180 / DAY_S, math.pi / 180 / DAY_S)
+# a mean motion this far (relative) from that of the semi-major axis is more likely a wrong unit or value
+# (a warning), and beyond MEAN_MOTION_MAX not of the same orbit (an error)
+MEAN_MOTION_TOL = 0.01
+MEAN_MOTION_MAX = 0.1
+
+
 class KeplerObserver(Observer):
     def __init__(self, ctx, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg,
-                 j2=True, name=''):
+                 j2=True, name='', rates=(None, None, None)):
+        """``rates``: the secular rates given with the elements (RATE_KEYS: mean motion in
+        revolutions per day, rates of the node and of the perigee in degrees per day), None for
+        those of the model (J2, or none without it)."""
         if not all(math.isfinite(v) for v in (epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg, m_deg)):
             raise ObserverError(tr('軌道要素は数値で指定してください'))
+        if not all(r is None or math.isfinite(r) for r in rates):
+            raise ObserverError(tr('永年変化率は数値で指定してください'))
+        if rates[0] is not None and not rates[0] > 0:
+            raise ObserverError(tr('平均運動は正の値で指定してください'))
         if not (0 <= e < 1):
             raise ObserverError(tr('離心率は 0 以上 1 未満で指定してください'))
         if a_km * (1 - e) <= WGS84_A:
@@ -378,21 +399,46 @@ class KeplerObserver(Observer):
         self.name = name or tr('軌道要素で指定した衛星')
         self.params = dict(epoch_jd_tt=epoch_jd_tt, a_km=a_km, e=e, i_deg=i_deg,
                            raan_deg=raan_deg, argp_deg=argp_deg, m_deg=m_deg, j2=j2)
+        self.rates_given = tuple(rates)
         self.vf = _KeplerVF(self.name, epoch_jd_tt, a_km, e, i_deg, raan_deg, argp_deg,
-                            m_deg, j2)
+                            m_deg, j2, [None if r is None else r * u for r, u in zip(rates, RATE_UNITS)])
+        self.notes = []
+        n_model = self.vf.model_rates[0] / RATE_UNITS[0]
+        diff = 0.0 if rates[0] is None else abs(rates[0] / n_model - 1)
+        fields = dict(n=f'{rates[0]:.8g}', a=f'{a_km:.3f}', n0=f'{n_model:.8g}', pct=f'{diff * 100:.1f}') if diff else {}
+        if diff > MEAN_MOTION_MAX:
+            raise ObserverError(tr('平均運動 {n} 周回/日が軌道長半径 {a} km から求まる {n0} 周回/日と {pct}% 違い、'
+                                   '同じ軌道の値になりません。単位（周回/日）と値を確かめてください', **fields))
+        if diff > MEAN_MOTION_TOL:
+            self.notes.append(tr('平均運動 {n} 周回/日は、軌道長半径 {a} km から求まる {n0} 周回/日と {pct}% 違います。'
+                                 '単位（周回/日）や値の取り違えがないか確かめてください', **fields))
         self.r_min_km = a_km * (1 - e)
         self.r_max_km = a_km * (1 + e)
-        self.v_max_km_s = math.sqrt(GM_EARTH * (2 / self.r_min_km - 1 / a_km)) * 1.01
+        # the fastest motion of the model: along the orbit (at the perigee) and with the node and the perigee
+        v_orbit = max(math.sqrt(GM_EARTH * (2 / self.r_min_km - 1 / a_km)),
+                      self.vf.n * a_km * math.sqrt((1 + e) / (1 - e)))
+        self.v_max_km_s = (v_orbit + (abs(self.vf.raan_dot) + abs(self.vf.argp_dot)) * self.r_max_km) * 1.01
         self.period_min = 2 * math.pi / self.vf.n / 60
 
     def char_time_s(self):
         return min(self.r_min_km / self.v_max_km_s, self.period_min * 60 / (2 * math.pi))
+
+    def limit_period(self, ctx, jd_a, jd_b, margin):
+        return jd_a, jd_b, list(self.notes)
+
+    def warnings_for(self, ctx, jd):
+        return list(self.notes)
 
     def describe(self):
         d = {'kind': 'space', 'model': 'kepler', 'name': self.name,
              'period_min': self.period_min,
              'perigee_km': self.r_min_km - WGS84_A, 'apogee_km': self.r_max_km - WGS84_A}
         d.update(self.params)
+        # the secular rates used, and where they come from: 'input', 'j2' or 'two_body' (without J2)
+        used = (self.vf.n, self.vf.raan_dot, self.vf.argp_dot)
+        d.update({k: r / u for k, r, u in zip(RATE_KEYS, used, RATE_UNITS)})
+        d['rate_source'] = {k: 'input' if g is not None else 'j2' if self.params['j2'] else 'two_body'
+                            for k, g in zip(RATE_KEYS, self.rates_given)}
         return d
 
 
@@ -1373,8 +1419,15 @@ def build_observer(ctx, spec, parse_time=None):
             raan = raan_from_ltan(ctx, epoch, float(ltan) % 24.0)
         else:
             raan = float(spec.get('raan_deg', 0))
+        rates = []
+        for k in RATE_KEYS:                 # optional; empty for the rates of the model
+            v = spec.get(k)
+            try:
+                rates.append(None if v is None or v == '' else float(v))
+            except (TypeError, ValueError):
+                raise ObserverError(tr('永年変化率は数値で指定してください'))
         obs = KeplerObserver(ctx, epoch, a, e, i_deg, raan, float(spec.get('argp_deg', 0)),
-                             float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name)
+                             float(spec.get('m_deg', 0)), bool(spec.get('j2', True)), name, rates)
         obs.params.update(sso=sso, ltan_h=ltan_from_raan(ctx, epoch, raan))
         return obs
     if kind == 'horizons':

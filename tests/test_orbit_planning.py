@@ -103,6 +103,54 @@ def test_input_checks():
     assert abs(o['perigee_km'] - 500) < 1e-6 and abs(o['apogee_km'] - 800) < 1e-6
 
 
+def test_secular_rates():
+    # Secular rates given with the elements (mean motion, rates of the node and of the perigee)
+    # replace those of the J2 model, and the orbit follows them; the rates not given keep the model.
+    kep = {'type': 'kepler', 'epoch_jd_tt': 2461000.5, 'a_km': 7078.137, 'e': 0.0, 'i_deg': 98.19,
+           'raan_deg': 30.0, 'argp_deg': 90.0, 'm_deg': 10.0}
+    keys = ('n_rev_day', 'raan_rate_deg_day', 'argp_rate_deg_day')
+    ref = build_observer(CTX, kep)
+    d = ref.describe()
+    assert d['rate_source'] == dict.fromkeys(keys, 'j2')
+    assert build_observer(CTX, dict(kep, j2=False)).describe()['rate_source'] == dict.fromkeys(keys, 'two_body')
+    t = CTX.ts.tt_jd(2461000.5 + np.array([0.0, 3.7, 30.2]))
+    same = build_observer(CTX, dict(kep, **{k: d[k] for k in keys}))      # the model's own rates as numbers
+    assert np.abs(same.vf.at(t).position.km - ref.vf.at(t).position.km).max() < 1e-6
+    rates = {'n_rev_day': 14.6, 'raan_rate_deg_day': 0.97, 'argp_rate_deg_day': -1.8}
+    obs = build_observer(CTX, dict(kep, **rates))
+    o = obs.describe()
+    assert o['rate_source'] == dict.fromkeys(keys, 'input') and all(abs(o[k] - v) < 1e-12 for k, v in rates.items())
+    assert abs(o['period_min'] - 1440 / 14.6) < 1e-9 and not obs.notes
+    # 10 days later: the node and the argument of latitude (circular orbit: argp + M) from the position
+    days = 10.0
+    st = obs.vf.at(CTX.ts.tt_jd(2461000.5 + days))
+    r, v = st.position.km, st.velocity.km_per_s
+    h = np.cross(r, v)
+    h /= np.linalg.norm(h)
+    raan = math.radians(30.0 + 0.97 * days)
+    node = np.array([math.cos(raan), math.sin(raan), 0.0])
+    assert abs(math.degrees(math.atan2(h[0], -h[1])) - math.degrees(raan)) < 1e-7
+    u = math.degrees(math.atan2(np.cross(node, r) @ h, node @ r))
+    want = 90.0 + 10.0 + (-1.8 + 14.6 * 360.0) * days
+    assert abs((u - want + 180) % 360 - 180) < 1e-6, (u, want % 360)
+    # a mean motion far from that of the semi-major axis: a warning (given with the results even
+    # when nothing is found), and beyond 10 % an error; rates that are not numbers are refused
+    n = d['n_rev_day']
+    assert '周回/日' in build_observer(CTX, dict(kep, n_rev_day=n * 1.05)).notes[0]
+    s = server.search(server.SearchRequest(phenomena=['moon'], start='2027-01-10', end='2027-01-11', settings={},
+                                           observer=dict(kep, epoch='2027-01-01T00:00:00', n_rev_day=n * 1.05)))
+    assert not s['events'] and any('周回/日' in w for w in s['warnings']), s['warnings']
+    for spec, key in ((dict(kep, n_rev_day=n * 360), '周回/日'), (dict(kep, n_rev_day=0), '正の値'),
+                      (dict(kep, n_rev_day='15 rev'), '数値'), (dict(kep, raan_rate_deg_day=math.nan), '数値')):
+        try:
+            build_observer(CTX, spec)
+            assert False, spec
+        except ObserverError as exc:
+            assert key in str(exc), (spec, exc)
+    # empty values (as from the web UI) leave the rates to the model
+    assert build_observer(CTX, dict(kep, n_rev_day='', raan_rate_deg_day=None)).describe()['rate_source'] == d['rate_source']
+
+
 if __name__ == '__main__':
     failed = 0
     for name, fn in list(globals().items()):

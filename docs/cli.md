@@ -28,7 +28,7 @@ python cli.py --help
 ## 生成 AI が計算するときの手順
 
 1. **観測者を決める**（下の表）。人から受け取った情報をなるべくそのままの形で渡し、AI が別の形式に換算しないようにします（換算の誤りを避けるため）。
-2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。CCSDS のメッセージでは、`observer` の `message`（OEM・OPM など）・`object_name`・`ref_frame`・`time_system`・データの期間（`start`・`end`）を、TDM なら軌道決定の結果（`od`）も確かめます。
+2. **解釈を確かめる**: `--dry-run --format json` で、計算せずに観測者の解釈だけを出力します。`observer` の周期（`period_min`）・近地点/遠地点高度（`perigee_km` / `apogee_km`）・傾斜角（`i_deg`）・離心率（`e`）・昇交点赤経（`raan_deg`）・昇交点の地方時（`ltan_h`、軌道要素のみ）・永年変化率（`n_rev_day`・`raan_rate_deg_day`・`argp_rate_deg_day`。入力値か J2 の式かは `rate_source`。軌道要素のみ）などを、人から受け取った情報と照らし合わせてください。TLE では 2 行目の値（傾斜角・昇交点赤経・離心率・近地点引数・平均近点角・平均運動）がそのまま出ます。期間の誤り（暦の範囲外など）もここでエラーになり、`warnings` には計算したときに出る注意が入ります（TLE の古さは、期間の端のうち元期から遠いほうで判定します）。CCSDS のメッセージでは、`observer` の `message`（OEM・OPM など）・`object_name`・`ref_frame`・`time_system`・データの期間（`start`・`end`）を、TDM なら軌道決定の結果（`od`）も確かめます。
 3. **計算する**: `--format json` で実行し、終了コードと `ok` を確認します。人の言語に合わせて `--lang`（例 `--lang en`）を付けると、`warnings` や `error` をそのまま伝えられます。`warnings` があれば必ず人に伝えます（例: TLE の元期から日数が経っていて誤差が大きい）。接触時刻まで必要なら `--detail` を付けます。
    TLE の元期から何週間も先の現象は、衛星が軌道上のどこにいるかがほとんど分からなくなるため（大気の抵抗や軌道変更）、`--sweep 10` も実行して、位置による結果の幅（時刻・回数・食分の範囲）を一緒に伝えてください。
 4. **報告する**: 時刻は UTC で返るので、人の地域の時刻に直して伝えます（日本時間 = UTC+9）。表で見せるときは `--format table --tz 9` が便利です。計算条件（出力の `request`）を残しておくと、`--request` で同じ計算を再現できます。
@@ -40,6 +40,7 @@ python cli.py --help
 | TLE（`1 ` と `2 ` で始まる 2 行。名前の行があってもよい） | ファイルに保存して `--tle ファイル`、または標準入力から `--tle -` |
 | NORAD カタログ番号・現在運用中の衛星（最新の軌道でよい場合） | `--norad 25544` |
 | 軌道6要素（元期・軌道長半径・離心率・傾斜角・昇交点赤経・近地点引数・平均近点角） | `--epoch --a --e --i --raan --argp --m` |
+| 軌道6要素と一緒の永年変化率（平均運動・昇交点赤経の変化率・近地点引数の変化率） | 上の引数に `--n`（周回/日）、`--raan-rate`、`--argp-rate`（°/日）。分かっているものだけ渡します（[軌道要素についての注意](#軌道要素についての注意)） |
 | 計画中の軌道（高度・太陽同期・昇交点の地方時など） | `--epoch` と `--alt`（円軌道）または `--perigee-alt --apogee-alt`、`--i` または `--sso`、`--raan` または `--ltan` |
 | 打ち上げ前で、軌道上の位置（位相）が決まっていない | 上の軌道要素に `--sweep 10`（平均近点角を 10° 刻みで一括計算） |
 | TLE・OMM の元期から何週間も先の現象 | `--tle`（または OMM の `--ccsds`）に `--sweep 10`（平均近点角を 10° 刻みで置き換えて一括計算） |
@@ -60,7 +61,11 @@ python cli.py --help
 ### 軌道要素についての注意
 
 - `--a --e --i --raan --argp --m` は **GCRS（J2000 赤道）基準の平均要素** として扱い、地球の扁平（J2）による永年摂動を加えて計算します（`--no-j2` で無効）。公表されている接触軌道要素（osculating elements）を入れても目安としては使えますが、TLE と同じ精度にはなりません。
-- **TLE の要素を取り出して `--a` などに入れないでください。** TLE は SGP4 専用の平均要素（TEME 基準、平均運動は周回/日）なので、`--tle` でそのまま渡します。
+- **永年変化率**: `--n` は平均運動（平均近点角の変化率、周回/日）、`--raan-rate` と `--argp-rate` は昇交点赤経と近地点引数の変化率（°/日）で、元期の要素と同じ基準の平均の変化率として扱います。渡したものだけがその値になり、省略したものは軌道要素から J2 の式で計算します（`--no-j2` では 2 体: 平均運動は軌道長半径から、変化率は 0）。衛星の軌道上の進み方は `--n`、軌道の大きさ（半径）は `--a` で決まります。
+  - 単位を換算して渡します。°/日 の平均運動は 360 で割り、rad/s の値は 86400/(2π) を掛けて周回/日に、86400×180/π を掛けて °/日にします。
+  - `--n` が `--a` から J2 の式で求まる平均運動と 1% より大きく違うと `warnings` で知らせ、10% より大きく違うと同じ軌道の値ではない（単位の誤りなど）としてエラーにします（終了コード 1）。
+  - `--dry-run` の `observer` の `n_rev_day`・`raan_rate_deg_day`・`argp_rate_deg_day` が計算に使う値、`rate_source` がその出どころ（`input` = 渡した値、`j2` = J2 の式、`two_body` = 2 体）です。
+- **TLE の要素を取り出して `--a` などに入れないでください。** TLE は SGP4 専用の平均要素（TEME 基準、平均運動は周回/日）なので、`--tle` でそのまま渡します。TLE の平均運動も `--n` には入れません。
 - 高度は地球の赤道半径 6378.137 km からの高さです（`--alt 680` は軌道長半径 7058.137 km）。周期しか分からない場合は a = (μT²/4π²)^(1/3)（μ = 398600.4418 km³/s²）で求め、`--dry-run` で `period_min` が元の周期と一致するか確かめます。
 - 元期・期間は **UTC** です。日本時間で与えられたら 9 時間引きます（2027-08-02 09:00 JST = 2027-08-02T00:00:00 UTC）。
 - 角度はすべて度（°）、距離は km、標高は m です。経度は東経 +／西経 −、緯度は北緯 +／南緯 −。
@@ -142,7 +147,7 @@ python cli.py --request request.json --format json
 
 | type | 項目 |
 |---|---|
-| `kepler` | `epoch`（UTC）、大きさ: `a_km` と `e`、または `perigee_alt_km` と `apogee_alt_km`、傾斜角: `i_deg` または `"sso": true`、軌道面: `raan_deg` または `ltan_h`（時。18.0 = 18:00）、`argp_deg`、`m_deg`、`j2`（既定 true） |
+| `kepler` | `epoch`（UTC）、大きさ: `a_km` と `e`、または `perigee_alt_km` と `apogee_alt_km`、傾斜角: `i_deg` または `"sso": true`、軌道面: `raan_deg` または `ltan_h`（時。18.0 = 18:00）、`argp_deg`、`m_deg`、`j2`（既定 true）、永年変化率（任意）: `n_rev_day`（周回/日）、`raan_rate_deg_day`、`argp_rate_deg_day`（°/日） |
 | `tle` | `line1`、`line2`（`m_deg` を加えると、平均近点角をその値に置き換えた TLE で計算します） |
 | `celestrak` | `norad`（CelesTrak から最新の TLE を取得し、`request` には `tle` として記録されます） |
 | `geo` | `lon` |
@@ -165,7 +170,7 @@ python cli.py --request request.json --format json
 | `ok` | `true` |
 | `lang` | メッセージ（`warnings`、既定の観測者名など）の言語（`--lang`） |
 | `request` | 計算に使った条件（`--request` にそのまま渡せる） |
-| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso` も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準）。CCSDS なら `model: "ccsds"` と `message`（OEM・OPM・OMM・OCM・TDM）、`version`、`format`（KVN・XML・JSON・CSV）、`object_name`、`object_id`、`ref_frame`、`center`、`time_system`。OEM・OCM の状態の並びは `start`・`end`（データの期間）、`n_states`、`segments`、`interpolation_error_km`、OMM は TLE と同じ要素、OPM・OCM の状態と TDM は元期の接触軌道要素（`a_km` など。GCRS 基準）、`forces`（伝搬に使った力）、`drag`・`srp`（C·A/m、m²/kg）、`maneuvers`、`state_gcrs`（元期の位置・速度、km・km/s）。TDM はさらに `target`（衛星）、`stations`、`apriori`（初期値に使ったメッセージ）と `od`（軌道決定: `n_used`・`n_rejected`、観測の種類ごとの `types`（`n`、`rejected`、残差の `rms` と `unit`、往復を半分にした `factor`）、`sigma_pos_km`・`sigma_vel_km_s`（推定誤差 1σ）、`arc_s`（観測の期間、秒）、`first_guess`（`apriori`・`positions`・`gauss`）） |
+| `observer` | 観測者の解釈。衛星なら `period_min`、`perigee_km`、`apogee_km`、`epoch`（UTC）など。軌道要素なら `a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`ltan_h`、`sso`、計算に使う永年変化率 `n_rev_day`・`raan_rate_deg_day`・`argp_rate_deg_day` とその出どころ `rate_source`（`input`・`j2`・`two_body`）も。TLE なら `norad`、`a_km`、`e`、`i_deg`、`raan_deg`、`argp_deg`、`m_deg`、`mean_motion_rev_per_day`、`bstar`（TLE の値。TEME 基準）。CCSDS なら `model: "ccsds"` と `message`（OEM・OPM・OMM・OCM・TDM）、`version`、`format`（KVN・XML・JSON・CSV）、`object_name`、`object_id`、`ref_frame`、`center`、`time_system`。OEM・OCM の状態の並びは `start`・`end`（データの期間）、`n_states`、`segments`、`interpolation_error_km`、OMM は TLE と同じ要素、OPM・OCM の状態と TDM は元期の接触軌道要素（`a_km` など。GCRS 基準）、`forces`（伝搬に使った力）、`drag`・`srp`（C·A/m、m²/kg）、`maneuvers`、`state_gcrs`（元期の位置・速度、km・km/s）。TDM はさらに `target`（衛星）、`stations`、`apriori`（初期値に使ったメッセージ）と `od`（軌道決定: `n_used`・`n_rejected`、観測の種類ごとの `types`（`n`、`rejected`、残差の `rms` と `unit`、往復を半分にした `factor`）、`sigma_pos_km`・`sigma_vel_km_s`（推定誤差 1σ）、`arc_s`（観測の期間、秒）、`first_guess`（`apriori`・`positions`・`gauss`）） |
 | `events` | 現象の一覧（最大の時刻順。下の表） |
 | `earth_shadow` | `--phenomena` に `earth` があるときだけ。衛星が地球の影に入る時間（[地球の影](#地球の影--phenomena-earth)） |
 | `warnings` | 注意（文字列の配列）。人に伝えてください。TLE の古さの注意にある日数は、通常の計算では見つかった現象のうち元期から最も遠いものまでの日数、`--dry-run` と `--sweep` では期間の端のうち元期から遠いほうまでの日数です |
