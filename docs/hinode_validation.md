@@ -2,9 +2,10 @@
 
 太陽観測衛星「ひので」（SOLAR-B、NORAD 29479、高度約 680 km の太陽同期極軌道）が 2006〜2026 年に軌道上で遭遇した日食・太陽面通過を使って、本ツールの計算を検証した記録です。
 
-- 再現: `python tests/test_hinode.py`（予報値・観測報告・QL 動画で測った接触時刻との比較、約 30 秒）、`python tools/validate_hinode_ql.py`（QL 動画の測定、約 5 分・動画約 25 MB を取得。ffmpeg が必要）、`python tools/validate_hinode_images.py`（広報画像の測定、約 2 分・画像約 10 MB を取得）
+- 再現: `python tests/test_hinode.py`（予報値・観測報告・QL 動画で測った接触時刻との比較、約 30 秒）、`python tools/validate_hinode_ql.py`（QL 動画の測定、約 5 分・動画約 25 MB を取得。ffmpeg が必要）、`python tools/validate_hinode_images.py`（広報画像の測定、約 2 分・画像約 10 MB を取得）、`python tools/hinode_ql_figures.py`（付録の画像）
 - 「ひので」の軌道: NASA SSCWeb（Satellite Situation Center）の過去軌道（60 秒間隔）。画面の「人工衛星 → NASA SSCWeb」（API では `{"type":"sscweb","id":"hinode"}`）として追加しました。現在の CelesTrak TLE を SGP4 で計算した位置と元期付近で約 1 km（沿軌道 0.1 秒相当）で一致しており、TLE 相当の精度の軌道です（SSCWeb は SGP4 の TEME を章動なしの平均赤道とみなして J2000 に変換しており、0.2〜0.4 km・接触で 0.05 秒以下の差があります）。
 - 観測データ: 国立天文台ひので科学センターの [QL 動画アーカイブ](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/)（2006〜2026 年の日ごとの XRT 全面画像・XRT/SOT 動画。各コマに撮影時刻がミリ秒まで、太陽の北が上の角度秒の座標軸が描かれています）と、ひのでチーム・宇宙科学研究所の広報画像。
+- 比較に使った動画・コマ（パスごとに 1 枚、計算の月の縁を重ねたもの）と広報画像の URL は[付録](#付録-比較に使った観測画像)にまとめました。
 
 ## 結論
 
@@ -217,3 +218,305 @@ ISAS の公開ページは「最大食分 99.3％、皆既食帯に入る一歩�
 - QL 動画: 国立天文台ひので科学センター [Hinode QL Movies](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/)（SIRIUS データベースから作成）
 - 予報計算: 相馬充（国立天文台）。軌道: [NASA SSCWeb](https://sscweb.gsfc.nasa.gov/)
 - 半径: Haberreiter, Schmutz & Kosovichev 2008, ApJ 675, L53（IAU 2015 B3 公称値の根拠）; Hauchecorne et al. 2014, ApJ 783, 127（HMI）; Emilio et al. 2012, ApJ 750, 135（MDI）; Lamy et al. 2015（日食）; Reale et al. 2015, Nat. Commun. 6, 7563（金星）
+
+## 付録 比較に使った観測画像
+
+検証に使った QL 動画のコマを、パス（太陽面通過では接触）ごとに載せます。画像は `python tools/hinode_ql_figures.py` で作り直せます（動画は初回にアーカイブから取得）。
+
+- 左は QL 動画のコマそのまま（題名の時刻は撮影時刻 = 露光の開始、軸は太陽の北が上の角度秒）、右は同じコマに本ツールで計算した月の縁を水色の点で重ねたものです。計算は SSCWeb の軌道そのまま（時刻ずれ s = 0）、画像の向きは太陽の P 角、太陽の中心は同じ動画の月のないコマで X 線の縁から測った位置です（1.2・1.3 節の測定と同じ置き方）。
+- コマは、測ったコマのうち食の最大に最も近いものです。XRT の QL の画素は 6.27″（月の動きで約 1.5 秒）なので、1〜2 秒の s は図では見分けられません。値はコマごとの中心の当てはめから求めています。
+- 動画名はアーカイブの動画へのリンク、「その日の一覧」は QL アーカイブの日ページです。s は軌道の時刻ずれ（正 = 実際のひのでが SSCWeb の軌道より先）です。
+
+### A.1 2006-11-08 水星の太陽面通過（1.1 節）
+
+計算した接触（既定の太陽半径 959.96″）に最も近いコマです（重ね描きなし）。入りの動画は [FG_GBM20061108191032_191701.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2006/11/08/FG_GBM20061108191032_191701.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2006/11/08/hsc_ql20061108.html)）、左が第1接触（計算 19:12:25.7）の 1.6 秒後の 19:12:27.2 のコマ（欠けはまだ 0.1″ 程度で見えない）、右が第2接触（計算 19:14:24.3）の 2.1 秒前の 19:14:22.2 のコマ（水星の円盤がちょうど縁に内接する直前）です。
+
+![2006-11-08 水星の入り（第1・第2接触付近）](images/hinode/20061108_mercury_ingress.jpg)
+
+出の動画は [FG_GBM20061109000431_001204.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2006/11/09/FG_GBM20061109000431_001204.mpg)（[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2006/11/09/hsc_ql20061109.html)）、左が第3接触（計算 00:08:00.3）の 1.8 秒後の 00:08:02.1、右が第4接触（計算 00:09:59.7）の 2.5 秒前の 00:09:57.1 のコマ（小さな欠けが残る）です。
+
+![2006-11-09 水星の出（第3・第4接触付近）](images/hinode/20061108_mercury_egress.jpg)
+
+### A.2 2017〜2026 年の日食（1.2 節）
+
+表の値（現象ごとの加重平均）のもとになった、各パスの露光の短い（または 1 本だけの）動画です。s はこの付録のために 2026-10-29 に同じ方法で測り直したパスごとの値で、表の値とは誤差の範囲（0.3 秒以内）で一致します。
+
+**2017-08-21 最大 16:57:32 UT、食分 0.718** — [XRT_APM20170821061950_185419.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2017/08/21/XRT_APM20170821061950_185419.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2017/08/21/hsc_ql20170821.html)）、16:57:29.27 UT のコマ、s = +1.58 ± 0.32 秒（30 コマ）
+
+![2017-08-21 最大 16:57:32 UT、食分 0.718](images/hinode/20170821_1657_XRT_APM.jpg)
+
+**2019-01-06 最大 00:20:46 UT、食分 0.537** — [XRT_APM20190106000012_005922.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/01/06/XRT_APM20190106000012_005922.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/01/06/hsc_ql20190106.html)）、00:20:42.09 UT のコマ、s = +1.57 ± 0.77 秒（24 コマ）
+
+![2019-01-06 最大 00:20:46 UT、食分 0.537](images/hinode/20190106_0020_XRT_APM.jpg)
+
+**2019-12-26 最大 03:44:16 UT、食分 0.682** — [XRT_APM20191226033017_035643.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/12/26/XRT_APM20191226033017_035643.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/12/26/hsc_ql20191226.html)）、03:44:12.83 UT のコマ、s = +1.39 ± 0.73 秒（26 コマ）
+
+![2019-12-26 最大 03:44:16 UT、食分 0.682](images/hinode/20191226_0344_XRT_APM.jpg)
+
+**2019-12-26 最大 06:29:41 UT、食分 0.411** — [XRT_APM20191226061510_064436.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/12/26/XRT_APM20191226061510_064436.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2019/12/26/hsc_ql20191226.html)）、06:29:36.12 UT のコマ、s = −0.15 ± 1.09 秒（25 コマ）
+
+![2019-12-26 最大 06:29:41 UT、食分 0.411](images/hinode/20191226_0629_XRT_APM.jpg)
+
+**2020-06-21 最大 09:16:03 UT、食分 0.469** — [XRT_APM20200621090843_092939.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2020/06/21/XRT_APM20200621090843_092939.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2020/06/21/hsc_ql20200621.html)）、09:16:09.11 UT のコマ、s = +0.38 ± 0.17 秒（26 コマ）
+
+![2020-06-21 最大 09:16:03 UT、食分 0.469](images/hinode/20200621_0916_XRT_APM.jpg)
+
+**2020-12-14 最大 15:00:49 UT、食分 0.379** — [XRT_APM20201214121211_152944.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2020/12/14/XRT_APM20201214121211_152944.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2020/12/14/hsc_ql20201214.html)）、15:01:03.93 UT のコマ、s = −0.64 ± 1.17 秒（25 コマ）
+
+![2020-12-14 最大 15:00:49 UT、食分 0.379](images/hinode/20201214_1500_XRT_APM.jpg)
+
+**2021-06-10 最大 11:23:43 UT、食分 0.941** — [XRT_APM20210610092259_114827.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2021/06/10/XRT_APM20210610092259_114827.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2021/06/10/hsc_ql20210610.html)）、11:23:37.01 UT のコマ、s = +0.04 ± 0.29 秒（29 コマ）
+
+![2021-06-10 最大 11:23:43 UT、食分 0.941](images/hinode/20210610_1123_XRT_APM.jpg)
+
+**2021-12-04 最大 07:40:28 UT、食分 0.801** — [XRT_APM20211204030331_075942.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2021/12/04/XRT_APM20211204030331_075942.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2021/12/04/hsc_ql20211204.html)）、07:43:16.99 UT のコマ、s = −0.59 ± 0.33 秒（14 コマ）
+
+![2021-12-04 最大 07:40:28 UT、食分 0.801](images/hinode/20211204_0740_XRT_APM.jpg)
+
+**2022-10-25 最大 09:06:51 UT、食分 0.291** — [XRT_APM20221025083311_092537.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/XRT_APM20221025083311_092537.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/hsc_ql20221025.html)）、09:06:37.57 UT のコマ、s = −1.22 ± 0.96 秒（16 コマ）
+
+![2022-10-25 最大 09:06:51 UT、食分 0.291](images/hinode/20221025_0906_XRT_APM.jpg)
+
+**2022-10-25 最大 10:35:51 UT、食分 0.985** — [XRT_APM20221025102555_174519.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/XRT_APM20221025102555_174519.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/hsc_ql20221025.html)）、10:35:43.34 UT のコマ、s = +1.07 ± 0.16 秒（25 コマ）
+
+![2022-10-25 最大 10:35:51 UT、食分 0.985](images/hinode/20221025_1035_XRT_APM.jpg)
+
+**2022-10-25 最大 12:03:13 UT、食分 0.751** — [XRT_APM20221025102555_174519.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/XRT_APM20221025102555_174519.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2022/10/25/hsc_ql20221025.html)）、12:03:20.08 UT のコマ、s = +0.86 ± 0.15 秒（26 コマ）
+
+![2022-10-25 最大 12:03:13 UT、食分 0.751](images/hinode/20221025_1203_XRT_APM.jpg)
+
+**2023-04-20 最大 05:48:50 UT、食分 0.708** — [XRT_ATM20230420054226_060146.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2023/04/20/XRT_ATM20230420054226_060146.mpg)（XRT Al thick、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2023/04/20/hsc_ql20230420.html)）、05:48:46.61 UT のコマ、s = +2.04 ± 0.73 秒（22 コマ）
+
+![2023-04-20 最大 05:48:50 UT、食分 0.708](images/hinode/20230420_0548_XRT_ATM.jpg)
+
+**2023-10-14 最大 15:31:17 UT、食分 0.549** — [XRT_APM20231014150313_155739.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2023/10/14/XRT_APM20231014150313_155739.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2023/10/14/hsc_ql20231014.html)）、15:31:08.92 UT のコマ、s = −0.79 ± 0.49 秒（22 コマ）
+
+![2023-10-14 最大 15:31:17 UT、食分 0.549](images/hinode/20231014_1531_XRT_APM.jpg)
+
+**2024-04-08 最大 17:00:05 UT、食分 0.489** — [XRT_APM20240408164110_171936.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/04/08/XRT_APM20240408164110_171936.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/04/08/hsc_ql20240408.html)）、17:00:06.12 UT のコマ、s = +2.96 ± 1.11 秒（24 コマ）
+
+![2024-04-08 最大 17:00:05 UT、食分 0.489](images/hinode/20240408_1700_XRT_APM.jpg)
+
+**2024-04-08 最大 19:42:22 UT、食分 0.622** — [XRT_APM20240408172346_195845.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/04/08/XRT_APM20240408172346_195845.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/04/08/hsc_ql20240408.html)）、19:42:16.46 UT のコマ、s = −0.06 ± 0.31 秒（36 コマ）
+
+![2024-04-08 最大 19:42:22 UT、食分 0.622](images/hinode/20240408_1942_XRT_APM.jpg)
+
+**2024-10-02 最大 16:35:12 UT、食分 0.850** — [XRT_APM20241002124345_180447.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/10/02/XRT_APM20241002124345_180447.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2024/10/02/hsc_ql20241002.html)）、16:35:12.22 UT のコマ、s = −1.39 ± 0.22 秒（66 コマ）
+
+![2024-10-02 最大 16:35:12 UT、食分 0.850](images/hinode/20241002_1635_XRT_APM.jpg)
+
+**2025-03-29 最大 09:25:12 UT、食分 0.586** — [XRT_APM20250329033322_175013.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/XRT_APM20250329033322_175013.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/hsc_ql20250329.html)）、09:25:08.73 UT のコマ、s = +0.28 ± 0.25 秒（34 コマ）
+
+![2025-03-29 最大 09:25:12 UT、食分 0.586](images/hinode/20250329_0925_XRT_APM.jpg)
+
+**2025-03-29 最大 10:52:26 UT、食分 0.962** — [XRT_APM20250329033322_175013.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/XRT_APM20250329033322_175013.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/hsc_ql20250329.html)）、10:52:18.96 UT のコマ、s = +0.43 ± 0.20 秒（38 コマ）
+
+![2025-03-29 最大 10:52:26 UT、食分 0.962](images/hinode/20250329_1052_XRT_APM.jpg)
+
+**2025-03-29 最大 12:20:01 UT、食分 0.478** — [XRT_APM20250329033322_175013.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/XRT_APM20250329033322_175013.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/03/29/hsc_ql20250329.html)）、12:19:58.70 UT のコマ、s = +0.45 ± 0.19 秒（32 コマ）
+
+![2025-03-29 最大 12:20:01 UT、食分 0.478](images/hinode/20250329_1220_XRT_APM.jpg)
+
+**2025-09-21 最大 17:47:04 UT、食分 0.350** — [XRT_APM20250921040327_213249.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/09/21/XRT_APM20250921040327_213249.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/09/21/hsc_ql20250921.html)）、17:47:09.66 UT のコマ、s = +0.33 ± 0.40 秒（33 コマ）
+
+![2025-09-21 最大 17:47:04 UT、食分 0.350](images/hinode/20250921_1747_XRT_APM.jpg)
+
+**2025-09-21 最大 19:36:02 UT、食分 0.901** — [XRT_APM20250921040327_213249.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/09/21/XRT_APM20250921040327_213249.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/09/21/hsc_ql20250921.html)）、19:36:09.83 UT のコマ、s = −0.60 ± 0.24 秒（56 コマ）
+
+![2025-09-21 最大 19:36:02 UT、食分 0.901](images/hinode/20250921_1936_XRT_APM.jpg)
+
+**2026-08-12 最大 17:53:49 UT、食分 0.728** — [XRT_APM20260812163330_183231.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2026/08/12/XRT_APM20260812163330_183231.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2026/08/12/hsc_ql20260812.html)）、17:53:49.79 UT のコマ、s = +0.11 ± 0.56 秒（30 コマ）
+
+![2026-08-12 最大 17:53:49 UT、食分 0.728](images/hinode/20260812_1753_XRT_APM.jpg)
+
+**2025-02-28 最大 00:49:32 UT（軌道上でだけ起きた食）** — [XRT_APM20250228005341_005736.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/02/28/XRT_APM20250228005341_005736.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2025/02/28/hsc_ql20250228.html)）、00:53:41.41 UT のコマ。第4接触（00:52:14）の 1.5 分後、太陽面を出た月がコロナを背景に影絵として写っています
+
+![2025-02-28 最大 00:49:32 UT（軌道上でだけ起きた食）](images/hinode/20250228_0049_XRT_APM.jpg)
+
+### A.3 2006〜2016 年の日食（1.3 節）
+
+表に載せた全面の XRT 動画（27 パス・32 本）です。s は表と同じ測定のパスごとの値です。
+
+**2007-02-17 最大 16:10:01 UT、食分 0.105** — [XRT_AMM20070217160100_162607.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/02/17/XRT_AMM20070217160100_162607.mpg)（XRT Al mesh、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/02/17/hsc_ql20070217.html)）、16:10:06.54 UT のコマ、s = +2.34 ± 1.28 秒（11 コマ）
+
+![2007-02-17 最大 16:10:01 UT、食分 0.105](images/hinode/20070217_1610_XRT_AMM.jpg)
+
+**2007-03-19 最大 02:55:43 UT、食分 1.018** — [XRT_APM20070319024759_030354.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/XRT_APM20070319024759_030354.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/hsc_ql20070319.html)）、02:55:40.80 UT のコマ、s = +0.80 ± 0.12 秒（90 コマ）
+
+![2007-03-19 最大 02:55:43 UT、食分 1.018](images/hinode/20070319_0255_XRT_APM.jpg)
+
+**2009-07-22 最大 00:58:03 UT、食分 0.734** — [XRT_TIM20090722004900_011313.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/07/22/XRT_TIM20090722004900_011313.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/07/22/hsc_ql20090722.html)）、00:58:04.34 UT のコマ、s = +2.19 ± 0.24 秒（63 コマ）
+
+![2009-07-22 最大 00:58:03 UT、食分 0.734](images/hinode/20090722_0058_XRT_TIM.jpg)
+
+**2011-01-04 最大 07:48:05 UT、食分 0.743** — [XRT_TIM20110104073804_075739.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/XRT_TIM20110104073804_075739.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/hsc_ql20110104.html)）、07:47:59.44 UT のコマ、s = +2.47 ± 0.14 秒（34 コマ）
+
+![2011-01-04 最大 07:48:05 UT、食分 0.743](images/hinode/20110104_0748_XRT_TIM.jpg)
+
+**2011-01-04 最大 09:16:07 UT、食分 0.939** — [XRT_TIM20110104090615_092549.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/XRT_TIM20110104090615_092549.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/hsc_ql20110104.html)）、09:16:09.69 UT のコマ、s = +2.58 ± 0.09 秒（42 コマ）
+
+![2011-01-04 最大 09:16:07 UT、食分 0.939](images/hinode/20110104_0916_XRT_TIM.jpg)
+
+**2011-01-04 最大 10:45:35 UT、食分 0.324** — [XRT_TIM20110104104005_180111.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/XRT_TIM20110104104005_180111.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/01/04/hsc_ql20110104.html)）、10:44:59.46 UT のコマ、s = +2.48 ± 0.19 秒（28 コマ）
+
+![2011-01-04 最大 10:45:35 UT、食分 0.324](images/hinode/20110104_1045_XRT_TIM.jpg)
+
+**2011-06-01 最大 20:41:51 UT、食分 0.508** — [XRT_TIM20110601203137_223344.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/06/01/XRT_TIM20110601203137_223344.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/06/01/hsc_ql20110601.html)）、20:40:54.06 UT のコマ、s = +1.51 ± 0.17 秒（33 コマ）
+
+![2011-06-01 最大 20:41:51 UT、食分 0.508](images/hinode/20110601_2041_XRT_TIM.jpg)
+
+**2011-06-01 最大 22:11:06 UT、食分 0.361** — [XRT_TIM20110601203137_223344.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/06/01/XRT_TIM20110601203137_223344.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/06/01/hsc_ql20110601.html)）、22:10:51.83 UT のコマ、s = +0.77 ± 0.23 秒（28 コマ）
+
+![2011-06-01 最大 22:11:06 UT、食分 0.361](images/hinode/20110601_2211_XRT_TIM.jpg)
+
+**2011-11-25 最大 04:15:52 UT、食分 0.095** — [XRT_TIM20111125041108_180838.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/XRT_TIM20111125041108_180838.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/hsc_ql20111125.html)）、04:15:04.96 UT のコマ、s = +1.60 ± 0.65 秒（16 コマ）
+
+![2011-11-25 最大 04:15:52 UT、食分 0.095](images/hinode/20111125_0415_XRT_TIM.jpg)
+
+**2011-11-25 最大 06:05:05 UT、食分 0.968** — [XRT_TIM20111125041108_180838.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/XRT_TIM20111125041108_180838.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/hsc_ql20111125.html)）、06:05:04.14 UT のコマ、s = +0.80 ± 0.07 秒（50 コマ）
+
+![2011-11-25 最大 06:05:05 UT、食分 0.968](images/hinode/20111125_0605_XRT_TIM.jpg)
+
+**2011-11-25 最大 07:56:29 UT、食分 0.418** — [XRT_TIM20111125041108_180838.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/XRT_TIM20111125041108_180838.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2011/11/25/hsc_ql20111125.html)）、07:55:56.84 UT のコマ、s = +0.84 ± 0.24 秒（31 コマ）
+
+![2011-11-25 最大 07:56:29 UT、食分 0.418](images/hinode/20111125_0756_XRT_TIM.jpg)
+
+**2012-05-20 最大 21:41:37 UT、食分 0.795** — [XRT_TIM20120520060509_215306.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/20/XRT_TIM20120520060509_215306.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/20/hsc_ql20120520.html)）、21:41:05.97 UT のコマ、s = +1.41 ± 0.12 秒（48 コマ）
+
+![2012-05-20 最大 21:41:37 UT、食分 0.795](images/hinode/20120520_2141_XRT_TIM.jpg)
+
+**2012-05-21 最大 00:32:17 UT、食分 0.300** — [XRT_TIM20120521002129_004606.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/21/XRT_TIM20120521002129_004606.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/21/hsc_ql20120521.html)）、00:32:05.84 UT のコマ、s = +1.05 ± 0.82 秒（32 コマ）
+
+![2012-05-21 最大 00:32:17 UT、食分 0.300](images/hinode/20120521_0032_XRT_TIM.jpg)
+
+**2012-05-21 最大 02:01:21 UT、食分 0.709** — [XRT_TIM20120521014830_182237.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/21/XRT_TIM20120521014830_182237.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/05/21/hsc_ql20120521.html)）、02:01:06.60 UT のコマ、s = +1.21 ± 0.08 秒（43 コマ）
+
+![2012-05-21 最大 02:01:21 UT、食分 0.709](images/hinode/20120521_0201_XRT_TIM.jpg)
+
+**2012-11-13 最大 20:24:29 UT、食分 1.012** — [XRT_APM20121113180133_235303.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/11/13/XRT_APM20121113180133_235303.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/11/13/hsc_ql20121113.html)）、20:24:09.70 UT のコマ、s = +0.91 ± 0.14 秒（44 コマ）
+
+![2012-11-13 最大 20:24:29 UT、食分 1.012](images/hinode/20121113_2024_XRT_APM.jpg)
+
+**2012-11-14 最大 00:20:35 UT、食分 0.627** — [XRT_APM20121114001202_002939.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/11/14/XRT_APM20121114001202_002939.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/11/14/hsc_ql20121114.html)）、00:19:58.87 UT のコマ、s = +0.47 ± 0.16 秒（39 コマ）
+
+![2012-11-14 最大 00:20:35 UT、食分 0.627](images/hinode/20121114_0020_XRT_APM.jpg)
+
+**2013-05-09 最大 21:50:52 UT、食分 0.472** — [XRT_AMM20130509213758_215127.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/09/XRT_AMM20130509213758_215127.mpg)（XRT Al mesh、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/09/hsc_ql20130509.html)）、21:49:56.55 UT のコマ、s = +0.45 ± 0.39 秒（14 コマ）
+
+![2013-05-09 最大 21:50:52 UT、食分 0.472](images/hinode/20130509_2150_XRT_AMM.jpg)
+
+**2013-05-09 最大 21:50:52 UT、食分 0.472** — [XRT_TIM20130509213750_215119.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/09/XRT_TIM20130509213750_215119.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/09/hsc_ql20130509.html)）、21:49:48.78 UT のコマ、s = +1.27 ± 0.38 秒（14 コマ）
+
+![2013-05-09 最大 21:50:52 UT、食分 0.472](images/hinode/20130509_2150_XRT_TIM.jpg)
+
+**2013-05-10 最大 01:48:51 UT、食分 0.372** — [XRT_AMM20130510013905_182335.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/XRT_AMM20130510013905_182335.mpg)（XRT Al mesh、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/hsc_ql20130510.html)）、01:48:04.77 UT のコマ、s = −0.01 ± 0.22 秒（55 コマ）
+
+![2013-05-10 最大 01:48:51 UT、食分 0.372](images/hinode/20130510_0148_XRT_AMM.jpg)
+
+**2013-05-10 最大 01:48:51 UT、食分 0.372** — [XRT_TIM20130510013857_182407.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/XRT_TIM20130510013857_182407.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/hsc_ql20130510.html)）、01:47:56.76 UT のコマ、s = +0.63 ± 0.19 秒（54 コマ）
+
+![2013-05-10 最大 01:48:51 UT、食分 0.372](images/hinode/20130510_0148_XRT_TIM.jpg)
+
+**2013-05-10 最大 03:28:13 UT、食分 0.121** — [XRT_AMM20130510013905_182335.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/XRT_AMM20130510013905_182335.mpg)（XRT Al mesh、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/hsc_ql20130510.html)）、03:28:02.73 UT のコマ、s = −1.48 ± 0.57 秒（13 コマ）
+
+![2013-05-10 最大 03:28:13 UT、食分 0.121](images/hinode/20130510_0328_XRT_AMM.jpg)
+
+**2013-05-10 最大 03:28:13 UT、食分 0.121** — [XRT_TIM20130510013857_182407.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/XRT_TIM20130510013857_182407.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/05/10/hsc_ql20130510.html)）、03:27:54.79 UT のコマ、s = −0.46 ± 0.70 秒（12 コマ）
+
+![2013-05-10 最大 03:28:13 UT、食分 0.121](images/hinode/20130510_0328_XRT_TIM.jpg)
+
+**2013-11-03 最大 11:29:47 UT、食分 0.429** — [XRT_AMM20131103060307_190806.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/11/03/XRT_AMM20131103060307_190806.mpg)（XRT Al mesh、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/11/03/hsc_ql20131103.html)）、11:28:58.25 UT のコマ、s = +0.13 ± 0.17 秒（37 コマ）
+
+![2013-11-03 最大 11:29:47 UT、食分 0.429](images/hinode/20131103_1129_XRT_AMM.jpg)
+
+**2013-11-03 最大 11:29:47 UT、食分 0.429** — [XRT_TIM20131103060344_190844.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/11/03/XRT_TIM20131103060344_190844.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2013/11/03/hsc_ql20131103.html)）、11:28:50.25 UT のコマ、s = +0.73 ± 0.16 秒（37 コマ）
+
+![2013-11-03 最大 11:29:47 UT、食分 0.429](images/hinode/20131103_1129_XRT_TIM.jpg)
+
+**2014-04-29 最大 07:27:44 UT、食分 0.699** — [XRT_TIM20140429060343_074328.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/04/29/XRT_TIM20140429060343_074328.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/04/29/hsc_ql20140429.html)）、07:26:56.47 UT のコマ、s = +1.07 ± 0.12 秒（26 コマ）
+
+![2014-04-29 最大 07:27:44 UT、食分 0.699](images/hinode/20140429_0727_XRT_TIM.jpg)
+
+**2014-10-23 最大 21:53:25 UT、食分 0.957** — [XRT_APM20141023214500_220442.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/10/23/XRT_APM20141023214500_220442.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/10/23/hsc_ql20141023.html)）、21:53:02.04 UT のコマ、s = +1.11 ± 0.19 秒（41 コマ）
+
+![2014-10-23 最大 21:53:25 UT、食分 0.957](images/hinode/20141023_2153_XRT_APM.jpg)
+
+**2014-10-23 最大 21:53:25 UT、食分 0.957** — [XRT_TIM20141023182245_220433.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/10/23/XRT_TIM20141023182245_220433.mpg)（XRT Ti poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2014/10/23/hsc_ql20141023.html)）、21:52:53.54 UT のコマ、s = +0.70 ± 0.24 秒（40 コマ）
+
+![2014-10-23 最大 21:53:25 UT、食分 0.957](images/hinode/20141023_2153_XRT_TIM.jpg)
+
+**2015-03-20 最大 10:57:04 UT、食分 0.862** — [XRT_APM20150320085121_111120.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/03/20/XRT_APM20150320085121_111120.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/03/20/hsc_ql20150320.html)）、10:56:56.79 UT のコマ、s = +0.80 ± 0.11 秒（38 コマ）
+
+![2015-03-20 最大 10:57:04 UT、食分 0.862](images/hinode/20150320_1057_XRT_APM.jpg)
+
+**2015-09-13 最大 05:55:49 UT、食分 0.752** — [XRT_BEM20150913054017_180659.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/09/13/XRT_BEM20150913054017_180659.mpg)（XRT Be thin、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/09/13/hsc_ql20150913.html)）、05:55:09.38 UT のコマ、s = +2.08 ± 0.25 秒（49 コマ）
+
+![2015-09-13 最大 05:55:49 UT、食分 0.752](images/hinode/20150913_0555_XRT_BEM.jpg)
+
+**2015-09-13 最大 07:46:25 UT、食分 0.795** — [XRT_BEM20150913054017_180659.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/09/13/XRT_BEM20150913054017_180659.mpg)（XRT Be thin、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/09/13/hsc_ql20150913.html)）、07:46:07.58 UT のコマ、s = +3.55 ± 0.20 秒（49 コマ）
+
+![2015-09-13 最大 07:46:25 UT、食分 0.795](images/hinode/20150913_0746_XRT_BEM.jpg)
+
+**2016-03-09 最大 00:08:11 UT、食分 0.986** — [XRT_BEM20160309000006_180416.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2016/03/09/XRT_BEM20160309000006_180416.mpg)（XRT Be thin、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2016/03/09/hsc_ql20160309.html)）、00:07:57.40 UT のコマ、s = +1.70 ± 0.16 秒（80 コマ）
+
+![2016-03-09 最大 00:08:11 UT、食分 0.986](images/hinode/20160309_0008_XRT_BEM.jpg)
+
+**2016-03-09 最大 04:20:22 UT、食分 0.431** — [XRT_BEM20160309000006_180416.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2016/03/09/XRT_BEM20160309000006_180416.mpg)（XRT Be thin、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2016/03/09/hsc_ql20160309.html)）、04:20:00.88 UT のコマ、s = +1.56 ± 0.38 秒（62 コマ）
+
+![2016-03-09 最大 04:20:22 UT、食分 0.431](images/hinode/20160309_0420_XRT_BEM.jpg)
+
+### A.4 太陽の一部しか写らない動画（1.3 節）
+
+月の位置は座標軸（衛星の指向）で置いているため、計算の月の縁と実際の縁のずれには指向の誤差（数″〜25″）が含まれます。s は月が視野を覆う割合の時間変化を計算と合わせた時刻のずれ（目安）です。
+
+**2007-03-19 01:28 頃のパス（1 回目のパス、SOT 約 220″ の視野）** — [FG_GBM20070319012408_013233.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/FG_GBM20070319012408_013233.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/hsc_ql20070319.html)）、01:29:13.53 UT のコマ、s ≒ −2.7 秒
+
+![2007-03-19 01:28 頃のパス（1 回目のパス、SOT 約 220″ の視野）](images/hinode/20070319_0128_FG_GBM.jpg)
+
+**2007-03-19 02:55 頃のパス（2 回目（皆既）のパス、全面の XRT では +0.80 秒）** — [FG_GBM20070319014414_030159.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/FG_GBM20070319014414_030159.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/hsc_ql20070319.html)）、02:52:01.61 UT のコマ、s ≒ +2.4 秒
+
+![2007-03-19 02:55 頃のパス（2 回目（皆既）のパス、全面の XRT では +0.80 秒）](images/hinode/20070319_0255_FG_GBM.jpg)
+
+**2007-03-19 04:24 頃のパス（3 回目のパス）** — [FG_GBM20070319042137_043343.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/FG_GBM20070319042137_043343.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2007/03/19/hsc_ql20070319.html)）、04:24:11.97 UT のコマ、s ≒ +1.9 秒
+
+![2007-03-19 04:24 頃のパス（3 回目のパス）](images/hinode/20070319_0424_FG_GBM.jpg)
+
+**2008-02-07 03:25 頃のパス（2 回目のパス）** — [FG_BLM20080207031600_033431.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2008/02/07/FG_BLM20080207031600_033431.mpg)（SOT/FG 青い連続光、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2008/02/07/hsc_ql20080207.html)）、03:25:00.79 UT のコマ、s ≒ −4.4 秒
+
+![2008-02-07 03:25 頃のパス（2 回目のパス）](images/hinode/20080207_0325_FG_BLM.jpg)
+
+**2009-01-26 05:47 頃のパス（1 回目のパス、XRT 約 530″ の視野）** — [XRT_APM20090126053534_061156.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/01/26/XRT_APM20090126053534_061156.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/01/26/hsc_ql20090126.html)）、05:47:32.01 UT のコマ、s ≒ +8.5 秒
+
+![2009-01-26 05:47 頃のパス（1 回目のパス、XRT 約 530″ の視野）](images/hinode/20090126_0547_XRT_APM.jpg)
+
+**2009-07-22 05:06 頃のパス（2 回目のパス、XRT 約 790″ の視野）** — [XRT_APM20090722045846_055555.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/07/22/XRT_APM20090722045846_055555.mpg)（XRT Al poly、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2009/07/22/hsc_ql20090722.html)）、05:01:46.88 UT のコマ、s ≒ +4.3 秒
+
+![2009-07-22 05:06 頃のパス（2 回目のパス、XRT 約 790″ の視野）](images/hinode/20090722_0506_XRT_APM.jpg)
+
+**2010-07-11 21:48 頃のパス（3 回目のパス）** — [FG_GBM20100711214509_215513.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2010/07/11/FG_GBM20100711214509_215513.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2010/07/11/hsc_ql20100711.html)）、21:47:39.60 UT のコマ、s ≒ −6.7 秒
+
+![2010-07-11 21:48 頃のパス（3 回目のパス）](images/hinode/20100711_2148_FG_GBM.jpg)
+
+**2015-03-20 08:03 頃のパス（1 回目のパス、SOT 約 110″ の視野）** — [FG_CAM20150320000040_235938.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/03/20/FG_CAM20150320000040_235938.mpg)（SOT/FG Ca II H、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2015/03/20/hsc_ql20150320.html)）、08:03:04.99 UT のコマ、s ≒ −6.0 秒
+
+![2015-03-20 08:03 頃のパス（1 回目のパス、SOT 約 110″ の視野）](images/hinode/20150320_0803_FG_CAM.jpg)
+
+### A.5 2012-06-05/06 金星の太陽面通過（1.4 節）
+
+[FG_GBM20120606001502_011840.mpg](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/06/06/FG_GBM20120606001502_011840.mpg)（SOT/FG G バンド、[その日の一覧](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/movie_sirius/2012/06/06/hsc_ql20120606.html)）の 01:01:02.6 UT のコマ（重ね描きなし）。金星の影の半径は、このような全周の写ったコマ 152 枚（G バンド・Ca II H・青い連続光、22:49〜04:19 UT）で測りました。
+
+![2012-06-06 金星の太陽面通過（SOT G バンド）](images/hinode/20120606_venus_sot.jpg)
+
+### A.6 広報画像（2 節）
+
+広報画像はリポジトリに含めず、測った画像の URL を載せます（`tools/validate_hinode_images.py` が取得して測ります）。
+
+| 現象 | 画像（撮影時刻 UT） |
+|---|---|
+| 2006-11-08 水星 | [19:13:02](https://hinode.nao.ac.jp/uploads/2016/06/24/mercury_sot_191302%202.png)、[19:14:41 と表記](https://hinode.nao.ac.jp/uploads/2016/06/24/mercury_sot_191441%202.png)、[00:08:02（第3接触）](https://hinode.nao.ac.jp/uploads/2016/06/24/SOT_M_t3_Red%202.png) |
+| 2012-11-13 | [20:19](https://www.isas.jaxa.jp/home/solar/eclipse20121114/121113_Eclipse_2019UT.bmp)、[20:32](https://www.isas.jaxa.jp/home/solar/eclipse20121114/121113_Eclipse_2032UT.bmp) |
+| 2014-10-23 | [21:48:33](https://www.isas.jaxa.jp/home/solar/eclipse20141023/ImgBW/20141023_20_XRTEclipse_214833.bmp)、[21:53:33](https://www.isas.jaxa.jp/home/solar/eclipse20141023/ImgBW/20141023_20_XRTEclipse_215333.bmp)、[21:58:13](https://www.isas.jaxa.jp/home/solar/eclipse20141023/ImgBW/20141023_20_XRTEclipse_215813.bmp) |
+| 2016-03-09 | [00:03:24](https://www.isas.jaxa.jp/home/solar/eclipse20160309/ImgBW/XRTEclipse_20160309_000324.bmp)、[00:14:07](https://www.isas.jaxa.jp/home/solar/eclipse20160309/ImgBW/XRTEclipse_20160309_001407.bmp) |
+| 2017-08-21 | [16:52:32](https://www.isas.jaxa.jp/home/solar/eclipse20170821/ImgBW/Eclipse_Start+2min_170821_165232_BW.bmp)、[16:57:32](https://www.isas.jaxa.jp/home/solar/eclipse20170821/ImgBW/Eclipse_Minimum_170821_165732_BW.bmp)、[17:03:02](https://www.isas.jaxa.jp/home/solar/eclipse20170821/ImgBW/Eclipse_End-2min_170821_170302_BW.bmp) |
+
+QL 動画のコマ: 国立天文台ひので科学センター [Hinode QL Movies](https://hinode.nao.ac.jp/en/for-researchers/qlmovies/)。Hinode is a Japanese mission developed and launched by ISAS/JAXA, with NAOJ as domestic partner and NASA and STFC (UK) as international partners.

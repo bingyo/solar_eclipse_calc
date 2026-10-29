@@ -540,7 +540,7 @@ def measure_pass(sel, d, todo, sun_hpc, rs_off):
             continue
         (sX, sY), (mX, mY) = ax.to_arcsec(*res['sun']), ax.to_arcsec(*res['moon'])
         err = math.sqrt(np.trace(fm['cov']) + np.trace(fs['cov'][:2, :2])) * sc / math.sqrt(2)
-        rows.append(dict(j=j, time=utc(t), E=-(mX - sX), N=mY - sY, err=err, P=d['p_angle'][j]))
+        rows.append(dict(j=int(j), time=utc(t), E=float(-(mX - sX)), N=float(mY - sY), err=float(err), P=float(d['p_angle'][j])))
     return rows
 
 
@@ -602,7 +602,7 @@ def xrt_movie_pass(frames, pred, tmax):
                      for _, img, ax in imgs])
     f.update(c1=c1, c4=c4, rs_off=rs_off, sun_hpc=sun_hpc, ncal=ncal, dsdr=dsdr, k=fit_shift(pred, rows, scale=True)['k'],
              s_tot=math.hypot(f['s_err'], SIG_RS * dsdr), dtheta=f['theta'] - float(np.mean([r['P'] for r in rows])),
-             p75=float(p75), t0=rows[0]['time'], t1=rows[-1]['time'])
+             p75=float(p75), t0=rows[0]['time'], t1=rows[-1]['time'], rows=rows)
     f['ok'] = f['n'] >= 8 and f['rms'] <= 12 and f['s_tot'] <= 1.5
     return f
 
